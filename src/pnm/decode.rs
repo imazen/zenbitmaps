@@ -54,6 +54,11 @@ fn parse_p5_p6_header(data: &[u8], format: PnmFormat) -> Result<PnmHeader, PnmEr
     pos = skip_whitespace_and_comments(data, new_pos)?;
     let (maxval, new_pos) = parse_u32(data, pos)?;
 
+    if width == 0 || height == 0 {
+        return Err(PnmError::InvalidHeader(
+            "width and height must be non-zero".into(),
+        ));
+    }
     if maxval == 0 || maxval > 65535 {
         return Err(PnmError::InvalidHeader(alloc::format!(
             "maxval must be 1-65535, got {maxval}"
@@ -159,6 +164,15 @@ fn parse_p7_header(data: &[u8]) -> Result<PnmHeader, PnmError> {
     let depth = depth.ok_or_else(|| PnmError::InvalidHeader("missing DEPTH".into()))?;
     let maxval = maxval.ok_or_else(|| PnmError::InvalidHeader("missing MAXVAL".into()))?;
 
+    if width == 0 || height == 0 {
+        return Err(PnmError::InvalidHeader(
+            "width and height must be non-zero".into(),
+        ));
+    }
+    if depth == 0 {
+        return Err(PnmError::InvalidHeader("DEPTH must be non-zero".into()));
+    }
+
     let layout = match (depth, maxval > 255) {
         (1, false) => PixelLayout::Gray8,
         (1, true) => PixelLayout::Gray16,
@@ -208,6 +222,12 @@ fn parse_pfm_header(data: &[u8]) -> Result<PnmHeader, PnmError> {
     let scale: f32 = scale_str
         .parse()
         .map_err(|_| PnmError::InvalidHeader(alloc::format!("bad scale: {scale_str}")))?;
+
+    if width == 0 || height == 0 {
+        return Err(PnmError::InvalidHeader(
+            "width and height must be non-zero".into(),
+        ));
+    }
 
     let data_offset = line_end + 1;
 
@@ -349,7 +369,9 @@ fn skip_whitespace_and_comments(data: &[u8], mut pos: usize) -> Result<usize, Pn
 
 fn parse_u32(data: &[u8], pos: usize) -> Result<(u32, usize), PnmError> {
     let mut end = pos;
-    while end < data.len() && data[end].is_ascii_digit() {
+    // Limit to 10 digits (u32::MAX = 4294967295, 10 digits)
+    let max_end = core::cmp::min(pos + 11, data.len());
+    while end < max_end && data[end].is_ascii_digit() {
         end += 1;
     }
     if end == pos {

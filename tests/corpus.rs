@@ -300,9 +300,14 @@ fn decode_external_ppm_if_available() {
         assert!(decoded.height > 0);
         assert_eq!(decoded.format, BitmapFormat::Ppm);
         // Re-encode and decode again
-        let reencoded =
-            encode_ppm(decoded.pixels(), decoded.width, decoded.height, decoded.layout, Unstoppable)
-                .unwrap();
+        let reencoded = encode_ppm(
+            decoded.pixels(),
+            decoded.width,
+            decoded.height,
+            decoded.layout,
+            Unstoppable,
+        )
+        .unwrap();
         let decoded2 = decode(&reencoded, Unstoppable).unwrap();
         assert_eq!(decoded.pixels(), decoded2.pixels());
     }
@@ -317,9 +322,14 @@ fn decode_external_bmp_if_available() {
         assert!(decoded.height > 0);
         assert_eq!(decoded.format, BitmapFormat::Bmp);
         // Re-encode and roundtrip
-        let reencoded =
-            encode_bmp(decoded.pixels(), decoded.width, decoded.height, decoded.layout, Unstoppable)
-                .unwrap();
+        let reencoded = encode_bmp(
+            decoded.pixels(),
+            decoded.width,
+            decoded.height,
+            decoded.layout,
+            Unstoppable,
+        )
+        .unwrap();
         let decoded2 = decode(&reencoded, Unstoppable).unwrap();
         assert_eq!(decoded.pixels(), decoded2.pixels());
     }

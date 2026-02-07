@@ -32,10 +32,20 @@ pub(crate) fn parse_bmp_header(data: &[u8]) -> Result<(u32, u32, PixelLayout), P
         return Err(PnmError::UnrecognizedFormat);
     }
 
-    let width = i32::from_le_bytes([data[18], data[19], data[20], data[21]]);
+    let width_raw = i32::from_le_bytes([data[18], data[19], data[20], data[21]]);
     let height_raw = i32::from_le_bytes([data[22], data[23], data[24], data[25]]);
+
+    if width_raw <= 0 {
+        return Err(PnmError::InvalidHeader(alloc::format!(
+            "BMP width must be positive, got {width_raw}"
+        )));
+    }
+    if height_raw == 0 {
+        return Err(PnmError::InvalidHeader("BMP height cannot be zero".into()));
+    }
+
+    let width = width_raw as u32;
     let height = height_raw.unsigned_abs();
-    let width = width as u32;
 
     let bits_per_pixel = u16::from_le_bytes([data[28], data[29]]);
 
@@ -71,7 +81,7 @@ pub(crate) fn decode_bmp_pixels(
         )));
     }
 
-    if data_offset > data.len() {
+    if data_offset < 54 || data_offset > data.len() {
         return Err(PnmError::UnexpectedEof);
     }
 
