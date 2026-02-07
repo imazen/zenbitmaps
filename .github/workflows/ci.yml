@@ -1,0 +1,196 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  CI: true
+
+jobs:
+  # ==========================================================================
+  # Native x64 testing
+  # ==========================================================================
+  test-x64:
+    name: Test x64 (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build (all features)
+        run: cargo build --all-features
+
+      - name: Test (all features)
+        run: cargo test --all-features
+
+      - name: Test (no default features / no_std)
+        run: cargo test --no-default-features
+
+  # ==========================================================================
+  # Native ARM64 testing
+  # ==========================================================================
+  test-aarch64:
+    name: Test aarch64 (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-24.04-arm, name: Linux }
+          - { os: macos-latest, name: macOS }
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build (all features)
+        run: cargo build --all-features
+
+      - name: Test (all features)
+        run: cargo test --all-features
+
+  # ==========================================================================
+  # Cross-compiled testing (32-bit and ARM)
+  # ==========================================================================
+  test-cross:
+    name: Cross (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - i686-unknown-linux-gnu
+          - armv7-unknown-linux-gnueabihf
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install cross
+        run: cargo install cross --git https://github.com/cross-rs/cross
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build (cross, all features)
+        run: cross build --all-features --target ${{ matrix.target }}
+
+      - name: Test (cross/QEMU, all features)
+        run: cross test --all-features --target ${{ matrix.target }}
+
+  # ==========================================================================
+  # WASM testing (no_std compatible)
+  # ==========================================================================
+  test-wasm:
+    name: Test WASM
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip1
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install wasmtime
+        run: |
+          curl https://wasmtime.dev/install.sh -sSf | bash
+          echo "$HOME/.wasmtime/bin" >> $GITHUB_PATH
+
+      - name: Build for WASM (no default features)
+        run: cargo build --no-default-features --target wasm32-wasip1
+
+      - name: Build for WASM (pnm feature)
+        run: cargo build --no-default-features --features pnm --target wasm32-wasip1
+
+      - name: Build for WASM (all features)
+        run: cargo build --all-features --target wasm32-wasip1
+
+      - name: Test on WASM (all features)
+        env:
+          CARGO_TARGET_WASM32_WASIP1_RUNNER: "wasmtime"
+        run: cargo test --all-features --target wasm32-wasip1
+
+  # ==========================================================================
+  # Clippy
+  # ==========================================================================
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Clippy (all features)
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+  # ==========================================================================
+  # Format check
+  # ==========================================================================
+  fmt:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Format check
+        run: cargo fmt --all -- --check
+
+  # ==========================================================================
+  # MSRV check
+  # ==========================================================================
+  msrv:
+    name: MSRV (1.85)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust 1.85
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.85"
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check MSRV (all features)
+        run: cargo check --all-features
