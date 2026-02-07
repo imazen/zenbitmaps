@@ -71,7 +71,7 @@ checksum = "3ec598a1ade4224cfe3c5dace0d5d7deec9ed670503ff99d4946973c8c094534"
 
 [[package]]
 name = "zenpnm"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "enough",
  "thiserror",

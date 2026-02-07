@@ -1,4 +1,5 @@
 use alloc::string::String;
+use enough::StopReason;
 
 /// Errors from PNM/BMP decoding and encoding.
 #[derive(Debug, thiserror::Error)]
@@ -19,6 +20,9 @@ pub enum PnmError {
     #[error("dimensions too large: {width}x{height}")]
     DimensionsTooLarge { width: u32, height: u32 },
 
+    #[error("limit exceeded: {0}")]
+    LimitExceeded(String),
+
     #[error("unexpected end of input")]
     UnexpectedEof,
 
@@ -30,4 +34,13 @@ pub enum PnmError {
 
     #[error("buffer too small: need {needed} bytes, got {actual}")]
     BufferTooSmall { needed: usize, actual: usize },
+
+    #[error("operation cancelled")]
+    Cancelled(StopReason),
+}
+
+impl From<StopReason> for PnmError {
+    fn from(r: StopReason) -> Self {
+        PnmError::Cancelled(r)
+    }
 }

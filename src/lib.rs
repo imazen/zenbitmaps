@@ -2,6 +2,13 @@
 //!
 //! PNM/PAM/PFM and BMP image format decoder and encoder.
 //!
+//! ## Zero-Copy Decoding
+//!
+//! For PNM files with maxval=255 (the common case), decoding returns a borrowed
+//! slice into the input buffer — no allocation or copy needed. Formats that
+//! require transformation (BMP row flipping, 16-bit downscaling, PFM byte
+//! reordering) allocate as needed.
+//!
 //! ## Supported Formats
 //!
 //! ### PNM family (`pnm` feature)
@@ -11,7 +18,7 @@
 //! - **PFM** — floating-point grayscale and RGB (32-bit float per channel)
 //!
 //! ### BMP (`bmp` feature)
-//! - Decode and encode of uncompressed BMP (8-bit RGB/RGBA)
+//! - Decode and encode of uncompressed BMP (24-bit RGB, 32-bit RGBA)
 //!
 //! ## Non-Goals
 //!
@@ -28,16 +35,28 @@
 //! ## Usage
 //!
 //! ```no_run
-//! use zenpnm::{PnmDecoder, PnmEncoder, PnmFormat, PixelLayout};
+//! use zenpnm::{DecodeRequest, EncodeRequest, ImageInfo};
+//! use enough::Unstoppable;
 //!
-//! // Decode
-//! let data: &[u8] = &[]; // your PNM bytes
-//! let decoded = PnmDecoder::new(data).decode()?;
-//! println!("{}x{} {:?}", decoded.width, decoded.height, decoded.layout);
+//! let data: &[u8] = &[]; // your PNM/BMP bytes
 //!
-//! // Encode to P6 (PPM)
-//! let encoded = PnmEncoder::new(PnmFormat::Ppm)
-//!     .encode(&decoded.pixels, decoded.width, decoded.height, decoded.layout)?;
+//! // Probe without decoding
+//! let info = ImageInfo::from_bytes(data).unwrap();
+//! println!("{}x{} {:?}", info.width, info.height, info.format);
+//!
+//! // Decode (zero-copy when possible)
+//! let decoded = DecodeRequest::new(data)
+//!     .decode(Unstoppable)?;
+//! // decoded.pixels is Cow::Borrowed when no transformation needed
+//!
+//! // Encode to PPM
+//! # #[cfg(feature = "pnm")]
+//! # {
+//! # use zenpnm::{PixelLayout, pnm::PnmFormat};
+//! let encoded = EncodeRequest::pnm(PnmFormat::Ppm)
+//!     .encode(decoded.pixels(), decoded.width, decoded.height,
+//!             decoded.layout, Unstoppable)?;
+//! # }
 //! # Ok::<(), zenpnm::PnmError>(())
 //! ```
 
@@ -47,20 +66,24 @@
 extern crate alloc;
 
 mod error;
+mod info;
+mod limits;
 mod pixel;
 
 #[cfg(feature = "pnm")]
-mod pnm;
+pub mod pnm;
 
 #[cfg(feature = "bmp")]
-mod bmp;
+pub mod bmp;
+
+mod decode;
+mod encode;
 
 // Re-exports
+pub use decode::{DecodeOutput, DecodeRequest};
+pub use encode::EncodeRequest;
+pub use enough::{Stop, Unstoppable};
 pub use error::PnmError;
+pub use info::{BitmapFormat, ImageInfo};
+pub use limits::Limits;
 pub use pixel::PixelLayout;
-
-#[cfg(feature = "pnm")]
-pub use pnm::{PnmDecoder, PnmEncoder, PnmFormat, PnmOutput};
-
-#[cfg(feature = "bmp")]
-pub use bmp::{BmpDecoder, BmpEncoder, BmpOutput};
