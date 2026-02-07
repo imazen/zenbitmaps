@@ -60,7 +60,12 @@ fn parse_p5_p6_header(data: &[u8], format: PnmFormat) -> Result<PnmHeader, PnmEr
             }
         }
         PnmFormat::Ppm => (3, PixelLayout::Rgb8),
-        _ => unreachable!(),
+        _ => {
+            return Err(PnmError::UnsupportedVariant(alloc::format!(
+                "unexpected format {:?} in P5/P6 parser",
+                format
+            )));
+        }
     };
 
     Ok(PnmHeader {
@@ -246,8 +251,9 @@ pub(crate) fn decode_integer_transform(
         // Scale from maxval to 255
         let scale = 255.0 / header.maxval as f32;
         let mut out = Vec::with_capacity(expected_src);
+        let stop_interval = w.saturating_mul(depth).saturating_mul(16).max(1);
         for (i, &b) in pixel_data[..expected_src].iter().enumerate() {
-            if i % (w * depth * 16) == 0 {
+            if i % stop_interval == 0 {
                 stop.check()?;
             }
             out.push((b as f32 * scale + 0.5) as u8);
@@ -257,11 +263,29 @@ pub(crate) fn decode_integer_transform(
         match header.layout {
             PixelLayout::Gray16 => Ok(pixel_data[..expected_src].to_vec()),
             _ => {
-                let num_samples = w * h * depth;
+                let num_samples = w
+                    .checked_mul(h)
+                    .and_then(|wh| wh.checked_mul(depth))
+                    .ok_or(PnmError::DimensionsTooLarge {
+                        width: header.width,
+                        height: header.height,
+                    })?;
+                // Verify 2*num_samples fits and data is sufficient
+                let needed_bytes =
+                    num_samples
+                        .checked_mul(2)
+                        .ok_or(PnmError::DimensionsTooLarge {
+                            width: header.width,
+                            height: header.height,
+                        })?;
+                if pixel_data.len() < needed_bytes {
+                    return Err(PnmError::UnexpectedEof);
+                }
                 let scale = 255.0 / header.maxval as f32;
+                let stop_interval = w.saturating_mul(depth).saturating_mul(16).max(1);
                 let mut out = Vec::with_capacity(num_samples);
                 for i in 0..num_samples {
-                    if i % (w * depth * 16) == 0 {
+                    if i % stop_interval == 0 {
                         stop.check()?;
                     }
                     let hi = pixel_data[i * 2] as u16;
@@ -284,8 +308,19 @@ pub(crate) fn decode_pfm(
     let w = header.width as usize;
     let h = header.height as usize;
     let depth = header.depth as usize;
-    let num_floats = w * h * depth;
-    let expected_bytes = num_floats * 4;
+    let num_floats = w
+        .checked_mul(h)
+        .and_then(|wh| wh.checked_mul(depth))
+        .ok_or(PnmError::DimensionsTooLarge {
+            width: header.width,
+            height: header.height,
+        })?;
+    let expected_bytes = num_floats
+        .checked_mul(4)
+        .ok_or(PnmError::DimensionsTooLarge {
+            width: header.width,
+            height: header.height,
+        })?;
 
     if pixel_data.len() < expected_bytes {
         return Err(PnmError::UnexpectedEof);
@@ -295,7 +330,16 @@ pub(crate) fn decode_pfm(
     let scale = header.pfm_scale.abs();
 
     let mut out = Vec::with_capacity(expected_bytes);
-    let row_bytes = w * depth * 4;
+    let row_floats = w.checked_mul(depth).ok_or(PnmError::DimensionsTooLarge {
+        width: header.width,
+        height: header.height,
+    })?;
+    let row_bytes = row_floats
+        .checked_mul(4)
+        .ok_or(PnmError::DimensionsTooLarge {
+            width: header.width,
+            height: header.height,
+        })?;
 
     // PFM stores rows bottom-to-top
     for row in (0..h).rev() {
@@ -303,7 +347,7 @@ pub(crate) fn decode_pfm(
             stop.check()?;
         }
         let row_start = row * row_bytes;
-        for i in 0..(w * depth) {
+        for i in 0..row_floats {
             let offset = row_start + i * 4;
             let raw = if is_little_endian {
                 f32::from_le_bytes([

@@ -16,7 +16,10 @@ pub(crate) fn encode_bmp(
 ) -> Result<Vec<u8>, PnmError> {
     let w = width as usize;
     let h = height as usize;
-    let expected = w * h * layout.bytes_per_pixel();
+    let expected = w
+        .checked_mul(h)
+        .and_then(|wh| wh.checked_mul(layout.bytes_per_pixel()))
+        .ok_or(PnmError::DimensionsTooLarge { width, height })?;
     if pixels.len() < expected {
         return Err(PnmError::BufferTooSmall {
             needed: expected,
@@ -42,9 +45,17 @@ fn encode_24bit(
     layout: PixelLayout,
     stop: &dyn Stop,
 ) -> Result<Vec<u8>, PnmError> {
-    let row_stride = (w * 3 + 3) & !3;
-    let pixel_data_size = row_stride * h;
-    let file_size = 54 + pixel_data_size;
+    let row_stride = w
+        .checked_mul(3)
+        .and_then(|r| r.checked_add(3))
+        .map(|r| r & !3)
+        .ok_or(PnmError::DimensionsTooLarge { width, height })?;
+    let pixel_data_size = row_stride
+        .checked_mul(h)
+        .ok_or(PnmError::DimensionsTooLarge { width, height })?;
+    let file_size = pixel_data_size
+        .checked_add(54)
+        .ok_or(PnmError::DimensionsTooLarge { width, height })?;
 
     let mut out = Vec::with_capacity(file_size);
     write_bmp_header(&mut out, file_size, pixel_data_size, width, height, 24);
@@ -75,9 +86,15 @@ fn encode_32bit(
     layout: PixelLayout,
     stop: &dyn Stop,
 ) -> Result<Vec<u8>, PnmError> {
-    let row_stride = w * 4;
-    let pixel_data_size = row_stride * h;
-    let file_size = 54 + pixel_data_size;
+    let row_stride = w
+        .checked_mul(4)
+        .ok_or(PnmError::DimensionsTooLarge { width, height })?;
+    let pixel_data_size = row_stride
+        .checked_mul(h)
+        .ok_or(PnmError::DimensionsTooLarge { width, height })?;
+    let file_size = pixel_data_size
+        .checked_add(54)
+        .ok_or(PnmError::DimensionsTooLarge { width, height })?;
 
     let mut out = Vec::with_capacity(file_size);
     write_bmp_header(&mut out, file_size, pixel_data_size, width, height, 32);

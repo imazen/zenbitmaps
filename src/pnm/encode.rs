@@ -20,7 +20,10 @@ pub(crate) fn encode_pnm(
 ) -> Result<Vec<u8>, PnmError> {
     let w = width as usize;
     let h = height as usize;
-    let expected = w * h * layout.bytes_per_pixel();
+    let expected = w
+        .checked_mul(h)
+        .and_then(|wh| wh.checked_mul(layout.bytes_per_pixel()))
+        .ok_or(PnmError::DimensionsTooLarge { width, height })?;
     if pixels.len() < expected {
         return Err(PnmError::BufferTooSmall {
             needed: expected,
@@ -58,7 +61,7 @@ fn encode_pgm(
         PixelLayout::Rgb8 | PixelLayout::Bgr8 => {
             let bpp = 3;
             for i in 0..(w * h) {
-                if i % (w * 16) == 0 {
+                if i % w.saturating_mul(16).max(1) == 0 {
                     stop.check()?;
                 }
                 let r = pixels[i * bpp] as u32;
@@ -70,7 +73,7 @@ fn encode_pgm(
         PixelLayout::Rgba8 | PixelLayout::Bgra8 => {
             let bpp = 4;
             for i in 0..(w * h) {
-                if i % (w * 16) == 0 {
+                if i % w.saturating_mul(16).max(1) == 0 {
                     stop.check()?;
                 }
                 let r = pixels[i * bpp] as u32;
@@ -109,7 +112,7 @@ fn encode_ppm(
         }
         PixelLayout::Bgr8 => {
             for i in 0..(w * h) {
-                if i % (w * 16) == 0 {
+                if i % w.saturating_mul(16).max(1) == 0 {
                     stop.check()?;
                 }
                 let off = i * 3;
@@ -120,7 +123,7 @@ fn encode_ppm(
         }
         PixelLayout::Rgba8 => {
             for i in 0..(w * h) {
-                if i % (w * 16) == 0 {
+                if i % w.saturating_mul(16).max(1) == 0 {
                     stop.check()?;
                 }
                 let off = i * 4;
@@ -131,7 +134,7 @@ fn encode_ppm(
         }
         PixelLayout::Bgra8 => {
             for i in 0..(w * h) {
-                if i % (w * 16) == 0 {
+                if i % w.saturating_mul(16).max(1) == 0 {
                     stop.check()?;
                 }
                 let off = i * 4;
@@ -214,8 +217,14 @@ fn encode_pfm(
     };
 
     let header = format!("{magic}\n{width} {height}\n-1.0\n");
-    let row_bytes = w * depth * 4;
-    let mut out = Vec::with_capacity(header.len() + h * row_bytes);
+    let row_bytes = w
+        .checked_mul(depth)
+        .and_then(|wd| wd.checked_mul(4))
+        .ok_or(PnmError::DimensionsTooLarge { width, height })?;
+    let total_pixels = h
+        .checked_mul(row_bytes)
+        .ok_or(PnmError::DimensionsTooLarge { width, height })?;
+    let mut out = Vec::with_capacity(header.len().saturating_add(total_pixels));
     out.extend_from_slice(header.as_bytes());
 
     // PFM stores bottom-to-top

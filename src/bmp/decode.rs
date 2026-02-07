@@ -74,7 +74,12 @@ pub(crate) fn decode_bmp_pixels(
     match layout {
         PixelLayout::Rgb8 => decode_24bit(pixel_data, w, h, top_down, stop),
         PixelLayout::Rgba8 => decode_32bit(pixel_data, w, h, top_down, stop),
-        _ => unreachable!(),
+        _ => {
+            Err(PnmError::UnsupportedVariant(alloc::format!(
+                "BMP layout {:?} not supported in pixel decoder",
+                layout
+            )))
+        }
     }
 }
 
@@ -85,13 +90,32 @@ fn decode_24bit(
     top_down: bool,
     stop: &dyn Stop,
 ) -> Result<Vec<u8>, PnmError> {
-    let row_stride = (w * 3 + 3) & !3;
-    let needed = row_stride * h;
+    let row_stride = w
+        .checked_mul(3)
+        .and_then(|r| r.checked_add(3))
+        .map(|r| r & !3)
+        .ok_or(PnmError::DimensionsTooLarge {
+            width: w as u32,
+            height: h as u32,
+        })?;
+    let needed = row_stride
+        .checked_mul(h)
+        .ok_or(PnmError::DimensionsTooLarge {
+            width: w as u32,
+            height: h as u32,
+        })?;
     if pixel_data.len() < needed {
         return Err(PnmError::UnexpectedEof);
     }
 
-    let mut out = Vec::with_capacity(w * h * 3);
+    let out_size =
+        w.checked_mul(h)
+            .and_then(|wh| wh.checked_mul(3))
+            .ok_or(PnmError::DimensionsTooLarge {
+                width: w as u32,
+                height: h as u32,
+            })?;
+    let mut out = Vec::with_capacity(out_size);
     for row in 0..h {
         if row % 16 == 0 {
             stop.check()?;
@@ -116,13 +140,28 @@ fn decode_32bit(
     top_down: bool,
     stop: &dyn Stop,
 ) -> Result<Vec<u8>, PnmError> {
-    let row_stride = w * 4;
-    let needed = row_stride * h;
+    let row_stride = w.checked_mul(4).ok_or(PnmError::DimensionsTooLarge {
+        width: w as u32,
+        height: h as u32,
+    })?;
+    let needed = row_stride
+        .checked_mul(h)
+        .ok_or(PnmError::DimensionsTooLarge {
+            width: w as u32,
+            height: h as u32,
+        })?;
     if pixel_data.len() < needed {
         return Err(PnmError::UnexpectedEof);
     }
 
-    let mut out = Vec::with_capacity(w * h * 4);
+    let out_size =
+        w.checked_mul(h)
+            .and_then(|wh| wh.checked_mul(4))
+            .ok_or(PnmError::DimensionsTooLarge {
+                width: w as u32,
+                height: h as u32,
+            })?;
+    let mut out = Vec::with_capacity(out_size);
     for row in 0..h {
         if row % 16 == 0 {
             stop.check()?;

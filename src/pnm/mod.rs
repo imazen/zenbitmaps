@@ -67,7 +67,14 @@ pub(crate) fn decode<'a>(
 
     match header.format {
         PnmFormat::Pfm => {
-            let out_bytes = w * h * depth * 4;
+            let out_bytes = w
+                .checked_mul(h)
+                .and_then(|wh| wh.checked_mul(depth))
+                .and_then(|whd| whd.checked_mul(4))
+                .ok_or(PnmError::DimensionsTooLarge {
+                    width: header.width,
+                    height: header.height,
+                })?;
             if let Some(limits) = limits {
                 limits.check_memory(out_bytes)?;
             }
@@ -103,7 +110,13 @@ pub(crate) fn decode<'a>(
                     header.layout,
                 ))
             } else {
-                let out_bytes = w * h * depth;
+                let out_bytes = w
+                    .checked_mul(h)
+                    .and_then(|wh| wh.checked_mul(depth))
+                    .ok_or(PnmError::DimensionsTooLarge {
+                        width: header.width,
+                        height: header.height,
+                    })?;
                 if let Some(limits) = limits {
                     limits.check_memory(out_bytes)?;
                 }
