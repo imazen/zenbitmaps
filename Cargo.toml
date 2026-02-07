@@ -13,6 +13,8 @@ readme = "README.md"
 [dependencies]
 # Core (always available)
 enough = "0.3"
+imgref = { version = "1.12", default-features = false, optional = true }
+rgb = { version = "0.8", default-features = false, features = ["as-bytes"], optional = true }
 thiserror = { version = "2.0", default-features = false }
 
 [dev-dependencies]
@@ -24,6 +26,10 @@ std = []
 # Format groups
 pnm = []         # P5 (PGM binary), P6 (PPM binary), P7 (PAM), PFM
 basic-bmp = []   # Basic uncompressed 24/32-bit BMP (not auto-detected, explicit use only)
+
+# Typed pixel support
+rgb = ["dep:rgb"]              # RGB8, RGBA8 etc. typed pixel encode/decode
+imgref = ["dep:imgref", "rgb"] # ImgVec/ImgRef 2D buffer support (implies rgb)
 
 # All formats
 all = ["pnm", "basic-bmp"]

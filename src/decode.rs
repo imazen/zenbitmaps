@@ -1,6 +1,9 @@
 use alloc::borrow::Cow;
 use alloc::vec::Vec;
 
+#[cfg(feature = "rgb")]
+use rgb::AsPixels as _;
+
 use crate::pixel::PixelLayout;
 
 /// Decoded image output. Pixels may be borrowed (zero-copy) or owned.
@@ -49,5 +52,38 @@ impl<'a> DecodeOutput<'a> {
             height,
             layout,
         }
+    }
+
+    /// Reinterpret pixel data as typed pixel slice.
+    ///
+    /// Returns [`PnmError::LayoutMismatch`] if the pixel layout doesn't match `P`.
+    #[cfg(feature = "rgb")]
+    pub fn as_pixels<P: crate::DecodePixel>(&self) -> Result<&[P], crate::PnmError>
+    where
+        [u8]: rgb::AsPixels<P>,
+    {
+        if self.layout != P::layout() {
+            return Err(crate::PnmError::LayoutMismatch {
+                expected: P::layout(),
+                actual: self.layout,
+            });
+        }
+        Ok(self.pixels().as_pixels())
+    }
+
+    /// Convert to an [`imgref::ImgVec`] of typed pixels.
+    ///
+    /// Returns [`PnmError::LayoutMismatch`] if the pixel layout doesn't match `P`.
+    #[cfg(feature = "imgref")]
+    pub fn to_imgvec<P: crate::DecodePixel>(&self) -> Result<imgref::ImgVec<P>, crate::PnmError>
+    where
+        [u8]: rgb::AsPixels<P>,
+    {
+        let pixels: &[P] = self.as_pixels()?;
+        Ok(imgref::ImgVec::new(
+            pixels.to_vec(),
+            self.width as usize,
+            self.height as usize,
+        ))
     }
 }
