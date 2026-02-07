@@ -8,6 +8,7 @@ description = "PNM/PAM/PFM image format decoder and encoder (P5, P6, P7, PFM) wi
 categories = ["multimedia::images"]
 keywords = ["image", "pnm", "pam", "ppm", "pgm"]
 repository = "https://github.com/imazen/zenpnm"
+readme = "README.md"
 
 [dependencies]
 # Core (always available)
