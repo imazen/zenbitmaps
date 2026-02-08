@@ -11,13 +11,13 @@ These are lossless, simple formats used as ground truth for encode/decode pipeli
 
 ## Supported Formats
 
-### PNM family (`pnm` feature)
+### PNM family (always available)
 - **P5** (PGM binary) — grayscale, 8-bit and 16-bit
 - **P6** (PPM binary) — RGB, 8-bit and 16-bit
 - **P7** (PAM) — arbitrary channels, 8-bit and 16-bit
 - **PFM** — floating-point grayscale and RGB
 
-### BMP (`bmp` feature)
+### BMP (`basic-bmp` feature, opt-in)
 - Uncompressed 24-bit (RGB) and 32-bit (RGBA)
 - No RLE, no indexed color
 

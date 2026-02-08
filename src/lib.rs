@@ -10,7 +10,7 @@
 //!
 //! ## Supported Formats
 //!
-//! ### PNM family (`pnm` feature, default)
+//! ### PNM family (always available)
 //! - **P5** (PGM binary) — grayscale, 8-bit and 16-bit
 //! - **P6** (PPM binary) — RGB, 8-bit and 16-bit
 //! - **P7** (PAM) — arbitrary channels (grayscale, RGB, RGBA), 8-bit and 16-bit
@@ -18,7 +18,7 @@
 //!
 //! ### Basic BMP (`basic-bmp` feature, opt-in)
 //! - Uncompressed 24-bit (RGB) and 32-bit (RGBA) only
-//! - **Not auto-detected** — use [`decode_bmp`] and [`encode_bmp`] explicitly
+//! - **Not auto-detected** — use `decode_bmp` and `encode_bmp` explicitly
 //! - No RLE, no indexed color, no advanced headers
 //!
 //! ## Usage
@@ -27,8 +27,6 @@
 //! use zenpnm::*;
 //! use enough::Unstoppable;
 //!
-//! # #[cfg(feature = "pnm")]
-//! # {
 //! // Encode pixels to PPM
 //! let pixels = vec![255u8, 0, 0, 0, 255, 0]; // 2 RGB pixels
 //! let encoded = encode_ppm(&pixels, 2, 1, PixelLayout::Rgb8, Unstoppable)?;
@@ -37,7 +35,6 @@
 //! let decoded = decode(&encoded, Unstoppable)?;
 //! assert!(decoded.is_borrowed()); // zero-copy for PPM with maxval=255
 //! assert_eq!(decoded.pixels(), &pixels[..]);
-//! # }
 //! # Ok::<(), zenpnm::PnmError>(())
 //! ```
 //!
@@ -59,7 +56,6 @@ mod error;
 mod limits;
 mod pixel;
 
-#[cfg(feature = "pnm")]
 mod pnm;
 
 #[cfg(feature = "basic-bmp")]
@@ -106,14 +102,13 @@ pub type BGRA8 = rgb::alt::BGRA<u8>;
 ///
 /// Zero-copy when possible — the returned [`DecodeOutput`] borrows from `data`.
 ///
-/// Does **not** auto-detect BMP. For BMP, use [`decode_bmp`] explicitly.
-#[cfg(feature = "pnm")]
+/// Does **not** auto-detect BMP. For BMP, use `decode_bmp` explicitly
+/// (requires the `basic-bmp` feature).
 pub fn decode(data: &[u8], stop: impl Stop) -> Result<DecodeOutput<'_>, PnmError> {
     pnm::decode(data, None, &stop)
 }
 
 /// Decode any PNM format with resource limits.
-#[cfg(feature = "pnm")]
 pub fn decode_with_limits<'a>(
     data: &'a [u8],
     limits: &'a Limits,
@@ -125,7 +120,6 @@ pub fn decode_with_limits<'a>(
 // ── PNM encode ───────────────────────────────────────────────────────
 
 /// Encode pixels as PPM (P6, binary RGB).
-#[cfg(feature = "pnm")]
 pub fn encode_ppm(
     pixels: &[u8],
     width: u32,
@@ -137,7 +131,6 @@ pub fn encode_ppm(
 }
 
 /// Encode pixels as PGM (P5, binary grayscale).
-#[cfg(feature = "pnm")]
 pub fn encode_pgm(
     pixels: &[u8],
     width: u32,
@@ -149,7 +142,6 @@ pub fn encode_pgm(
 }
 
 /// Encode pixels as PAM (P7, arbitrary channels).
-#[cfg(feature = "pnm")]
 pub fn encode_pam(
     pixels: &[u8],
     width: u32,
@@ -161,7 +153,6 @@ pub fn encode_pam(
 }
 
 /// Encode pixels as PFM (floating-point).
-#[cfg(feature = "pnm")]
 pub fn encode_pfm(
     pixels: &[u8],
     width: u32,
@@ -219,7 +210,7 @@ pub fn encode_bmp_rgba(
 // ── Typed pixel API (rgb feature) ────────────────────────────────────
 
 /// Decode any PNM format to typed pixels.
-#[cfg(all(feature = "pnm", feature = "rgb"))]
+#[cfg(feature = "rgb")]
 pub fn decode_pixels<P: DecodePixel>(
     data: &[u8],
     stop: impl Stop,
@@ -232,7 +223,7 @@ where
 }
 
 /// Decode any PNM format to typed pixels with resource limits.
-#[cfg(all(feature = "pnm", feature = "rgb"))]
+#[cfg(feature = "rgb")]
 pub fn decode_pixels_with_limits<P: DecodePixel>(
     data: &[u8],
     limits: &Limits,
@@ -292,7 +283,7 @@ where
 // ── Typed pixel encode (rgb feature) ─────────────────────────────────
 
 /// Encode typed pixels as PPM (P6).
-#[cfg(all(feature = "pnm", feature = "rgb"))]
+#[cfg(feature = "rgb")]
 pub fn encode_ppm_pixels<P: EncodePixel>(
     pixels: &[P],
     width: u32,
@@ -306,7 +297,7 @@ where
 }
 
 /// Encode typed pixels as PGM (P5).
-#[cfg(all(feature = "pnm", feature = "rgb"))]
+#[cfg(feature = "rgb")]
 pub fn encode_pgm_pixels<P: EncodePixel>(
     pixels: &[P],
     width: u32,
@@ -320,7 +311,7 @@ where
 }
 
 /// Encode typed pixels as PAM (P7).
-#[cfg(all(feature = "pnm", feature = "rgb"))]
+#[cfg(feature = "rgb")]
 pub fn encode_pam_pixels<P: EncodePixel>(
     pixels: &[P],
     width: u32,
@@ -334,7 +325,7 @@ where
 }
 
 /// Encode typed pixels as PFM (floating-point).
-#[cfg(all(feature = "pnm", feature = "rgb"))]
+#[cfg(feature = "rgb")]
 pub fn encode_pfm_pixels<P: EncodePixel>(
     pixels: &[P],
     width: u32,
@@ -378,7 +369,7 @@ where
 // ── ImgVec/ImgRef API (imgref feature) ───────────────────────────────
 
 /// Decode any PNM format to an [`imgref::ImgVec`].
-#[cfg(all(feature = "pnm", feature = "imgref"))]
+#[cfg(feature = "imgref")]
 pub fn decode_img<P: DecodePixel>(
     data: &[u8],
     stop: impl Stop,
@@ -391,7 +382,7 @@ where
 }
 
 /// Decode any PNM format to an [`imgref::ImgVec`] with resource limits.
-#[cfg(all(feature = "pnm", feature = "imgref"))]
+#[cfg(feature = "imgref")]
 pub fn decode_img_with_limits<P: DecodePixel>(
     data: &[u8],
     limits: &Limits,
@@ -435,7 +426,7 @@ where
 ///
 /// The output buffer dimensions must match the decoded image exactly.
 /// Handles arbitrary stride (row-by-row copy).
-#[cfg(all(feature = "pnm", feature = "imgref"))]
+#[cfg(feature = "imgref")]
 pub fn decode_into<P: DecodePixel>(
     data: &[u8],
     output: imgref::ImgRefMut<'_, P>,
@@ -497,7 +488,7 @@ where
 /// Encode an [`imgref::ImgRef`] as PPM (P6).
 ///
 /// Handles arbitrary stride by copying row-by-row when needed.
-#[cfg(all(feature = "pnm", feature = "imgref"))]
+#[cfg(feature = "imgref")]
 pub fn encode_ppm_img<P: EncodePixel>(
     img: imgref::ImgRef<'_, P>,
     stop: impl Stop,
@@ -510,7 +501,7 @@ where
 }
 
 /// Encode an [`imgref::ImgRef`] as PGM (P5).
-#[cfg(all(feature = "pnm", feature = "imgref"))]
+#[cfg(feature = "imgref")]
 pub fn encode_pgm_img<P: EncodePixel>(
     img: imgref::ImgRef<'_, P>,
     stop: impl Stop,
@@ -523,7 +514,7 @@ where
 }
 
 /// Encode an [`imgref::ImgRef`] as PAM (P7).
-#[cfg(all(feature = "pnm", feature = "imgref"))]
+#[cfg(feature = "imgref")]
 pub fn encode_pam_img<P: EncodePixel>(
     img: imgref::ImgRef<'_, P>,
     stop: impl Stop,
@@ -536,7 +527,7 @@ where
 }
 
 /// Encode an [`imgref::ImgRef`] as PFM.
-#[cfg(all(feature = "pnm", feature = "imgref"))]
+#[cfg(feature = "imgref")]
 pub fn encode_pfm_img<P: EncodePixel>(
     img: imgref::ImgRef<'_, P>,
     stop: impl Stop,

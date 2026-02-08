@@ -8,6 +8,7 @@ description = "PNM/PAM/PFM image format decoder and encoder (P5, P6, P7, PFM) wi
 categories = ["multimedia::images"]
 keywords = ["image", "pnm", "pam", "ppm", "pgm"]
 repository = "https://github.com/imazen/zenpnm"
+documentation = "https://docs.rs/zenpnm"
 readme = "README.md"
 
 [dependencies]
@@ -20,16 +21,15 @@ thiserror = { version = "2.0", default-features = false }
 [dev-dependencies]
 
 [features]
-default = ["pnm"]
+default = []
 std = []
 
 # Format groups
-pnm = []         # P5 (PGM binary), P6 (PPM binary), P7 (PAM), PFM
 basic-bmp = []   # Basic uncompressed 24/32-bit BMP (not auto-detected, explicit use only)
 
 # Typed pixel support
 rgb = ["dep:rgb"]              # RGB8, RGBA8 etc. typed pixel encode/decode
 imgref = ["dep:imgref", "rgb"] # ImgVec/ImgRef 2D buffer support (implies rgb)
 
-# All formats
-all = ["pnm", "basic-bmp"]
+# All optional features
+all = ["basic-bmp", "rgb", "imgref"]

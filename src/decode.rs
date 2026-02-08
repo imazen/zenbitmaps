@@ -56,7 +56,7 @@ impl<'a> DecodeOutput<'a> {
 
     /// Reinterpret pixel data as typed pixel slice.
     ///
-    /// Returns [`PnmError::LayoutMismatch`] if the pixel layout doesn't match `P`.
+    /// Returns [`crate::PnmError::LayoutMismatch`] if the pixel layout doesn't match `P`.
     #[cfg(feature = "rgb")]
     pub fn as_pixels<P: crate::DecodePixel>(&self) -> Result<&[P], crate::PnmError>
     where
@@ -73,7 +73,7 @@ impl<'a> DecodeOutput<'a> {
 
     /// Convert to an [`imgref::ImgVec`] of typed pixels.
     ///
-    /// Returns [`PnmError::LayoutMismatch`] if the pixel layout doesn't match `P`.
+    /// Returns [`crate::PnmError::LayoutMismatch`] if the pixel layout doesn't match `P`.
     #[cfg(feature = "imgref")]
     pub fn to_imgvec<P: crate::DecodePixel>(&self) -> Result<imgref::ImgVec<P>, crate::PnmError>
     where

@@ -6,7 +6,7 @@ PNM/PAM/PFM image format decoder and encoder, with optional basic BMP support.
 
 ## Formats
 
-**PNM family** (`pnm` feature, on by default):
+**PNM family** (always available):
 - P5 (PGM binary) — grayscale, 8-bit and 16-bit
 - P6 (PPM binary) — RGB, 8-bit and 16-bit
 - P7 (PAM) — grayscale, RGB, RGBA, 8-bit and 16-bit
@@ -84,9 +84,11 @@ All public functions are flat, one-shot calls at crate root.
 
 ```toml
 [dependencies]
-zenpnm = "0.1"                    # PNM only (default)
-zenpnm = { version = "0.1", features = ["basic-bmp"] }  # PNM + BMP
-zenpnm = { version = "0.1", features = ["all"] }         # everything
+zenpnm = "0.1"                    # PNM (always included)
+zenpnm = { version = "0.1", features = ["basic-bmp"] }  # + BMP
+zenpnm = { version = "0.1", features = ["rgb"] }         # + typed pixel API
+zenpnm = { version = "0.1", features = ["imgref"] }      # + ImgVec/ImgRef (implies rgb)
+zenpnm = { version = "0.1", features = ["all"] }          # everything
 ```
 
 ## Credits

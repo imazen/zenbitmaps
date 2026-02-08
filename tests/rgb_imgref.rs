@@ -1,4 +1,4 @@
-#![cfg(all(feature = "pnm", feature = "imgref"))]
+#![cfg(feature = "imgref")]
 
 use enough::Unstoppable;
 use zenpnm::*;

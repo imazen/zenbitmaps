@@ -52,6 +52,7 @@ fn pgm_roundtrip_gray8() {
     assert!(decoded.is_borrowed());
 }
 
+#[cfg(feature = "basic-bmp")]
 #[test]
 fn bmp_roundtrip_rgb8() {
     let pixels = vec![
@@ -71,6 +72,7 @@ fn bmp_roundtrip_rgb8() {
     assert!(decode(&encoded, Unstoppable).is_err());
 }
 
+#[cfg(feature = "basic-bmp")]
 #[test]
 fn bmp_roundtrip_rgba8() {
     let pixels = vec![

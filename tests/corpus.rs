@@ -116,6 +116,7 @@ fn flat_pfm_roundtrip_rgbf32() {
 
 // ── BMP roundtrips ───────────────────────────────────────────────────
 
+#[cfg(feature = "basic-bmp")]
 #[test]
 fn flat_bmp_roundtrip() {
     let pixels = checkerboard(10, 8, 3);
@@ -125,6 +126,7 @@ fn flat_bmp_roundtrip() {
     assert!(!decoded.is_borrowed());
 }
 
+#[cfg(feature = "basic-bmp")]
 #[test]
 fn flat_bmp_rgba_roundtrip() {
     let pixels = noise_pattern(7, 5, 4);
@@ -153,6 +155,7 @@ fn single_pixel_pgm() {
     assert!(decoded.is_borrowed());
 }
 
+#[cfg(feature = "basic-bmp")]
 #[test]
 fn single_pixel_bmp() {
     let pixels = vec![255, 0, 128];
@@ -179,6 +182,7 @@ fn tall_image_pgm() {
     assert!(decoded.is_borrowed());
 }
 
+#[cfg(feature = "basic-bmp")]
 #[test]
 fn bmp_odd_width_padding() {
     let pixels = noise_pattern(3, 3, 3);
@@ -187,6 +191,7 @@ fn bmp_odd_width_padding() {
     assert_eq!(decoded.pixels(), &pixels[..]);
 }
 
+#[cfg(feature = "basic-bmp")]
 #[test]
 fn bmp_width_1_padding() {
     let pixels = vec![10, 20, 30, 40, 50, 60];
@@ -217,6 +222,7 @@ fn limits_max_height() {
     assert!(decode_with_limits(&encoded, &limits, Unstoppable).is_err());
 }
 
+#[cfg(feature = "basic-bmp")]
 #[test]
 fn limits_max_memory_bmp() {
     let encoded = encode_bmp(&[0u8; 12], 2, 2, PixelLayout::Rgb8, Unstoppable).unwrap();
@@ -248,6 +254,7 @@ fn decode_external_ppm_if_available() {
     }
 }
 
+#[cfg(feature = "basic-bmp")]
 #[test]
 fn decode_external_bmp_if_available() {
     let path = "/home/lilith/work/salzweg/test-assets/sunflower.bmp";
