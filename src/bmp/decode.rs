@@ -44,7 +44,7 @@ pub(crate) fn parse_bmp_header(data: &[u8]) -> Result<(u32, u32, PixelLayout), P
     Ok((width, height, layout))
 }
 
-/// Decode BMP pixel data, handling BGR→RGB, row flipping, and padding.
+/// Decode BMP pixel data, converting BGR→RGB and handling row flipping + padding.
 pub(crate) fn decode_bmp_pixels(
     data: &[u8],
     width: u32,
@@ -52,6 +52,47 @@ pub(crate) fn decode_bmp_pixels(
     layout: PixelLayout,
     stop: &dyn Stop,
 ) -> Result<Vec<u8>, PnmError> {
+    let (pixel_data, w, h, top_down) = validate_bmp_data(data, width, height)?;
+    match layout {
+        PixelLayout::Rgb8 => decode_24bit(pixel_data, w, h, top_down, stop),
+        PixelLayout::Rgba8 => decode_32bit(pixel_data, w, h, top_down, stop),
+        _ => Err(PnmError::UnsupportedVariant(alloc::format!(
+            "BMP layout {:?} not supported in pixel decoder",
+            layout
+        ))),
+    }
+}
+
+/// Decode BMP pixel data in native byte order (BGR/BGRA) — no channel swizzle.
+pub(crate) fn decode_bmp_pixels_native(
+    data: &[u8],
+    width: u32,
+    height: u32,
+    layout: PixelLayout,
+    stop: &dyn Stop,
+) -> Result<(Vec<u8>, PixelLayout), PnmError> {
+    let (pixel_data, w, h, top_down) = validate_bmp_data(data, width, height)?;
+    match layout {
+        PixelLayout::Rgb8 => {
+            let pixels = decode_24bit_native(pixel_data, w, h, top_down, stop)?;
+            Ok((pixels, PixelLayout::Bgr8))
+        }
+        PixelLayout::Rgba8 => {
+            let pixels = decode_32bit_native(pixel_data, w, h, top_down, stop)?;
+            Ok((pixels, PixelLayout::Bgra8))
+        }
+        _ => Err(PnmError::UnsupportedVariant(alloc::format!(
+            "BMP layout {:?} not supported in pixel decoder",
+            layout
+        ))),
+    }
+}
+
+fn validate_bmp_data(
+    data: &[u8],
+    width: u32,
+    height: u32,
+) -> Result<(&[u8], usize, usize, bool), PnmError> {
     let data_offset = u32::from_le_bytes([data[10], data[11], data[12], data[13]]) as usize;
     let height_raw = i32::from_le_bytes([data[22], data[23], data[24], data[25]]);
     let top_down = height_raw < 0;
@@ -67,18 +108,12 @@ pub(crate) fn decode_bmp_pixels(
         return Err(PnmError::UnexpectedEof);
     }
 
-    let pixel_data = &data[data_offset..];
-    let w = width as usize;
-    let h = height as usize;
-
-    match layout {
-        PixelLayout::Rgb8 => decode_24bit(pixel_data, w, h, top_down, stop),
-        PixelLayout::Rgba8 => decode_32bit(pixel_data, w, h, top_down, stop),
-        _ => Err(PnmError::UnsupportedVariant(alloc::format!(
-            "BMP layout {:?} not supported in pixel decoder",
-            layout
-        ))),
-    }
+    Ok((
+        &data[data_offset..],
+        width as usize,
+        height as usize,
+        top_down,
+    ))
 }
 
 fn decode_24bit(
@@ -173,6 +208,95 @@ fn decode_32bit(
             out.push(pixel_data[off]); // B
             out.push(pixel_data[off + 3]); // A
         }
+    }
+
+    Ok(out)
+}
+
+/// Decode 24-bit BMP preserving native BGR byte order (row flip only, no swizzle).
+fn decode_24bit_native(
+    pixel_data: &[u8],
+    w: usize,
+    h: usize,
+    top_down: bool,
+    stop: &dyn Stop,
+) -> Result<Vec<u8>, PnmError> {
+    let row_stride = w
+        .checked_mul(3)
+        .and_then(|r| r.checked_add(3))
+        .map(|r| r & !3)
+        .ok_or(PnmError::DimensionsTooLarge {
+            width: w as u32,
+            height: h as u32,
+        })?;
+    let needed = row_stride
+        .checked_mul(h)
+        .ok_or(PnmError::DimensionsTooLarge {
+            width: w as u32,
+            height: h as u32,
+        })?;
+    if pixel_data.len() < needed {
+        return Err(PnmError::UnexpectedEof);
+    }
+
+    let row_bytes = w * 3;
+    let out_size =
+        w.checked_mul(h)
+            .and_then(|wh| wh.checked_mul(3))
+            .ok_or(PnmError::DimensionsTooLarge {
+                width: w as u32,
+                height: h as u32,
+            })?;
+    let mut out = Vec::with_capacity(out_size);
+    for row in 0..h {
+        if row % 16 == 0 {
+            stop.check()?;
+        }
+        let src_row = if top_down { row } else { h - 1 - row };
+        let row_start = src_row * row_stride;
+        out.extend_from_slice(&pixel_data[row_start..row_start + row_bytes]);
+    }
+
+    Ok(out)
+}
+
+/// Decode 32-bit BMP preserving native BGRA byte order (row flip only, no swizzle).
+fn decode_32bit_native(
+    pixel_data: &[u8],
+    w: usize,
+    h: usize,
+    top_down: bool,
+    stop: &dyn Stop,
+) -> Result<Vec<u8>, PnmError> {
+    let row_stride = w.checked_mul(4).ok_or(PnmError::DimensionsTooLarge {
+        width: w as u32,
+        height: h as u32,
+    })?;
+    let needed = row_stride
+        .checked_mul(h)
+        .ok_or(PnmError::DimensionsTooLarge {
+            width: w as u32,
+            height: h as u32,
+        })?;
+    if pixel_data.len() < needed {
+        return Err(PnmError::UnexpectedEof);
+    }
+
+    let out_size =
+        w.checked_mul(h)
+            .and_then(|wh| wh.checked_mul(4))
+            .ok_or(PnmError::DimensionsTooLarge {
+                width: w as u32,
+                height: h as u32,
+            })?;
+    let mut out = Vec::with_capacity(out_size);
+    for row in 0..h {
+        if row % 16 == 0 {
+            stop.check()?;
+        }
+        let src_row = if top_down { row } else { h - 1 - row };
+        let row_start = src_row * row_stride;
+        out.extend_from_slice(&pixel_data[row_start..row_start + row_stride]);
     }
 
     Ok(out)

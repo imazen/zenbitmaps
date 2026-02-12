@@ -61,15 +61,23 @@ fn encode_24bit(
     write_bmp_header(&mut out, file_size, pixel_data_size, width, height, 24);
 
     let pad_bytes = row_stride - w * 3;
+    let is_bgr_native = matches!(layout, PixelLayout::Bgr8);
+    let src_bpp = layout.bytes_per_pixel();
     for row in (0..h).rev() {
         if row % 16 == 0 {
             stop.check()?;
         }
-        for col in 0..w {
-            let (r, g, b) = get_rgb(pixels, row * w + col, layout)?;
-            out.push(b);
-            out.push(g);
-            out.push(r);
+        if is_bgr_native {
+            // BGR→BMP24: already in native byte order, direct copy
+            let row_start = row * w * src_bpp;
+            out.extend_from_slice(&pixels[row_start..row_start + w * 3]);
+        } else {
+            for col in 0..w {
+                let (r, g, b) = get_rgb(pixels, row * w + col, layout)?;
+                out.push(b);
+                out.push(g);
+                out.push(r);
+            }
         }
         out.extend(core::iter::repeat_n(0u8, pad_bytes));
     }
@@ -99,16 +107,25 @@ fn encode_32bit(
     let mut out = Vec::with_capacity(file_size);
     write_bmp_header(&mut out, file_size, pixel_data_size, width, height, 32);
 
+    // Only Bgra8 can use the direct copy fast path. Bgrx8 must go through
+    // get_rgba() which forces the padding byte to 255 (opaque).
+    let is_bgra_native = matches!(layout, PixelLayout::Bgra8);
     for row in (0..h).rev() {
         if row % 16 == 0 {
             stop.check()?;
         }
-        for col in 0..w {
-            let (r, g, b, a) = get_rgba(pixels, row * w + col, layout)?;
-            out.push(b);
-            out.push(g);
-            out.push(r);
-            out.push(a);
+        if is_bgra_native {
+            // BGRA/BGRX→BMP32: already in native byte order, direct copy
+            let row_start = row * w * 4;
+            out.extend_from_slice(&pixels[row_start..row_start + w * 4]);
+        } else {
+            for col in 0..w {
+                let (r, g, b, a) = get_rgba(pixels, row * w + col, layout)?;
+                out.push(b);
+                out.push(g);
+                out.push(r);
+                out.push(a);
+            }
         }
     }
 
@@ -157,7 +174,7 @@ fn get_rgb(pixels: &[u8], idx: usize, layout: PixelLayout) -> Result<(u8, u8, u8
             let off = idx * 4;
             (pixels[off], pixels[off + 1], pixels[off + 2])
         }
-        PixelLayout::Bgra8 => {
+        PixelLayout::Bgra8 | PixelLayout::Bgrx8 => {
             let off = idx * 4;
             (pixels[off + 2], pixels[off + 1], pixels[off])
         }
@@ -193,6 +210,10 @@ fn get_rgba(pixels: &[u8], idx: usize, layout: PixelLayout) -> Result<(u8, u8, u
                 pixels[off],
                 pixels[off + 3],
             )
+        }
+        PixelLayout::Bgrx8 => {
+            let off = idx * 4;
+            (pixels[off + 2], pixels[off + 1], pixels[off], 255)
         }
         PixelLayout::Rgb8 => {
             let off = idx * 3;

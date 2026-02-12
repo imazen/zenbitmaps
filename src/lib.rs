@@ -183,6 +183,26 @@ pub fn decode_bmp_with_limits<'a>(
     bmp::decode(data, Some(limits), &stop)
 }
 
+/// Decode BMP data in native byte order (BGR for 24-bit, BGRA for 32-bit).
+///
+/// Unlike [`decode_bmp`], this skips the BGR→RGB channel swizzle entirely,
+/// returning pixels in the BMP-native byte order. The output layout will be
+/// [`PixelLayout::Bgr8`] or [`PixelLayout::Bgra8`].
+#[cfg(feature = "basic-bmp")]
+pub fn decode_bmp_native(data: &[u8], stop: impl Stop) -> Result<DecodeOutput<'_>, PnmError> {
+    bmp::decode_native(data, None, &stop)
+}
+
+/// Decode BMP in native byte order with resource limits.
+#[cfg(feature = "basic-bmp")]
+pub fn decode_bmp_native_with_limits<'a>(
+    data: &'a [u8],
+    limits: &'a Limits,
+    stop: impl Stop,
+) -> Result<DecodeOutput<'a>, PnmError> {
+    bmp::decode_native(data, Some(limits), &stop)
+}
+
 /// Encode pixels as 24-bit BMP (RGB, no alpha).
 #[cfg(feature = "basic-bmp")]
 pub fn encode_bmp(
@@ -270,7 +290,7 @@ fn decoded_to_pixels<P: DecodePixel>(
 where
     [u8]: rgb::AsPixels<P>,
 {
-    if decoded.layout != P::layout() {
+    if !decoded.layout.is_memory_compatible(P::layout()) {
         return Err(PnmError::LayoutMismatch {
             expected: P::layout(),
             actual: decoded.layout,
@@ -461,7 +481,7 @@ fn copy_decoded_into<P: DecodePixel>(
 where
     [u8]: rgb::AsPixels<P>,
 {
-    if decoded.layout != P::layout() {
+    if !decoded.layout.is_memory_compatible(P::layout()) {
         return Err(PnmError::LayoutMismatch {
             expected: P::layout(),
             actual: decoded.layout,

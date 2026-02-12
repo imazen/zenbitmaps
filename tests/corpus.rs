@@ -135,6 +135,176 @@ fn flat_bmp_rgba_roundtrip() {
     assert_eq!(decoded.pixels(), &pixels[..]);
 }
 
+// ── BGR/BGRA/BGRX support ───────────────────────────────────────────
+
+/// Build BGRA pixels: B at [0], G at [1], R at [2], A at [3].
+fn bgra_pattern(w: usize, h: usize) -> Vec<u8> {
+    let mut pixels = vec![0u8; w * h * 4];
+    let mut state: u32 = 0xCAFE_BABE;
+    for chunk in pixels.chunks_exact_mut(4) {
+        state ^= state << 13;
+        state ^= state >> 17;
+        state ^= state << 5;
+        chunk[0] = state as u8; // B
+        chunk[1] = (state >> 8) as u8; // G
+        chunk[2] = (state >> 16) as u8; // R
+        chunk[3] = (state >> 24) as u8; // A
+    }
+    pixels
+}
+
+/// Build BGR pixels: B at [0], G at [1], R at [2].
+fn bgr_pattern(w: usize, h: usize) -> Vec<u8> {
+    let mut pixels = vec![0u8; w * h * 3];
+    let mut state: u32 = 0xBADF00D;
+    for chunk in pixels.chunks_exact_mut(3) {
+        state ^= state << 13;
+        state ^= state >> 17;
+        state ^= state << 5;
+        chunk[0] = state as u8; // B
+        chunk[1] = (state >> 8) as u8; // G
+        chunk[2] = (state >> 16) as u8; // R
+    }
+    pixels
+}
+
+#[test]
+fn pgm_from_bgr_correct_luminance() {
+    // Pure red in BGR: B=0, G=0, R=255
+    let bgr_red = vec![0u8, 0, 255];
+    let pgm = encode_pgm(&bgr_red, 1, 1, PixelLayout::Bgr8, Unstoppable).unwrap();
+    let decoded = decode(&pgm, Unstoppable).unwrap();
+    // Luminance of pure red: 255*299/1000 ≈ 76
+    assert_eq!(decoded.pixels(), &[76]);
+
+    // Pure blue in BGR: B=255, G=0, R=0
+    let bgr_blue = vec![255u8, 0, 0];
+    let pgm = encode_pgm(&bgr_blue, 1, 1, PixelLayout::Bgr8, Unstoppable).unwrap();
+    let decoded = decode(&pgm, Unstoppable).unwrap();
+    // Luminance of pure blue: 255*114/1000 ≈ 29
+    assert_eq!(decoded.pixels(), &[29]);
+}
+
+#[test]
+fn pgm_from_bgra_correct_luminance() {
+    // Pure red in BGRA: B=0, G=0, R=255, A=255
+    let bgra_red = vec![0u8, 0, 255, 255];
+    let pgm = encode_pgm(&bgra_red, 1, 1, PixelLayout::Bgra8, Unstoppable).unwrap();
+    let decoded = decode(&pgm, Unstoppable).unwrap();
+    assert_eq!(decoded.pixels(), &[76]);
+}
+
+#[test]
+fn pgm_from_bgrx_correct_luminance() {
+    // Pure red in BGRX: B=0, G=0, R=255, X=0
+    let bgrx_red = vec![0u8, 0, 255, 0];
+    let pgm = encode_pgm(&bgrx_red, 1, 1, PixelLayout::Bgrx8, Unstoppable).unwrap();
+    let decoded = decode(&pgm, Unstoppable).unwrap();
+    assert_eq!(decoded.pixels(), &[76]);
+}
+
+#[test]
+fn ppm_from_bgr_roundtrip_via_rgb() {
+    let bgr = bgr_pattern(4, 3);
+    let ppm = encode_ppm(&bgr, 4, 3, PixelLayout::Bgr8, Unstoppable).unwrap();
+    let decoded = decode(&ppm, Unstoppable).unwrap();
+    assert_eq!(decoded.layout, PixelLayout::Rgb8);
+    // Verify channel swap: BGR[B,G,R] → RGB[R,G,B]
+    for i in 0..(4 * 3) {
+        let b = bgr[i * 3];
+        let g = bgr[i * 3 + 1];
+        let r = bgr[i * 3 + 2];
+        let off = i * 3;
+        assert_eq!(decoded.pixels()[off], r);
+        assert_eq!(decoded.pixels()[off + 1], g);
+        assert_eq!(decoded.pixels()[off + 2], b);
+    }
+}
+
+#[test]
+fn ppm_from_bgra_drops_alpha() {
+    let bgra = bgra_pattern(3, 2);
+    let ppm = encode_ppm(&bgra, 3, 2, PixelLayout::Bgra8, Unstoppable).unwrap();
+    let decoded = decode(&ppm, Unstoppable).unwrap();
+    assert_eq!(decoded.layout, PixelLayout::Rgb8);
+    for i in 0..(3 * 2) {
+        let b = bgra[i * 4];
+        let g = bgra[i * 4 + 1];
+        let r = bgra[i * 4 + 2];
+        let off = i * 3;
+        assert_eq!(decoded.pixels()[off], r);
+        assert_eq!(decoded.pixels()[off + 1], g);
+        assert_eq!(decoded.pixels()[off + 2], b);
+    }
+}
+
+#[cfg(feature = "basic-bmp")]
+#[test]
+fn bmp_encode_from_bgra_roundtrip() {
+    let bgra = bgra_pattern(5, 4);
+    // Encode BGRA → 32-bit BMP, decode back as RGBA
+    let encoded = encode_bmp_rgba(&bgra, 5, 4, PixelLayout::Bgra8, Unstoppable).unwrap();
+    let decoded = decode_bmp(&encoded, Unstoppable).unwrap();
+    assert_eq!(decoded.layout, PixelLayout::Rgba8);
+    // Verify BGRA→RGBA conversion happened
+    for i in 0..(5 * 4) {
+        let b = bgra[i * 4];
+        let g = bgra[i * 4 + 1];
+        let r = bgra[i * 4 + 2];
+        let a = bgra[i * 4 + 3];
+        let off = i * 4;
+        assert_eq!(decoded.pixels()[off], r, "R mismatch at pixel {i}");
+        assert_eq!(decoded.pixels()[off + 1], g, "G mismatch at pixel {i}");
+        assert_eq!(decoded.pixels()[off + 2], b, "B mismatch at pixel {i}");
+        assert_eq!(decoded.pixels()[off + 3], a, "A mismatch at pixel {i}");
+    }
+}
+
+#[cfg(feature = "basic-bmp")]
+#[test]
+fn bmp_native_decode_bgra_roundtrip() {
+    let bgra = bgra_pattern(5, 4);
+    // Encode BGRA → 32-bit BMP (native fast path), decode as native BGRA
+    let encoded = encode_bmp_rgba(&bgra, 5, 4, PixelLayout::Bgra8, Unstoppable).unwrap();
+    let decoded = decode_bmp_native(&encoded, Unstoppable).unwrap();
+    assert_eq!(decoded.layout, PixelLayout::Bgra8);
+    // Should be identical to input — no channel swizzle
+    assert_eq!(decoded.pixels(), &bgra[..]);
+}
+
+#[cfg(feature = "basic-bmp")]
+#[test]
+fn bmp_native_decode_bgr_roundtrip() {
+    let bgr = bgr_pattern(6, 3);
+    // Encode BGR → 24-bit BMP (native fast path), decode as native BGR
+    let encoded = encode_bmp(&bgr, 6, 3, PixelLayout::Bgr8, Unstoppable).unwrap();
+    let decoded = decode_bmp_native(&encoded, Unstoppable).unwrap();
+    assert_eq!(decoded.layout, PixelLayout::Bgr8);
+    assert_eq!(decoded.pixels(), &bgr[..]);
+}
+
+#[cfg(feature = "basic-bmp")]
+#[test]
+fn bmp_encode_from_bgrx_roundtrip() {
+    // BGRX: 4th byte is padding (should become 255 in output)
+    let bgrx: Vec<u8> = (0..20)
+        .flat_map(|i| [i * 10, i * 5, 200 - i * 8, 0u8]) // B, G, R, X=0
+        .collect();
+    let encoded = encode_bmp_rgba(&bgrx, 5, 4, PixelLayout::Bgrx8, Unstoppable).unwrap();
+    let decoded = decode_bmp(&encoded, Unstoppable).unwrap();
+    assert_eq!(decoded.layout, PixelLayout::Rgba8);
+    for i in 0..20 {
+        let b = bgrx[i * 4];
+        let g = bgrx[i * 4 + 1];
+        let r = bgrx[i * 4 + 2];
+        let off = i * 4;
+        assert_eq!(decoded.pixels()[off], r);
+        assert_eq!(decoded.pixels()[off + 1], g);
+        assert_eq!(decoded.pixels()[off + 2], b);
+        assert_eq!(decoded.pixels()[off + 3], 255, "BGRX alpha should be 255");
+    }
+}
+
 // ── Edge cases ───────────────────────────────────────────────────────
 
 #[test]

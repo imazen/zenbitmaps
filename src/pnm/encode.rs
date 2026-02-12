@@ -58,27 +58,51 @@ fn encode_pgm(
         PixelLayout::Gray8 => {
             out.extend_from_slice(&pixels[..w * h]);
         }
-        PixelLayout::Rgb8 | PixelLayout::Bgr8 => {
-            let bpp = 3;
+        PixelLayout::Rgb8 => {
             for i in 0..(w * h) {
                 if i % w.saturating_mul(16).max(1) == 0 {
                     stop.check()?;
                 }
-                let r = pixels[i * bpp] as u32;
-                let g = pixels[i * bpp + 1] as u32;
-                let b = pixels[i * bpp + 2] as u32;
+                let off = i * 3;
+                let r = pixels[off] as u32;
+                let g = pixels[off + 1] as u32;
+                let b = pixels[off + 2] as u32;
                 out.push(((r * 299 + g * 587 + b * 114 + 500) / 1000) as u8);
             }
         }
-        PixelLayout::Rgba8 | PixelLayout::Bgra8 => {
-            let bpp = 4;
+        PixelLayout::Bgr8 => {
             for i in 0..(w * h) {
                 if i % w.saturating_mul(16).max(1) == 0 {
                     stop.check()?;
                 }
-                let r = pixels[i * bpp] as u32;
-                let g = pixels[i * bpp + 1] as u32;
-                let b = pixels[i * bpp + 2] as u32;
+                let off = i * 3;
+                let b = pixels[off] as u32;
+                let g = pixels[off + 1] as u32;
+                let r = pixels[off + 2] as u32;
+                out.push(((r * 299 + g * 587 + b * 114 + 500) / 1000) as u8);
+            }
+        }
+        PixelLayout::Rgba8 => {
+            for i in 0..(w * h) {
+                if i % w.saturating_mul(16).max(1) == 0 {
+                    stop.check()?;
+                }
+                let off = i * 4;
+                let r = pixels[off] as u32;
+                let g = pixels[off + 1] as u32;
+                let b = pixels[off + 2] as u32;
+                out.push(((r * 299 + g * 587 + b * 114 + 500) / 1000) as u8);
+            }
+        }
+        PixelLayout::Bgra8 | PixelLayout::Bgrx8 => {
+            for i in 0..(w * h) {
+                if i % w.saturating_mul(16).max(1) == 0 {
+                    stop.check()?;
+                }
+                let off = i * 4;
+                let b = pixels[off] as u32;
+                let g = pixels[off + 1] as u32;
+                let r = pixels[off + 2] as u32;
                 out.push(((r * 299 + g * 587 + b * 114 + 500) / 1000) as u8);
             }
         }
@@ -132,7 +156,7 @@ fn encode_ppm(
                 out.push(pixels[off + 2]);
             }
         }
-        PixelLayout::Bgra8 => {
+        PixelLayout::Bgra8 | PixelLayout::Bgrx8 => {
             for i in 0..(w * h) {
                 if i % w.saturating_mul(16).max(1) == 0 {
                     stop.check()?;

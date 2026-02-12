@@ -14,6 +14,8 @@ pub enum PixelLayout {
     Bgr8,
     /// 4 channels, 8-bit BGRA.
     Bgra8,
+    /// 4 channels, 8-bit BGRX (opaque; 4th byte is padding, not alpha).
+    Bgrx8,
     /// Single channel, 32-bit float grayscale.
     GrayF32,
     /// 3 channels, 32-bit float RGB.
@@ -27,7 +29,7 @@ impl PixelLayout {
             Self::Gray8 => 1,
             Self::Gray16 => 2,
             Self::Rgb8 | Self::Bgr8 => 3,
-            Self::Rgba8 | Self::Bgra8 => 4,
+            Self::Rgba8 | Self::Bgra8 | Self::Bgrx8 => 4,
             Self::GrayF32 => 4,
             Self::RgbF32 => 12,
         }
@@ -38,7 +40,20 @@ impl PixelLayout {
         match self {
             Self::Gray8 | Self::Gray16 | Self::GrayF32 => 1,
             Self::Rgb8 | Self::Bgr8 | Self::RgbF32 => 3,
-            Self::Rgba8 | Self::Bgra8 => 4,
+            Self::Rgba8 | Self::Bgra8 | Self::Bgrx8 => 4,
         }
+    }
+
+    /// Whether this layout has the same memory representation as `other`.
+    ///
+    /// For example, `Bgra8` and `Bgrx8` are compatible (same 4-byte B,G,R,X/A layout).
+    pub fn is_memory_compatible(&self, other: PixelLayout) -> bool {
+        if *self == other {
+            return true;
+        }
+        matches!(
+            (*self, other),
+            (Self::Bgra8, Self::Bgrx8) | (Self::Bgrx8, Self::Bgra8)
+        )
     }
 }

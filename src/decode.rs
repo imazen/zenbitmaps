@@ -62,7 +62,7 @@ impl<'a> DecodeOutput<'a> {
     where
         [u8]: rgb::AsPixels<P>,
     {
-        if self.layout != P::layout() {
+        if !self.layout.is_memory_compatible(P::layout()) {
             return Err(crate::PnmError::LayoutMismatch {
                 expected: P::layout(),
                 actual: self.layout,
