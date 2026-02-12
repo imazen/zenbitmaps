@@ -3,7 +3,7 @@
 //! Credits: Implementation draws from [zune-ppm](https://github.com/etemesi254/zune-image)
 //! by Caleb Etemesi (MIT/Apache-2.0/Zlib licensed).
 
-mod decode;
+pub(crate) mod decode;
 mod encode;
 
 use crate::decode::DecodeOutput;

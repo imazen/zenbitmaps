@@ -64,6 +64,9 @@ mod bmp;
 #[cfg(feature = "rgb")]
 mod pixel_traits;
 
+#[cfg(feature = "zencodec")]
+mod zencodec;
+
 pub use decode::DecodeOutput;
 pub use enough::{Stop, Unstoppable};
 pub use error::PnmError;
@@ -72,6 +75,9 @@ pub use pixel::PixelLayout;
 
 #[cfg(feature = "rgb")]
 pub use pixel_traits::{DecodePixel, EncodePixel};
+
+#[cfg(feature = "zencodec")]
+pub use zencodec::{PnmDecoding, PnmEncoding};
 
 // Re-export rgb pixel types for convenience
 #[cfg(feature = "rgb")]
