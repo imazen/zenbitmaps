@@ -181,6 +181,68 @@ impl<'a> zencodec_types::EncodingJob<'a> for PnmEncodingJob<'a> {
         )?;
         Ok(EncodeOutput::new(encoded, ImageFormat::Pnm))
     }
+
+    fn encode_rgb_f32(
+        self,
+        img: imgref::ImgRef<'_, rgb::Rgb<f32>>,
+    ) -> Result<EncodeOutput, PnmError> {
+        let w = img.width() as u32;
+        let h = img.height() as u32;
+        let (buf, _, _) = img.to_contiguous_buf();
+        let bytes = rgb::ComponentBytes::as_bytes(buf.as_ref());
+        let encoded = pnm::encode(
+            bytes,
+            w,
+            h,
+            crate::PixelLayout::RgbF32,
+            pnm::PnmFormat::Pfm,
+            &enough::Unstoppable,
+        )?;
+        Ok(EncodeOutput::new(encoded, ImageFormat::Pnm))
+    }
+
+    fn encode_rgba_f32(
+        self,
+        img: imgref::ImgRef<'_, rgb::Rgba<f32>>,
+    ) -> Result<EncodeOutput, PnmError> {
+        // PFM has no alpha channel — drop alpha and write PFM color.
+        let w = img.width() as u32;
+        let h = img.height() as u32;
+        let (buf, _, _) = img.to_contiguous_buf();
+        let rgb_pixels: Vec<rgb::Rgb<f32>> = buf
+            .iter()
+            .map(|px| rgb::Rgb { r: px.r, g: px.g, b: px.b })
+            .collect();
+        let bytes = rgb::ComponentBytes::as_bytes(rgb_pixels.as_slice());
+        let encoded = pnm::encode(
+            bytes,
+            w,
+            h,
+            crate::PixelLayout::RgbF32,
+            pnm::PnmFormat::Pfm,
+            &enough::Unstoppable,
+        )?;
+        Ok(EncodeOutput::new(encoded, ImageFormat::Pnm))
+    }
+
+    fn encode_gray_f32(
+        self,
+        img: imgref::ImgRef<'_, rgb::Gray<f32>>,
+    ) -> Result<EncodeOutput, PnmError> {
+        let w = img.width() as u32;
+        let h = img.height() as u32;
+        let (buf, _, _) = img.to_contiguous_buf();
+        let bytes = rgb::ComponentBytes::as_bytes(buf.as_ref());
+        let encoded = pnm::encode(
+            bytes,
+            w,
+            h,
+            crate::PixelLayout::GrayF32,
+            pnm::PnmFormat::Pfm,
+            &enough::Unstoppable,
+        )?;
+        Ok(EncodeOutput::new(encoded, ImageFormat::Pnm))
+    }
 }
 
 // ── PnmDecoding ──────────────────────────────────────────────────────
@@ -338,6 +400,51 @@ impl<'a> zencodec_types::DecodingJob<'a> for PnmDecodingJob<'a> {
             for (s, d) in src_row[..n].iter().zip(dst_row[..n].iter_mut()) {
                 *d = rgb::alt::BGRA { b: s.b, g: s.g, r: s.r, a: 255 };
             }
+        }
+        Ok(info)
+    }
+
+    fn decode_into_rgb_f32(
+        self,
+        data: &[u8],
+        mut dst: imgref::ImgRefMut<'_, rgb::Rgb<f32>>,
+    ) -> Result<ImageInfo, PnmError> {
+        let output = self.decode(data)?;
+        let info = output.info().clone();
+        let src = output.into_rgb_f32();
+        for (src_row, dst_row) in src.as_ref().rows().zip(dst.rows_mut()) {
+            let n = src_row.len().min(dst_row.len());
+            dst_row[..n].copy_from_slice(&src_row[..n]);
+        }
+        Ok(info)
+    }
+
+    fn decode_into_rgba_f32(
+        self,
+        data: &[u8],
+        mut dst: imgref::ImgRefMut<'_, rgb::Rgba<f32>>,
+    ) -> Result<ImageInfo, PnmError> {
+        let output = self.decode(data)?;
+        let info = output.info().clone();
+        let src = output.into_rgba_f32();
+        for (src_row, dst_row) in src.as_ref().rows().zip(dst.rows_mut()) {
+            let n = src_row.len().min(dst_row.len());
+            dst_row[..n].copy_from_slice(&src_row[..n]);
+        }
+        Ok(info)
+    }
+
+    fn decode_into_gray_f32(
+        self,
+        data: &[u8],
+        mut dst: imgref::ImgRefMut<'_, rgb::Gray<f32>>,
+    ) -> Result<ImageInfo, PnmError> {
+        let output = self.decode(data)?;
+        let info = output.info().clone();
+        let src = output.into_gray_f32();
+        for (src_row, dst_row) in src.as_ref().rows().zip(dst.rows_mut()) {
+            let n = src_row.len().min(dst_row.len());
+            dst_row[..n].copy_from_slice(&src_row[..n]);
         }
         Ok(info)
     }
@@ -662,6 +769,99 @@ mod tests {
         for px in &result {
             assert_eq!(px.a, 255);
         }
+    }
+
+    #[test]
+    fn encode_decode_rgb_f32_roundtrip() {
+        let pixels = vec![
+            rgb::Rgb { r: 0.0f32, g: 0.5, b: 1.0 },
+            rgb::Rgb { r: 0.25, g: 0.75, b: 0.125 },
+            rgb::Rgb { r: 1.0, g: 0.0, b: 0.0 },
+            rgb::Rgb { r: 0.5, g: 0.5, b: 0.5 },
+        ];
+        let img = imgref::ImgVec::new(pixels.clone(), 2, 2);
+        let enc = PnmEncoding::new();
+        let output = enc.encode_rgb_f32(img.as_ref()).unwrap();
+        assert_eq!(output.format(), ImageFormat::Pnm);
+
+        // Decode and verify f32 values survive PFM roundtrip
+        let dec = PnmDecoding::new();
+        let decoded = dec.decode(output.bytes()).unwrap();
+        let rgb_img = decoded.into_rgb_f32();
+        let buf = rgb_img.buf();
+        for (orig, decoded) in pixels.iter().zip(buf.iter()) {
+            assert!((orig.r - decoded.r).abs() < 1e-6);
+            assert!((orig.g - decoded.g).abs() < 1e-6);
+            assert!((orig.b - decoded.b).abs() < 1e-6);
+        }
+    }
+
+    #[test]
+    fn encode_decode_gray_f32_roundtrip() {
+        let pixels = vec![
+            rgb::Gray::new(0.0f32),
+            rgb::Gray::new(0.25),
+            rgb::Gray::new(0.5),
+            rgb::Gray::new(1.0),
+        ];
+        let img = imgref::ImgVec::new(pixels.clone(), 2, 2);
+        let enc = PnmEncoding::new();
+        let output = enc.encode_gray_f32(img.as_ref()).unwrap();
+
+        let dec = PnmDecoding::new();
+        let decoded = dec.decode(output.bytes()).unwrap();
+        let gray_img = decoded.into_gray_f32();
+        let buf = gray_img.buf();
+        for (orig, decoded) in pixels.iter().zip(buf.iter()) {
+            assert!((orig.value() - decoded.value()).abs() < 1e-6);
+        }
+    }
+
+    #[test]
+    fn encode_rgba_f32_drops_alpha() {
+        // RGBA f32 encodes to PFM (no alpha), verify RGB values survive
+        let pixels = vec![
+            rgb::Rgba { r: 0.5f32, g: 0.25, b: 0.75, a: 0.1 },
+            rgb::Rgba { r: 1.0, g: 0.0, b: 0.0, a: 0.5 },
+            rgb::Rgba { r: 0.0, g: 1.0, b: 0.0, a: 0.9 },
+            rgb::Rgba { r: 0.0, g: 0.0, b: 1.0, a: 0.0 },
+        ];
+        let img = imgref::ImgVec::new(pixels.clone(), 2, 2);
+        let enc = PnmEncoding::new();
+        let output = enc.encode_rgba_f32(img.as_ref()).unwrap();
+
+        let dec = PnmDecoding::new();
+        let decoded = dec.decode(output.bytes()).unwrap();
+        let rgb_img = decoded.into_rgb_f32();
+        let buf = rgb_img.buf();
+        for (orig, decoded) in pixels.iter().zip(buf.iter()) {
+            assert!((orig.r - decoded.r).abs() < 1e-6);
+            assert!((orig.g - decoded.g).abs() < 1e-6);
+            assert!((orig.b - decoded.b).abs() < 1e-6);
+        }
+    }
+
+    #[test]
+    fn decode_into_rgb_f32_from_u8() {
+        // Encode as PPM (u8), then decode_into_rgb_f32 — verifies u8→f32 path
+        let pixels = vec![
+            rgb::Rgb { r: 0u8, g: 128, b: 255 },
+            rgb::Rgb { r: 255, g: 0, b: 128 },
+            rgb::Rgb { r: 64, g: 192, b: 32 },
+            rgb::Rgb { r: 100, g: 100, b: 100 },
+        ];
+        let img = imgref::ImgVec::new(pixels.clone(), 2, 2);
+        let enc = PnmEncoding::new();
+        let output = enc.encode_rgb8(img.as_ref()).unwrap();
+
+        let dec = PnmDecoding::new();
+        let buf = vec![rgb::Rgb { r: 0.0f32, g: 0.0, b: 0.0 }; 4];
+        let mut dst = imgref::ImgVec::new(buf, 2, 2);
+        dec.decode_into_rgb_f32(output.bytes(), dst.as_mut()).unwrap();
+        let result = dst.into_buf();
+        assert!((result[0].r - 0.0).abs() < 1e-6);
+        assert!((result[0].g - 128.0 / 255.0).abs() < 1e-3);
+        assert!((result[0].b - 1.0).abs() < 1e-6);
     }
 
     #[test]
