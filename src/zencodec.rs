@@ -12,9 +12,7 @@ use crate::pnm;
 
 // ── Capabilities ─────────────────────────────────────────────────────
 
-static ENCODE_CAPS: CodecCapabilities = CodecCapabilities::new()
-    .with_native_gray(true)
-    .with_cheap_probe(true);
+static ENCODE_CAPS: CodecCapabilities = CodecCapabilities::new().with_native_gray(true);
 
 static DECODE_CAPS: CodecCapabilities = CodecCapabilities::new()
     .with_native_gray(true)
@@ -77,12 +75,10 @@ impl<'a> zencodec_types::EncodingJob<'a> for PnmEncodingJob<'a> {
     type Error = PnmError;
 
     fn with_stop(self, _stop: &'a dyn Stop) -> Self {
-        // PNM encoding is fast, no cancellation support
         self
     }
 
     fn with_metadata(self, _meta: &'a ImageMetadata<'a>) -> Self {
-        // PNM has no metadata support (no ICC/EXIF/XMP)
         self
     }
 
@@ -95,9 +91,12 @@ impl<'a> zencodec_types::EncodingJob<'a> for PnmEncodingJob<'a> {
         self,
         img: imgref::ImgRef<'_, rgb::Rgb<u8>>,
     ) -> Result<EncodeOutput, PnmError> {
-        let (bytes, w, h) = collect_img_bytes_rgb(img);
+        let w = img.width() as u32;
+        let h = img.height() as u32;
+        let (buf, _, _) = img.to_contiguous_buf();
+        let bytes = rgb::ComponentBytes::as_bytes(buf.as_ref());
         let encoded = pnm::encode(
-            &bytes,
+            bytes,
             w,
             h,
             crate::PixelLayout::Rgb8,
@@ -111,9 +110,12 @@ impl<'a> zencodec_types::EncodingJob<'a> for PnmEncodingJob<'a> {
         self,
         img: imgref::ImgRef<'_, rgb::Rgba<u8>>,
     ) -> Result<EncodeOutput, PnmError> {
-        let (bytes, w, h) = collect_img_bytes_rgba(img);
+        let w = img.width() as u32;
+        let h = img.height() as u32;
+        let (buf, _, _) = img.to_contiguous_buf();
+        let bytes = rgb::ComponentBytes::as_bytes(buf.as_ref());
         let encoded = pnm::encode(
-            &bytes,
+            bytes,
             w,
             h,
             crate::PixelLayout::Rgba8,
@@ -127,13 +129,54 @@ impl<'a> zencodec_types::EncodingJob<'a> for PnmEncodingJob<'a> {
         self,
         img: imgref::ImgRef<'_, rgb::Gray<u8>>,
     ) -> Result<EncodeOutput, PnmError> {
-        let (bytes, w, h) = collect_img_bytes_gray(img);
+        let w = img.width() as u32;
+        let h = img.height() as u32;
+        let (buf, _, _) = img.to_contiguous_buf();
+        let bytes = rgb::ComponentBytes::as_bytes(buf.as_ref());
         let encoded = pnm::encode(
-            &bytes,
+            bytes,
             w,
             h,
             crate::PixelLayout::Gray8,
             pnm::PnmFormat::Pgm,
+            &enough::Unstoppable,
+        )?;
+        Ok(EncodeOutput::new(encoded, ImageFormat::Pnm))
+    }
+
+    fn encode_bgra8(
+        self,
+        img: imgref::ImgRef<'_, rgb::alt::BGRA<u8>>,
+    ) -> Result<EncodeOutput, PnmError> {
+        let w = img.width() as u32;
+        let h = img.height() as u32;
+        let (buf, _, _) = img.to_contiguous_buf();
+        let bytes = rgb::ComponentBytes::as_bytes(buf.as_ref());
+        let encoded = pnm::encode(
+            bytes,
+            w,
+            h,
+            crate::PixelLayout::Bgra8,
+            pnm::PnmFormat::Ppm,
+            &enough::Unstoppable,
+        )?;
+        Ok(EncodeOutput::new(encoded, ImageFormat::Pnm))
+    }
+
+    fn encode_bgrx8(
+        self,
+        img: imgref::ImgRef<'_, rgb::alt::BGRA<u8>>,
+    ) -> Result<EncodeOutput, PnmError> {
+        let w = img.width() as u32;
+        let h = img.height() as u32;
+        let (buf, _, _) = img.to_contiguous_buf();
+        let bytes = rgb::ComponentBytes::as_bytes(buf.as_ref());
+        let encoded = pnm::encode(
+            bytes,
+            w,
+            h,
+            crate::PixelLayout::Bgrx8,
+            pnm::PnmFormat::Ppm,
             &enough::Unstoppable,
         )?;
         Ok(EncodeOutput::new(encoded, ImageFormat::Pnm))
@@ -199,7 +242,6 @@ impl<'a> zencodec_types::DecodingJob<'a> for PnmDecodingJob<'a> {
     type Error = PnmError;
 
     fn with_stop(self, _stop: &'a dyn Stop) -> Self {
-        // PNM decoding is fast, no cancellation support
         self
     }
 
@@ -211,10 +253,14 @@ impl<'a> zencodec_types::DecodingJob<'a> for PnmDecodingJob<'a> {
     fn decode(self, data: &[u8]) -> Result<DecodeOutput, PnmError> {
         let limits = self.limits.as_ref().or(self.config.limits.as_ref());
         let decoded = pnm::decode(data, limits, &enough::Unstoppable)?;
-        let info = {
-            let header = pnm::decode::parse_header(data)?;
-            header_to_image_info(&header)
-        };
+
+        let has_alpha = matches!(
+            decoded.layout,
+            crate::PixelLayout::Rgba8 | crate::PixelLayout::Bgra8
+        );
+        let info = ImageInfo::new(decoded.width, decoded.height, ImageFormat::Pnm)
+            .with_alpha(has_alpha);
+
         let pixels = layout_to_pixel_data(&decoded)?;
         Ok(DecodeOutput::new(pixels, info))
     }
@@ -255,7 +301,6 @@ fn layout_to_pixel_data(decoded: &crate::decode::DecodeOutput<'_>) -> Result<Pix
             )))
         }
         PixelLayout::Gray16 => {
-            // Bytes are native-endian u16 pairs
             let pixels: Vec<rgb::Gray<u16>> = bytes
                 .chunks_exact(2)
                 .map(|c| rgb::Gray::new(u16::from_ne_bytes([c[0], c[1]])))
@@ -335,33 +380,6 @@ fn layout_to_pixel_data(decoded: &crate::decode::DecodeOutput<'_>) -> Result<Pix
     }
 }
 
-/// Collect ImgRef<Rgb<u8>> to contiguous bytes.
-fn collect_img_bytes_rgb(img: imgref::ImgRef<'_, rgb::Rgb<u8>>) -> (Vec<u8>, u32, u32) {
-    use rgb::ComponentBytes as _;
-    let w = img.width() as u32;
-    let h = img.height() as u32;
-    let pixels: Vec<rgb::Rgb<u8>> = img.rows().flat_map(|row| row.iter().copied()).collect();
-    (pixels.as_bytes().to_vec(), w, h)
-}
-
-/// Collect ImgRef<Rgba<u8>> to contiguous bytes.
-fn collect_img_bytes_rgba(img: imgref::ImgRef<'_, rgb::Rgba<u8>>) -> (Vec<u8>, u32, u32) {
-    use rgb::ComponentBytes as _;
-    let w = img.width() as u32;
-    let h = img.height() as u32;
-    let pixels: Vec<rgb::Rgba<u8>> = img.rows().flat_map(|row| row.iter().copied()).collect();
-    (pixels.as_bytes().to_vec(), w, h)
-}
-
-/// Collect ImgRef<Gray<u8>> to contiguous bytes.
-fn collect_img_bytes_gray(img: imgref::ImgRef<'_, rgb::Gray<u8>>) -> (Vec<u8>, u32, u32) {
-    use rgb::ComponentBytes as _;
-    let w = img.width() as u32;
-    let h = img.height() as u32;
-    let pixels: Vec<rgb::Gray<u8>> = img.rows().flat_map(|row| row.iter().copied()).collect();
-    (pixels.as_bytes().to_vec(), w, h)
-}
-
 #[cfg(test)]
 mod tests {
     use alloc::vec;
@@ -428,6 +446,54 @@ mod tests {
     }
 
     #[test]
+    fn encode_bgra8_no_double_swizzle() {
+        // BGRA encode should go directly to PPM via zenpnm's native BGRA→RGB
+        // path, not through the default trait BGRA→RGBA→PAM path.
+        let pixels = vec![
+            rgb::alt::BGRA { b: 0, g: 0, r: 255, a: 255 },
+            rgb::alt::BGRA { b: 0, g: 255, r: 0, a: 255 },
+            rgb::alt::BGRA { b: 255, g: 0, r: 0, a: 255 },
+            rgb::alt::BGRA { b: 128, g: 128, r: 128, a: 255 },
+        ];
+        let img = imgref::ImgVec::new(pixels, 2, 2);
+        let enc = PnmEncoding::new();
+        let output = enc.encode_bgra8(img.as_ref()).unwrap();
+
+        // Decode and verify the RGB values came through correctly
+        let dec = PnmDecoding::new();
+        let decoded = dec.decode(output.bytes()).unwrap();
+        let rgb_img = decoded.into_rgb8();
+        let buf = rgb_img.buf();
+        assert_eq!(buf[0], rgb::Rgb { r: 255, g: 0, b: 0 });
+        assert_eq!(buf[1], rgb::Rgb { r: 0, g: 255, b: 0 });
+        assert_eq!(buf[2], rgb::Rgb { r: 0, g: 0, b: 255 });
+        assert_eq!(buf[3], rgb::Rgb { r: 128, g: 128, b: 128 });
+    }
+
+    #[test]
+    fn encode_bgrx8_no_double_swizzle() {
+        // BGRX encode should go directly to PPM, ignoring the padding byte.
+        let pixels = vec![
+            rgb::alt::BGRA { b: 0, g: 0, r: 255, a: 0 },   // alpha ignored
+            rgb::alt::BGRA { b: 0, g: 255, r: 0, a: 99 },   // alpha ignored
+            rgb::alt::BGRA { b: 255, g: 0, r: 0, a: 200 },  // alpha ignored
+            rgb::alt::BGRA { b: 128, g: 128, r: 128, a: 1 }, // alpha ignored
+        ];
+        let img = imgref::ImgVec::new(pixels, 2, 2);
+        let enc = PnmEncoding::new();
+        let output = enc.encode_bgrx8(img.as_ref()).unwrap();
+
+        let dec = PnmDecoding::new();
+        let decoded = dec.decode(output.bytes()).unwrap();
+        let rgb_img = decoded.into_rgb8();
+        let buf = rgb_img.buf();
+        assert_eq!(buf[0], rgb::Rgb { r: 255, g: 0, b: 0 });
+        assert_eq!(buf[1], rgb::Rgb { r: 0, g: 255, b: 0 });
+        assert_eq!(buf[2], rgb::Rgb { r: 0, g: 0, b: 255 });
+        assert_eq!(buf[3], rgb::Rgb { r: 128, g: 128, b: 128 });
+    }
+
+    #[test]
     fn probe_header_extracts_info() {
         let pixels = vec![rgb::Rgb { r: 1, g: 2, b: 3 }; 6];
         let img = imgref::ImgVec::new(pixels, 3, 2);
@@ -446,7 +512,7 @@ mod tests {
     fn capabilities_are_correct() {
         let enc_caps = PnmEncoding::capabilities();
         assert!(enc_caps.native_gray());
-        assert!(enc_caps.cheap_probe());
+        assert!(!enc_caps.cheap_probe()); // encode side doesn't probe
         assert!(!enc_caps.encode_icc());
         assert!(!enc_caps.encode_cancel());
 
@@ -463,7 +529,6 @@ mod tests {
             .with_max_height(10);
 
         let dec = PnmDecoding::new().with_limits(limits);
-        // Encoding 100x100 should fail with limit 10x10
         let big_pixels = vec![rgb::Rgb { r: 0, g: 0, b: 0 }; 100 * 100];
         let img = imgref::ImgVec::new(big_pixels, 100, 100);
         let enc = PnmEncoding::new();
