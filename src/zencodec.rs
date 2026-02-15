@@ -409,7 +409,7 @@ impl<'a> zencodec_types::DecodingJob<'a> for PnmDecodingJob<'a> {
         data: &[u8],
         mut dst: imgref::ImgRefMut<'_, rgb::Rgb<f32>>,
     ) -> Result<ImageInfo, PnmError> {
-        use linear_srgb::default::srgb_to_linear;
+        use linear_srgb::default::srgb_to_linear_fast;
 
         let output = self.decode(data)?;
         let info = output.info().clone();
@@ -428,9 +428,9 @@ impl<'a> zencodec_types::DecodingJob<'a> for PnmDecodingJob<'a> {
             for (src_row, dst_row) in src.as_ref().rows().zip(dst.rows_mut()) {
                 for (s, d) in src_row.iter().zip(dst_row.iter_mut()) {
                     *d = rgb::Rgb {
-                        r: srgb_to_linear(s.r),
-                        g: srgb_to_linear(s.g),
-                        b: srgb_to_linear(s.b),
+                        r: srgb_to_linear_fast(s.r),
+                        g: srgb_to_linear_fast(s.g),
+                        b: srgb_to_linear_fast(s.b),
                     };
                 }
             }
@@ -443,7 +443,7 @@ impl<'a> zencodec_types::DecodingJob<'a> for PnmDecodingJob<'a> {
         data: &[u8],
         mut dst: imgref::ImgRefMut<'_, rgb::Rgba<f32>>,
     ) -> Result<ImageInfo, PnmError> {
-        use linear_srgb::default::srgb_to_linear;
+        use linear_srgb::default::srgb_to_linear_fast;
 
         let output = self.decode(data)?;
         let info = output.info().clone();
@@ -460,9 +460,9 @@ impl<'a> zencodec_types::DecodingJob<'a> for PnmDecodingJob<'a> {
             for (src_row, dst_row) in src.as_ref().rows().zip(dst.rows_mut()) {
                 for (s, d) in src_row.iter().zip(dst_row.iter_mut()) {
                     *d = rgb::Rgba {
-                        r: srgb_to_linear(s.r),
-                        g: srgb_to_linear(s.g),
-                        b: srgb_to_linear(s.b),
+                        r: srgb_to_linear_fast(s.r),
+                        g: srgb_to_linear_fast(s.g),
+                        b: srgb_to_linear_fast(s.b),
                         a: s.a,
                     };
                 }
@@ -476,7 +476,7 @@ impl<'a> zencodec_types::DecodingJob<'a> for PnmDecodingJob<'a> {
         data: &[u8],
         mut dst: imgref::ImgRefMut<'_, rgb::Gray<f32>>,
     ) -> Result<ImageInfo, PnmError> {
-        use linear_srgb::default::srgb_to_linear;
+        use linear_srgb::default::srgb_to_linear_fast;
 
         let output = self.decode(data)?;
         let info = output.info().clone();
@@ -492,7 +492,7 @@ impl<'a> zencodec_types::DecodingJob<'a> for PnmDecodingJob<'a> {
             let src = output.into_gray_f32();
             for (src_row, dst_row) in src.as_ref().rows().zip(dst.rows_mut()) {
                 for (s, d) in src_row.iter().zip(dst_row.iter_mut()) {
-                    *d = rgb::Gray::new(srgb_to_linear(s.value()));
+                    *d = rgb::Gray::new(srgb_to_linear_fast(s.value()));
                 }
             }
         }
@@ -893,7 +893,7 @@ mod tests {
 
     #[test]
     fn decode_into_rgb_f32_from_u8() {
-        use linear_srgb::default::srgb_to_linear;
+        use linear_srgb::default::srgb_to_linear_fast;
 
         // Encode as PPM (u8), then decode_into_rgb_f32 — verifies sRGB→linear path
         let pixels = vec![
@@ -914,7 +914,7 @@ mod tests {
         // sRGB 0 → linear 0.0
         assert!((result[0].r - 0.0).abs() < 1e-6);
         // sRGB 128/255 → linear (via srgb_to_linear)
-        assert!((result[0].g - srgb_to_linear(128.0 / 255.0)).abs() < 1e-5);
+        assert!((result[0].g - srgb_to_linear_fast(128.0 / 255.0)).abs() < 1e-5);
         // sRGB 255 → linear 1.0
         assert!((result[0].b - 1.0).abs() < 1e-6);
     }
@@ -934,7 +934,7 @@ mod tests {
     #[test]
     fn f32_conversion_all_simd_tiers() {
         use archmage::testing::{for_each_token_permutation, CompileTimePolicy};
-        use linear_srgb::default::srgb_to_linear;
+        use linear_srgb::default::srgb_to_linear_fast;
 
         let report = for_each_token_permutation(CompileTimePolicy::Warn, |_perm| {
             // Encode as PPM (u8), decode to linear f32, verify values
@@ -955,9 +955,9 @@ mod tests {
             let result = dst.into_buf();
 
             for (orig, decoded) in pixels.iter().zip(result.iter()) {
-                let expected_r = srgb_to_linear(orig.r as f32 / 255.0);
-                let expected_g = srgb_to_linear(orig.g as f32 / 255.0);
-                let expected_b = srgb_to_linear(orig.b as f32 / 255.0);
+                let expected_r = srgb_to_linear_fast(orig.r as f32 / 255.0);
+                let expected_g = srgb_to_linear_fast(orig.g as f32 / 255.0);
+                let expected_b = srgb_to_linear_fast(orig.b as f32 / 255.0);
                 assert!((decoded.r - expected_r).abs() < 1e-5);
                 assert!((decoded.g - expected_g).abs() < 1e-5);
                 assert!((decoded.b - expected_b).abs() < 1e-5);

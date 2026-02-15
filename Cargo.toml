@@ -18,7 +18,7 @@ imgref = { version = "1.12", default-features = false, optional = true }
 rgb = { version = "0.8", default-features = false, features = ["as-bytes"], optional = true }
 thiserror = { version = "2.0", default-features = false }
 zencodec-types = { path = "../zencodec-types", optional = true }
-linear-srgb = { version = "0.4", default-features = false, optional = true }
+linear-srgb = { version = "0.5.1", optional = true }
 
 [dev-dependencies]
 archmage = { version = "0.7", features = ["std"] }
