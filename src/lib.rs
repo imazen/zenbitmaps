@@ -77,7 +77,10 @@ pub use pixel::PixelLayout;
 pub use pixel_traits::{DecodePixel, EncodePixel};
 
 #[cfg(feature = "zencodec")]
-pub use zencodec::{PnmDecoding, PnmEncoding};
+pub use zencodec::{
+    PnmDecodeJob, PnmDecoder, PnmDecoderConfig, PnmEncodeJob, PnmEncoder, PnmEncoderConfig,
+    PnmFrameDecoder, PnmFrameEncoder,
+};
 
 // Re-export rgb pixel types for convenience
 #[cfg(feature = "rgb")]
