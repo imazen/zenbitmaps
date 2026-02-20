@@ -397,7 +397,6 @@ impl<'a> zencodec_types::DecodeJob<'a> for PnmDecodeJob<'a> {
     type Error = PnmError;
     type Decoder = PnmDecoder<'a>;
     type FrameDecoder = PnmFrameDecoder;
-
     fn with_stop(self, _stop: &'a dyn Stop) -> Self {
         self
     }
@@ -432,6 +431,7 @@ impl<'a> zencodec_types::DecodeJob<'a> for PnmDecodeJob<'a> {
             "PNM does not support animation".into(),
         ))
     }
+
 }
 
 // ── PnmDecoder ───────────────────────────────────────────────────────
