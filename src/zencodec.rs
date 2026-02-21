@@ -526,7 +526,7 @@ impl zencodec_types::Decoder for PnmDecoder<'_> {
     fn decode_rows(
         self,
         _data: &[u8],
-        _sink: &mut dyn FnMut(u32, PixelSlice<'_>),
+        _sink: &mut dyn zencodec_types::DecodeRowSink,
     ) -> Result<ImageInfo, PnmError> {
         Err(PnmError::UnsupportedVariant(
             "PNM does not support row-level decoding".into(),
@@ -560,7 +560,7 @@ impl zencodec_types::FrameDecoder for PnmFrameDecoder {
 
     fn next_frame_rows(
         &mut self,
-        _sink: &mut dyn FnMut(u32, PixelSlice<'_>),
+        _sink: &mut dyn zencodec_types::DecodeRowSink,
     ) -> Result<Option<ImageInfo>, PnmError> {
         Err(PnmError::UnsupportedVariant(
             "PNM does not support animation".into(),
