@@ -101,6 +101,47 @@ fn limits_reject_large() {
 }
 
 #[test]
+fn detect_format_pnm() {
+    let ppm = encode_ppm(&[255u8; 6], 2, 1, PixelLayout::Rgb8, Unstoppable).unwrap();
+    assert_eq!(detect_format(&ppm), Some(ImageFormat::Pnm));
+
+    let pgm = encode_pgm(&[128u8; 4], 2, 2, PixelLayout::Gray8, Unstoppable).unwrap();
+    assert_eq!(detect_format(&pgm), Some(ImageFormat::Pnm));
+
+    let pam = encode_pam(&[0u8; 4], 1, 1, PixelLayout::Rgba8, Unstoppable).unwrap();
+    assert_eq!(detect_format(&pam), Some(ImageFormat::Pnm));
+
+    let pfm = encode_pfm(&[0u8; 4], 1, 1, PixelLayout::GrayF32, Unstoppable).unwrap();
+    assert_eq!(detect_format(&pfm), Some(ImageFormat::Pnm));
+}
+
+#[test]
+fn detect_format_farbfeld() {
+    let ff = encode_farbfeld(&[0u8; 8], 1, 1, PixelLayout::Rgba16, Unstoppable).unwrap();
+    assert_eq!(detect_format(&ff), Some(ImageFormat::Farbfeld));
+}
+
+#[cfg(feature = "bmp")]
+#[test]
+fn detect_format_bmp() {
+    let bmp = encode_bmp(&[255u8; 3], 1, 1, PixelLayout::Rgb8, Unstoppable).unwrap();
+    assert_eq!(detect_format(&bmp), Some(ImageFormat::Bmp));
+}
+
+#[test]
+fn detect_format_unknown() {
+    assert_eq!(detect_format(&[]), None);
+    assert_eq!(detect_format(&[0]), None);
+    assert_eq!(detect_format(b"JPEG"), None);
+}
+
+#[test]
+fn decode_unrecognized_format() {
+    let result = decode(b"NOTAFORMAT", Unstoppable);
+    assert!(matches!(result, Err(BitmapError::UnrecognizedFormat)));
+}
+
+#[test]
 fn into_owned_works() {
     let pixels = vec![1u8, 2, 3];
     let encoded = encode_pgm(&pixels, 1, 3, PixelLayout::Gray8, Unstoppable).unwrap();

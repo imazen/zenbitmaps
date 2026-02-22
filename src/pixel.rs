@@ -1,3 +1,15 @@
+/// Image format detected from magic bytes.
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ImageFormat {
+    /// PNM family: PGM (P5), PPM (P6), PAM (P7), PFM (Pf/PF).
+    Pnm,
+    /// BMP (Windows bitmap).
+    Bmp,
+    /// Farbfeld (RGBA 16-bit).
+    Farbfeld,
+}
+
 /// Pixel memory layout.
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

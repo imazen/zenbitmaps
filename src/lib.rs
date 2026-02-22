@@ -84,7 +84,7 @@ pub use decode::DecodeOutput;
 pub use enough::{Stop, Unstoppable};
 pub use error::BitmapError;
 pub use limits::Limits;
-pub use pixel::PixelLayout;
+pub use pixel::{ImageFormat, PixelLayout};
 
 #[cfg(feature = "bmp")]
 pub use bmp::BmpPermissiveness;
@@ -133,6 +133,29 @@ pub type BGR8 = rgb::alt::BGR<u8>;
 #[cfg(feature = "rgb")]
 pub type BGRA8 = rgb::alt::BGRA<u8>;
 
+// ── Format detection ──────────────────────────────────────────────────
+
+/// Detect image format from magic bytes.
+///
+/// Returns `None` if the data doesn't match any supported format's magic bytes.
+/// Recognized formats: BMP (`BM`), farbfeld (`farbfeld`), PNM (`P5`/`P6`/`P7`/`Pf`/`PF`).
+pub fn detect_format(data: &[u8]) -> Option<ImageFormat> {
+    if data.len() >= 2 && data[0] == b'B' && data[1] == b'M' {
+        return Some(ImageFormat::Bmp);
+    }
+    if data.len() >= 8 && &data[0..8] == b"farbfeld" {
+        return Some(ImageFormat::Farbfeld);
+    }
+    // PNM magic: P followed by 5, 6, 7, f, or F
+    if data.len() >= 2 && data[0] == b'P' {
+        match data[1] {
+            b'5' | b'6' | b'7' | b'f' | b'F' => return Some(ImageFormat::Pnm),
+            _ => {}
+        }
+    }
+    None
+}
+
 // ── Auto-detect decode (PNM, BMP, farbfeld from magic bytes) ─────────
 
 /// Decode any supported format (auto-detected from magic bytes).
@@ -157,18 +180,19 @@ fn decode_dispatch<'a>(
     limits: Option<&Limits>,
     stop: &dyn enough::Stop,
 ) -> Result<DecodeOutput<'a>, BitmapError> {
-    if data.len() >= 2 && &data[0..2] == b"BM" {
-        #[cfg(feature = "bmp")]
-        return bmp::decode(data, limits, stop);
-        #[cfg(not(feature = "bmp"))]
-        return Err(BitmapError::UnsupportedVariant(
-            "BMP support requires the 'bmp' feature".into(),
-        ));
+    match detect_format(data) {
+        Some(ImageFormat::Bmp) => {
+            #[cfg(feature = "bmp")]
+            return bmp::decode(data, limits, stop);
+            #[cfg(not(feature = "bmp"))]
+            return Err(BitmapError::UnsupportedVariant(
+                "BMP support requires the 'bmp' feature".into(),
+            ));
+        }
+        Some(ImageFormat::Farbfeld) => farbfeld::decode(data, limits, stop),
+        Some(ImageFormat::Pnm) => pnm::decode(data, limits, stop),
+        None => Err(BitmapError::UnrecognizedFormat),
     }
-    if data.len() >= 8 && &data[0..8] == b"farbfeld" {
-        return farbfeld::decode(data, limits, stop);
-    }
-    pnm::decode(data, limits, stop)
 }
 
 // ── PNM encode ───────────────────────────────────────────────────────
