@@ -1,9 +1,10 @@
-//! Basic BMP image format decoder and encoder (internal).
+//! Full BMP image format decoder and basic encoder (internal).
 //!
 //! Use top-level [`crate::decode_bmp`], [`crate::encode_bmp`], etc.
 
 mod decode;
 mod encode;
+mod utils;
 
 use crate::decode::DecodeOutput;
 use crate::error::PnmError;
@@ -18,11 +19,11 @@ pub(crate) fn decode<'a>(
     limits: Option<&Limits>,
     stop: &dyn Stop,
 ) -> Result<DecodeOutput<'a>, PnmError> {
-    let (width, height, layout) = decode::parse_bmp_header(data)?;
-    check_limits(limits, width, height, &layout)?;
+    let header = decode::parse_bmp_header(data)?;
+    check_limits(limits, header.width, header.height, &header.layout)?;
     stop.check()?;
-    let pixels = decode::decode_bmp_pixels(data, width, height, layout, stop)?;
-    Ok(DecodeOutput::owned(pixels, width, height, layout))
+    let (pixels, layout) = decode::decode_bmp_pixels(data, stop)?;
+    Ok(DecodeOutput::owned(pixels, header.width, header.height, layout))
 }
 
 /// Decode BMP data in native byte order (BGR/BGRA — no channel swizzle).
@@ -31,12 +32,11 @@ pub(crate) fn decode_native<'a>(
     limits: Option<&Limits>,
     stop: &dyn Stop,
 ) -> Result<DecodeOutput<'a>, PnmError> {
-    let (width, height, layout) = decode::parse_bmp_header(data)?;
-    check_limits(limits, width, height, &layout)?;
+    let header = decode::parse_bmp_header(data)?;
+    check_limits(limits, header.width, header.height, &header.layout)?;
     stop.check()?;
-    let (pixels, native_layout) =
-        decode::decode_bmp_pixels_native(data, width, height, layout, stop)?;
-    Ok(DecodeOutput::owned(pixels, width, height, native_layout))
+    let (pixels, native_layout) = decode::decode_bmp_pixels_native(data, stop)?;
+    Ok(DecodeOutput::owned(pixels, header.width, header.height, native_layout))
 }
 
 fn check_limits(
