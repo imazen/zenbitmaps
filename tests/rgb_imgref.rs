@@ -155,3 +155,40 @@ fn decode_output_to_imgvec() {
     assert_eq!(img.height(), 1);
     assert_eq!(img.buf(), &pixels);
 }
+
+#[test]
+fn as_imgref_zero_copy_pnm() {
+    let pixels = vec![RGB8::new(10, 20, 30), RGB8::new(40, 50, 60)];
+    let encoded = encode_ppm_pixels(&pixels, 2, 1, Unstoppable).unwrap();
+    let decoded = decode(&encoded, Unstoppable).unwrap();
+    assert!(decoded.is_borrowed(), "PPM should be zero-copy");
+    let imgref = decoded.as_imgref::<RGB8>().unwrap();
+    assert_eq!(imgref.width(), 2);
+    assert_eq!(imgref.height(), 1);
+    assert_eq!(imgref.buf()[0], RGB8::new(10, 20, 30));
+    assert_eq!(imgref.buf()[1], RGB8::new(40, 50, 60));
+}
+
+#[cfg(feature = "bmp")]
+#[test]
+fn as_imgref_owned_bmp() {
+    let pixels = vec![RGB8::new(255, 0, 0), RGB8::new(0, 255, 0)];
+    use rgb::ComponentBytes;
+    let encoded = encode_bmp(pixels.as_bytes(), 2, 1, PixelLayout::Rgb8, Unstoppable).unwrap();
+    let decoded = decode_bmp(&encoded, Unstoppable).unwrap();
+    assert!(!decoded.is_borrowed(), "BMP should be owned");
+    let imgref = decoded.as_imgref::<RGB8>().unwrap();
+    assert_eq!(imgref.width(), 2);
+    assert_eq!(imgref.height(), 1);
+    assert_eq!(imgref.buf()[0], RGB8::new(255, 0, 0));
+    assert_eq!(imgref.buf()[1], RGB8::new(0, 255, 0));
+}
+
+#[test]
+fn as_imgref_layout_mismatch() {
+    let pixels = vec![RGB8::new(1, 2, 3)];
+    let encoded = encode_ppm_pixels(&pixels, 1, 1, Unstoppable).unwrap();
+    let decoded = decode(&encoded, Unstoppable).unwrap();
+    let result = decoded.as_imgref::<RGBA8>();
+    assert!(result.is_err());
+}

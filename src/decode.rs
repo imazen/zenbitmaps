@@ -71,6 +71,28 @@ impl<'a> DecodeOutput<'a> {
         Ok(self.pixels().as_pixels())
     }
 
+    /// Zero-copy view as an [`imgref::ImgRef`] of typed pixels.
+    ///
+    /// No allocation or copy — the returned `ImgRef` borrows directly from
+    /// this `DecodeOutput`'s pixel buffer. Works for both borrowed (PNM) and
+    /// owned (BMP, farbfeld) data.
+    ///
+    /// Returns [`crate::BitmapError::LayoutMismatch`] if the pixel layout doesn't match `P`.
+    #[cfg(feature = "imgref")]
+    pub fn as_imgref<P: crate::DecodePixel>(
+        &self,
+    ) -> Result<imgref::ImgRef<'_, P>, crate::BitmapError>
+    where
+        [u8]: rgb::AsPixels<P>,
+    {
+        let pixels: &[P] = self.as_pixels()?;
+        Ok(imgref::ImgRef::new(
+            pixels,
+            self.width as usize,
+            self.height as usize,
+        ))
+    }
+
     /// Convert to an [`imgref::ImgVec`] of typed pixels.
     ///
     /// Returns [`crate::BitmapError::LayoutMismatch`] if the pixel layout doesn't match `P`.
