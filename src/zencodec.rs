@@ -520,17 +520,7 @@ impl zencodec_types::Decoder for PnmDecoder<'_> {
         decode_into_dispatch(output, dst)
     }
 
-    fn decode_rows(
-        self,
-        _data: &[u8],
-        _sink: &mut dyn zencodec_types::DecodeRowSink,
-    ) -> Result<ImageInfo, BitmapError> {
-        Err(BitmapError::UnsupportedVariant(
-            "PNM does not support row-level decoding".into(),
-        ))
-    }
 }
-
 // ── PnmFrameDecoder (stub) ──────────────────────────────────────────
 
 /// Stub frame decoder — PNM does not support animation.
@@ -549,15 +539,6 @@ impl zencodec_types::FrameDecoder for PnmFrameDecoder {
         &mut self,
         _dst: PixelSliceMut<'_>,
         _prior_frame: Option<u32>,
-    ) -> Result<Option<ImageInfo>, BitmapError> {
-        Err(BitmapError::UnsupportedVariant(
-            "PNM does not support animation".into(),
-        ))
-    }
-
-    fn next_frame_rows(
-        &mut self,
-        _sink: &mut dyn zencodec_types::DecodeRowSink,
     ) -> Result<Option<ImageInfo>, BitmapError> {
         Err(BitmapError::UnsupportedVariant(
             "PNM does not support animation".into(),
@@ -931,16 +912,6 @@ mod bmp_codec {
             let output = self.decode(data)?;
             decode_into_dispatch(output, dst)
         }
-
-        fn decode_rows(
-            self,
-            _data: &[u8],
-            _sink: &mut dyn zencodec_types::DecodeRowSink,
-        ) -> Result<ImageInfo, BitmapError> {
-            Err(BitmapError::UnsupportedVariant(
-                "BMP does not support row-level decoding".into(),
-            ))
-        }
     }
 
     // ── BmpFrameDecoder (stub) ───────────────────────────────────────
@@ -961,15 +932,6 @@ mod bmp_codec {
             &mut self,
             _dst: PixelSliceMut<'_>,
             _prior_frame: Option<u32>,
-        ) -> Result<Option<ImageInfo>, BitmapError> {
-            Err(BitmapError::UnsupportedVariant(
-                "BMP does not support animation".into(),
-            ))
-        }
-
-        fn next_frame_rows(
-            &mut self,
-            _sink: &mut dyn zencodec_types::DecodeRowSink,
         ) -> Result<Option<ImageInfo>, BitmapError> {
             Err(BitmapError::UnsupportedVariant(
                 "BMP does not support animation".into(),
@@ -1330,16 +1292,6 @@ impl zencodec_types::Decoder for FarbfeldDecoder<'_> {
         let output = self.decode(data)?;
         decode_into_dispatch(output, dst)
     }
-
-    fn decode_rows(
-        self,
-        _data: &[u8],
-        _sink: &mut dyn zencodec_types::DecodeRowSink,
-    ) -> Result<ImageInfo, BitmapError> {
-        Err(BitmapError::UnsupportedVariant(
-            "farbfeld does not support row-level decoding".into(),
-        ))
-    }
 }
 
 // ── FarbfeldFrameDecoder (stub) ──────────────────────────────────────
@@ -1360,15 +1312,6 @@ impl zencodec_types::FrameDecoder for FarbfeldFrameDecoder {
         &mut self,
         _dst: PixelSliceMut<'_>,
         _prior_frame: Option<u32>,
-    ) -> Result<Option<ImageInfo>, BitmapError> {
-        Err(BitmapError::UnsupportedVariant(
-            "farbfeld does not support animation".into(),
-        ))
-    }
-
-    fn next_frame_rows(
-        &mut self,
-        _sink: &mut dyn zencodec_types::DecodeRowSink,
     ) -> Result<Option<ImageInfo>, BitmapError> {
         Err(BitmapError::UnsupportedVariant(
             "farbfeld does not support animation".into(),
