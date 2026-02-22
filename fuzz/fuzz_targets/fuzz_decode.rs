@@ -2,9 +2,10 @@
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
-    // Try decoding as PNM — must never panic
+    // Try auto-detect decode (PNM, BMP, farbfeld) — must never panic
     let _ = zenpnm::decode(data, enough::Unstoppable);
 
-    // Try decoding as BMP explicitly — must never panic
+    // Try each format explicitly — must never panic
     let _ = zenpnm::decode_bmp(data, enough::Unstoppable);
+    let _ = zenpnm::decode_farbfeld(data, enough::Unstoppable);
 });

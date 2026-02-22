@@ -1,6 +1,6 @@
 # zenpnm
 
-PNM/PAM/PFM and BMP image format decoder and encoder.
+PNM/PAM/PFM, BMP, and farbfeld image format decoder and encoder.
 
 See `/home/lilith/work/codec-design/README.md` for API design guidelines.
 
@@ -17,14 +17,23 @@ These are lossless, simple formats used as ground truth for encode/decode pipeli
 - **P7** (PAM) — arbitrary channels, 8-bit and 16-bit
 - **PFM** — floating-point grayscale and RGB
 
-### BMP (`basic-bmp` feature, opt-in)
-- Uncompressed 24-bit (RGB) and 32-bit (RGBA)
-- No RLE, no indexed color
+### Farbfeld (always available)
+- RGBA 16-bit (native endian output)
+- Encode from Rgba16, Rgba8, Rgb8, Gray8
+
+### BMP (`bmp` feature, opt-in)
+- Headers: WinBMPv2–v5, OS/2 (12/16/40/52/56/64/108/124-byte info headers)
+- Bit depths: 1, 2, 4, 8, 16, 24, 32
+- Compression: uncompressed, RLE4, RLE8, BITFIELDS
+- Color palettes, bottom-up/top-down, grayscale detection
+- Encode: uncompressed 24-bit (RGB) and 32-bit (RGBA)
 
 ## Credits
 
-PNM implementation draws from [zune-ppm](https://github.com/etemesi254/zune-image)
-by Caleb Etemesi (MIT/Apache-2.0/Zlib licensed).
+PNM implementation draws from [zune-ppm](https://github.com/etemesi254/zune-image),
+BMP from [zune-bmp](https://github.com/etemesi254/zune-image) 0.5.2,
+and farbfeld from [zune-farbfeld](https://github.com/etemesi254/zune-image) 0.5.2,
+all by Caleb Etemesi (MIT/Apache-2.0/Zlib licensed).
 
 ## Design Rules
 

@@ -403,6 +403,123 @@ fn limits_max_memory_bmp() {
     assert!(decode_bmp_with_limits(&encoded, &limits, Unstoppable).is_err());
 }
 
+// ── Farbfeld roundtrips ──────────────────────────────────────────────
+
+#[test]
+fn farbfeld_rgba16_roundtrip() {
+    // Create RGBA16 pixel data (native endian u16 as bytes)
+    let w = 3u32;
+    let h = 2u32;
+    let mut pixels = Vec::with_capacity(w as usize * h as usize * 8);
+    for i in 0..(w * h) {
+        let r = (i * 1000) as u16;
+        let g = (i * 2000) as u16;
+        let b = (i * 3000) as u16;
+        let a = 65535u16;
+        pixels.extend_from_slice(&r.to_ne_bytes());
+        pixels.extend_from_slice(&g.to_ne_bytes());
+        pixels.extend_from_slice(&b.to_ne_bytes());
+        pixels.extend_from_slice(&a.to_ne_bytes());
+    }
+    let encoded = encode_farbfeld(&pixels, w, h, PixelLayout::Rgba16, Unstoppable).unwrap();
+    assert_eq!(&encoded[0..8], b"farbfeld");
+
+    let decoded = decode_farbfeld(&encoded, Unstoppable).unwrap();
+    assert_eq!(decoded.layout, PixelLayout::Rgba16);
+    assert_eq!(decoded.width, w);
+    assert_eq!(decoded.height, h);
+    assert_eq!(decoded.pixels(), &pixels[..]);
+}
+
+#[test]
+fn farbfeld_auto_detect() {
+    // Farbfeld should be auto-detected by decode()
+    let pixels: Vec<u8> = (0..8)
+        .flat_map(|_| {
+            let r = 1000u16;
+            let g = 2000u16;
+            let b = 3000u16;
+            let a = 65535u16;
+            let mut v = Vec::new();
+            v.extend_from_slice(&r.to_ne_bytes());
+            v.extend_from_slice(&g.to_ne_bytes());
+            v.extend_from_slice(&b.to_ne_bytes());
+            v.extend_from_slice(&a.to_ne_bytes());
+            v
+        })
+        .collect();
+    let encoded = encode_farbfeld(&pixels, 4, 2, PixelLayout::Rgba16, Unstoppable).unwrap();
+    let decoded = decode(&encoded, Unstoppable).unwrap();
+    assert_eq!(decoded.layout, PixelLayout::Rgba16);
+    assert_eq!(decoded.pixels(), &pixels[..]);
+}
+
+#[test]
+fn farbfeld_from_rgb8() {
+    // Encode RGB8 as farbfeld (expand to RGBA16), verify header
+    let pixels = vec![255, 0, 0, 0, 255, 0]; // 2 RGB pixels
+    let encoded = encode_farbfeld(&pixels, 2, 1, PixelLayout::Rgb8, Unstoppable).unwrap();
+    assert_eq!(&encoded[0..8], b"farbfeld");
+    // Should be 16 header + 2 * 8 = 32 bytes total
+    assert_eq!(encoded.len(), 32);
+
+    let decoded = decode_farbfeld(&encoded, Unstoppable).unwrap();
+    assert_eq!(decoded.layout, PixelLayout::Rgba16);
+    // Check first pixel: R=65535, G=0, B=0, A=65535
+    let r = u16::from_ne_bytes([decoded.pixels()[0], decoded.pixels()[1]]);
+    let g = u16::from_ne_bytes([decoded.pixels()[2], decoded.pixels()[3]]);
+    let b = u16::from_ne_bytes([decoded.pixels()[4], decoded.pixels()[5]]);
+    let a = u16::from_ne_bytes([decoded.pixels()[6], decoded.pixels()[7]]);
+    assert_eq!(r, 65535); // 255 * 257
+    assert_eq!(g, 0);
+    assert_eq!(b, 0);
+    assert_eq!(a, 65535);
+}
+
+#[test]
+fn farbfeld_from_gray8() {
+    let pixels = vec![128]; // single gray pixel
+    let encoded = encode_farbfeld(&pixels, 1, 1, PixelLayout::Gray8, Unstoppable).unwrap();
+    let decoded = decode_farbfeld(&encoded, Unstoppable).unwrap();
+    // Gray8 128 → RGBA16: all channels = 128*257 = 32896, alpha=65535
+    let r = u16::from_ne_bytes([decoded.pixels()[0], decoded.pixels()[1]]);
+    let a = u16::from_ne_bytes([decoded.pixels()[6], decoded.pixels()[7]]);
+    assert_eq!(r, 128 * 257);
+    assert_eq!(a, 65535);
+}
+
+#[test]
+fn farbfeld_limits_reject() {
+    let pixels: Vec<u8> = vec![0; 4 * 8]; // 4 pixels × 8 bytes
+    let encoded = encode_farbfeld(&pixels, 2, 2, PixelLayout::Rgba16, Unstoppable).unwrap();
+    let limits = Limits {
+        max_memory_bytes: Some(1),
+        ..Default::default()
+    };
+    assert!(decode_farbfeld_with_limits(&encoded, &limits, Unstoppable).is_err());
+}
+
+// ── BMP auto-detection ──────────────────────────────────────────────
+
+#[cfg(feature = "bmp")]
+#[test]
+fn bmp_auto_detect() {
+    let pixels = checkerboard(4, 4, 3);
+    let encoded = encode_bmp(&pixels, 4, 4, PixelLayout::Rgb8, Unstoppable).unwrap();
+    // decode() should auto-detect BMP
+    let decoded = decode(&encoded, Unstoppable).unwrap();
+    assert_eq!(decoded.pixels(), &pixels[..]);
+}
+
+#[cfg(feature = "bmp")]
+#[test]
+fn bmp_auto_detect_rgba() {
+    let pixels = noise_pattern(3, 3, 4);
+    let encoded = encode_bmp_rgba(&pixels, 3, 3, PixelLayout::Rgba8, Unstoppable).unwrap();
+    let decoded = decode(&encoded, Unstoppable).unwrap();
+    assert_eq!(decoded.pixels(), &pixels[..]);
+}
+
 // ── External files ───────────────────────────────────────────────────
 
 #[test]
