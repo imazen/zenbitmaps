@@ -3,12 +3,87 @@
 //! PNM/PAM/PFM, BMP, and farbfeld image format decoder and encoder.
 //!
 //! Reference bitmap formats for codec testing and apples-to-apples comparisons.
+//! `no_std` compatible (with `alloc`), `forbid(unsafe_code)`, panic-free.
+//!
+//! ## Quick Start
+//!
+//! ```
+//! use zenbitmaps::*;
+//! use enough::Unstoppable;
+//!
+//! // Encode pixels to PPM
+//! let pixels = vec![255u8, 0, 0, 0, 255, 0]; // 2 RGB pixels
+//! let encoded = encode_ppm(&pixels, 2, 1, PixelLayout::Rgb8, Unstoppable)?;
+//!
+//! // Decode (auto-detects PNM/BMP/farbfeld from magic bytes)
+//! let decoded = decode(&encoded, Unstoppable)?;
+//! assert!(decoded.is_borrowed()); // zero-copy for PPM with maxval=255
+//! assert_eq!(decoded.pixels(), &pixels[..]);
+//! # Ok::<(), zenbitmaps::BitmapError>(())
+//! ```
+//!
+//! ## Format Detection
+//!
+//! [`detect_format()`] identifies the format from magic bytes without decoding:
+//!
+//! ```
+//! # use zenbitmaps::*;
+//! # use enough::Unstoppable;
+//! # let data = encode_ppm(&[0u8; 3], 1, 1, PixelLayout::Rgb8, Unstoppable).unwrap();
+//! match detect_format(&data) {
+//!     Some(ImageFormat::Pnm) => { /* PGM, PPM, PAM, or PFM */ }
+//!     Some(ImageFormat::Bmp) => { /* Windows bitmap */ }
+//!     Some(ImageFormat::Farbfeld) => { /* farbfeld RGBA16 */ }
+//!     None => { /* unknown format */ }
+//!     _ => { /* future formats */ }
+//! }
+//! ```
+//!
+//! [`decode()`] uses this internally — you only need `detect_format()` if you
+//! want to inspect the format before committing to a full decode.
 //!
 //! ## Zero-Copy Decoding
 //!
 //! For PNM files with maxval=255 (the common case), decoding returns a borrowed
 //! slice into the input buffer — no allocation or copy needed. Formats that
 //! require transformation (BMP row flip, farbfeld endian swap, etc.) allocate.
+//!
+//! Use [`DecodeOutput::as_pixels()`] for a zero-copy typed pixel view,
+//! or [`DecodeOutput::as_imgref()`] for a zero-copy 2D view (with `imgref` feature):
+//!
+//! ```
+//! # use zenbitmaps::*;
+//! # use enough::Unstoppable;
+//! # let data = encode_ppm(&[0u8; 12], 2, 2, PixelLayout::Rgb8, Unstoppable).unwrap();
+//! let decoded = decode(&data, Unstoppable)?;
+//! // Zero-copy reinterpret as typed pixels
+//! # #[cfg(feature = "rgb")]
+//! let pixels: &[RGB8] = decoded.as_pixels()?;
+//! // Zero-copy 2D view (no allocation)
+//! # #[cfg(feature = "imgref")]
+//! let img: imgref::ImgRef<'_, RGB8> = decoded.as_imgref()?;
+//! # Ok::<(), BitmapError>(())
+//! ```
+//!
+//! ## BGRA Pipeline
+//!
+//! BMP files store pixels in BGR/BGRA order. Use [`decode_bmp_native()`] to
+//! skip the BGR→RGB swizzle and work in native byte order:
+//!
+//! ```no_run
+//! # use zenbitmaps::*;
+//! # use enough::Unstoppable;
+//! # let bmp_data = &[0u8; 0];
+//! let decoded = decode_bmp_native(bmp_data, Unstoppable)?;
+//! // decoded.layout is Bgr8, Bgra8, or Gray8
+//! // Encode to PAM or farbfeld — swizzle happens automatically
+//! let pam = encode_pam(decoded.pixels(), decoded.width, decoded.height,
+//!                      decoded.layout, Unstoppable)?;
+//! # Ok::<(), BitmapError>(())
+//! ```
+//!
+//! All encoders accept BGR/BGRA input and swizzle to the target format's
+//! channel order automatically.
 //!
 //! ## Supported Formats
 //!
@@ -20,29 +95,37 @@
 //!
 //! ### Farbfeld (always available)
 //! - RGBA 16-bit per channel
-//! - Auto-detected by `decode()` via `"farbfeld"` magic
+//! - Auto-detected by [`decode()`] via `"farbfeld"` magic
 //!
 //! ### BMP (`bmp` feature, opt-in)
 //! - All standard bit depths: 1, 2, 4, 8, 16, 24, 32
 //! - Compression: uncompressed, RLE4, RLE8, BITFIELDS
 //! - Palette expansion, bottom-up/top-down, grayscale detection
-//! - Auto-detected by `decode()` via `"BM"` magic
+//! - [`BmpPermissiveness`] levels: Strict, Standard, Permissive
+//! - Auto-detected by [`decode()`] via `"BM"` magic
 //!
-//! ## Usage
+//! ## Cooperative Cancellation
 //!
-//! ```no_run
-//! use zenbitmaps::*;
-//! use enough::Unstoppable;
+//! Every function takes a `stop` parameter implementing [`enough::Stop`].
+//! Pass [`Unstoppable`] when you don't need cancellation. For server use,
+//! pass a token that checks a shutdown flag — decode/encode will bail out
+//! promptly via [`BitmapError::Cancelled`].
 //!
-//! // Encode pixels to PPM
-//! let pixels = vec![255u8, 0, 0, 0, 255, 0]; // 2 RGB pixels
-//! let encoded = encode_ppm(&pixels, 2, 1, PixelLayout::Rgb8, Unstoppable)?;
+//! ## Resource Limits
 //!
-//! // Decode (auto-detects PNM/BMP/farbfeld, zero-copy when possible)
-//! let decoded = decode(&encoded, Unstoppable)?;
-//! assert!(decoded.is_borrowed()); // zero-copy for PPM with maxval=255
-//! assert_eq!(decoded.pixels(), &pixels[..]);
-//! # Ok::<(), zenbitmaps::BitmapError>(())
+//! ```
+//! # use zenbitmaps::*;
+//! # use enough::Unstoppable;
+//! let limits = Limits {
+//!     max_width: Some(4096),
+//!     max_height: Some(4096),
+//!     max_pixels: Some(16_000_000),
+//!     max_memory_bytes: Some(64 * 1024 * 1024),
+//!     ..Default::default()
+//! };
+//! # let data = encode_ppm(&[0u8; 3], 1, 1, PixelLayout::Rgb8, Unstoppable).unwrap();
+//! let decoded = decode_with_limits(&data, &limits, Unstoppable)?;
+//! # Ok::<(), BitmapError>(())
 //! ```
 //!
 //! ## Credits
@@ -139,6 +222,15 @@ pub type BGRA8 = rgb::alt::BGRA<u8>;
 ///
 /// Returns `None` if the data doesn't match any supported format's magic bytes.
 /// Recognized formats: BMP (`BM`), farbfeld (`farbfeld`), PNM (`P5`/`P6`/`P7`/`Pf`/`PF`).
+///
+/// ```
+/// use zenbitmaps::*;
+///
+/// assert_eq!(detect_format(b"P6 ..."), Some(ImageFormat::Pnm));
+/// assert_eq!(detect_format(b"BM..."), Some(ImageFormat::Bmp));
+/// assert_eq!(detect_format(b"farbfeld..."), Some(ImageFormat::Farbfeld));
+/// assert_eq!(detect_format(b"unknown"), None);
+/// ```
 pub fn detect_format(data: &[u8]) -> Option<ImageFormat> {
     if data.len() >= 2 && data[0] == b'B' && data[1] == b'M' {
         return Some(ImageFormat::Bmp);
