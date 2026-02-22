@@ -58,6 +58,8 @@ mod pixel;
 
 mod pnm;
 
+mod farbfeld;
+
 #[cfg(feature = "basic-bmp")]
 mod bmp;
 
