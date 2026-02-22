@@ -13,7 +13,7 @@ enough = "0.4"
 
 [dependencies.zenpnm]
 path = ".."
-features = ["pnm", "basic-bmp"]
+features = ["bmp"]
 
 [[bin]]
 name = "fuzz_decode"

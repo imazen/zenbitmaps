@@ -1,12 +1,14 @@
 //! # zenpnm
 //!
-//! PNM/PAM/PFM image format decoder and encoder, with optional basic BMP support.
+//! PNM/PAM/PFM, BMP, and farbfeld image format decoder and encoder.
+//!
+//! Reference bitmap formats for codec testing and apples-to-apples comparisons.
 //!
 //! ## Zero-Copy Decoding
 //!
 //! For PNM files with maxval=255 (the common case), decoding returns a borrowed
 //! slice into the input buffer — no allocation or copy needed. Formats that
-//! require transformation (16-bit downscaling, PFM byte reordering) allocate.
+//! require transformation (BMP row flip, farbfeld endian swap, etc.) allocate.
 //!
 //! ## Supported Formats
 //!
@@ -16,10 +18,15 @@
 //! - **P7** (PAM) — arbitrary channels (grayscale, RGB, RGBA), 8-bit and 16-bit
 //! - **PFM** — floating-point grayscale and RGB (32-bit float per channel)
 //!
-//! ### Basic BMP (`basic-bmp` feature, opt-in)
-//! - Uncompressed 24-bit (RGB) and 32-bit (RGBA) only
-//! - **Not auto-detected** — use `decode_bmp` and `encode_bmp` explicitly
-//! - No RLE, no indexed color, no advanced headers
+//! ### Farbfeld (always available)
+//! - RGBA 16-bit per channel
+//! - Auto-detected by `decode()` via `"farbfeld"` magic
+//!
+//! ### BMP (`bmp` feature, opt-in)
+//! - All standard bit depths: 1, 2, 4, 8, 16, 24, 32
+//! - Compression: uncompressed, RLE4, RLE8, BITFIELDS
+//! - Palette expansion, bottom-up/top-down, grayscale detection
+//! - Auto-detected by `decode()` via `"BM"` magic
 //!
 //! ## Usage
 //!
@@ -31,7 +38,7 @@
 //! let pixels = vec![255u8, 0, 0, 0, 255, 0]; // 2 RGB pixels
 //! let encoded = encode_ppm(&pixels, 2, 1, PixelLayout::Rgb8, Unstoppable)?;
 //!
-//! // Decode (auto-detects PNM format, zero-copy when possible)
+//! // Decode (auto-detects PNM/BMP/farbfeld, zero-copy when possible)
 //! let decoded = decode(&encoded, Unstoppable)?;
 //! assert!(decoded.is_borrowed()); // zero-copy for PPM with maxval=255
 //! assert_eq!(decoded.pixels(), &pixels[..]);
@@ -40,8 +47,12 @@
 //!
 //! ## Credits
 //!
-//! PNM implementation draws from [zune-ppm](https://github.com/etemesi254/zune-image)
-//! by Caleb Etemesi (MIT/Apache-2.0/Zlib licensed).
+//! - PNM: draws from [zune-ppm](https://github.com/etemesi254/zune-image)
+//!   by Caleb Etemesi (MIT/Apache-2.0/Zlib)
+//! - BMP: forked from [zune-bmp](https://github.com/etemesi254/zune-image) 0.5.2
+//!   by Caleb Etemesi (MIT/Apache-2.0/Zlib)
+//! - Farbfeld: forked from [zune-farbfeld](https://github.com/etemesi254/zune-image) 0.5.2
+//!   by Caleb Etemesi (MIT/Apache-2.0/Zlib)
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![forbid(unsafe_code)]
@@ -60,7 +71,7 @@ mod pnm;
 
 mod farbfeld;
 
-#[cfg(feature = "basic-bmp")]
+#[cfg(feature = "bmp")]
 mod bmp;
 
 #[cfg(feature = "rgb")]
@@ -107,25 +118,42 @@ pub type BGR8 = rgb::alt::BGR<u8>;
 #[cfg(feature = "rgb")]
 pub type BGRA8 = rgb::alt::BGRA<u8>;
 
-// ── PNM decode (auto-detects P5/P6/P7/PFM from magic bytes) ─────────
+// ── Auto-detect decode (PNM, BMP, farbfeld from magic bytes) ─────────
 
-/// Decode any PNM format (auto-detected from magic bytes).
+/// Decode any supported format (auto-detected from magic bytes).
 ///
-/// Zero-copy when possible — the returned [`DecodeOutput`] borrows from `data`.
-///
-/// Does **not** auto-detect BMP. For BMP, use `decode_bmp` explicitly
-/// (requires the `basic-bmp` feature).
+/// Detects PNM (P5/P6/P7/PFM), farbfeld, and BMP (if the `bmp` feature is enabled).
+/// Zero-copy when possible — PNM with maxval=255 returns a borrowed slice.
 pub fn decode(data: &[u8], stop: impl Stop) -> Result<DecodeOutput<'_>, PnmError> {
-    pnm::decode(data, None, &stop)
+    decode_dispatch(data, None, &stop)
 }
 
-/// Decode any PNM format with resource limits.
+/// Decode any supported format with resource limits.
 pub fn decode_with_limits<'a>(
     data: &'a [u8],
     limits: &'a Limits,
     stop: impl Stop,
 ) -> Result<DecodeOutput<'a>, PnmError> {
-    pnm::decode(data, Some(limits), &stop)
+    decode_dispatch(data, Some(limits), &stop)
+}
+
+fn decode_dispatch<'a>(
+    data: &'a [u8],
+    limits: Option<&Limits>,
+    stop: &dyn enough::Stop,
+) -> Result<DecodeOutput<'a>, PnmError> {
+    if data.len() >= 2 && &data[0..2] == b"BM" {
+        #[cfg(feature = "bmp")]
+        return bmp::decode(data, limits, stop);
+        #[cfg(not(feature = "bmp"))]
+        return Err(PnmError::UnsupportedVariant(
+            "BMP support requires the 'bmp' feature".into(),
+        ));
+    }
+    if data.len() >= 8 && &data[0..8] == b"farbfeld" {
+        return farbfeld::decode(data, limits, stop);
+    }
+    pnm::decode(data, limits, stop)
 }
 
 // ── PNM encode ───────────────────────────────────────────────────────
@@ -174,18 +202,52 @@ pub fn encode_pfm(
     pnm::encode(pixels, width, height, layout, pnm::PnmFormat::Pfm, &stop)
 }
 
-// ── BMP (explicit only, not auto-detected) ───────────────────────────
+// ── Farbfeld encode/decode ────────────────────────────────────────────
 
-/// Decode BMP data to pixels (explicit, not auto-detected).
+/// Decode farbfeld data to pixels.
 ///
+/// Also auto-detected by [`decode()`] via the `"farbfeld"` magic bytes.
+/// Output layout is always [`PixelLayout::Rgba16`].
+pub fn decode_farbfeld(data: &[u8], stop: impl Stop) -> Result<DecodeOutput<'_>, PnmError> {
+    farbfeld::decode(data, None, &stop)
+}
+
+/// Decode farbfeld with resource limits.
+pub fn decode_farbfeld_with_limits<'a>(
+    data: &'a [u8],
+    limits: &'a Limits,
+    stop: impl Stop,
+) -> Result<DecodeOutput<'a>, PnmError> {
+    farbfeld::decode(data, Some(limits), &stop)
+}
+
+/// Encode pixels as farbfeld.
+///
+/// Accepts `Rgba16` (direct), `Rgba8` (expand via val*257),
+/// `Rgb8` (expand + alpha=65535), or `Gray8` (expand to RGBA).
+pub fn encode_farbfeld(
+    pixels: &[u8],
+    width: u32,
+    height: u32,
+    layout: PixelLayout,
+    stop: impl Stop,
+) -> Result<alloc::vec::Vec<u8>, PnmError> {
+    farbfeld::encode(pixels, width, height, layout, &stop)
+}
+
+// ── BMP (auto-detected, or explicit) ─────────────────────────────────
+
+/// Decode BMP data to pixels.
+///
+/// Also auto-detected by [`decode()`] via the `"BM"` magic bytes.
 /// BMP always allocates (BGR→RGB conversion + row flip).
-#[cfg(feature = "basic-bmp")]
+#[cfg(feature = "bmp")]
 pub fn decode_bmp(data: &[u8], stop: impl Stop) -> Result<DecodeOutput<'_>, PnmError> {
     bmp::decode(data, None, &stop)
 }
 
 /// Decode BMP with resource limits.
-#[cfg(feature = "basic-bmp")]
+#[cfg(feature = "bmp")]
 pub fn decode_bmp_with_limits<'a>(
     data: &'a [u8],
     limits: &'a Limits,
@@ -196,16 +258,16 @@ pub fn decode_bmp_with_limits<'a>(
 
 /// Decode BMP data in native byte order (BGR for 24-bit, BGRA for 32-bit).
 ///
-/// Unlike [`decode_bmp`], this skips the BGR→RGB channel swizzle entirely,
+/// Unlike [`decode_bmp`], this skips the BGR→RGB channel swizzle,
 /// returning pixels in the BMP-native byte order. The output layout will be
-/// [`PixelLayout::Bgr8`] or [`PixelLayout::Bgra8`].
-#[cfg(feature = "basic-bmp")]
+/// [`PixelLayout::Bgr8`], [`PixelLayout::Bgra8`], or [`PixelLayout::Gray8`].
+#[cfg(feature = "bmp")]
 pub fn decode_bmp_native(data: &[u8], stop: impl Stop) -> Result<DecodeOutput<'_>, PnmError> {
     bmp::decode_native(data, None, &stop)
 }
 
 /// Decode BMP in native byte order with resource limits.
-#[cfg(feature = "basic-bmp")]
+#[cfg(feature = "bmp")]
 pub fn decode_bmp_native_with_limits<'a>(
     data: &'a [u8],
     limits: &'a Limits,
@@ -215,7 +277,7 @@ pub fn decode_bmp_native_with_limits<'a>(
 }
 
 /// Encode pixels as 24-bit BMP (RGB, no alpha).
-#[cfg(feature = "basic-bmp")]
+#[cfg(feature = "bmp")]
 pub fn encode_bmp(
     pixels: &[u8],
     width: u32,
@@ -227,7 +289,7 @@ pub fn encode_bmp(
 }
 
 /// Encode pixels as 32-bit BMP (RGBA with alpha).
-#[cfg(feature = "basic-bmp")]
+#[cfg(feature = "bmp")]
 pub fn encode_bmp_rgba(
     pixels: &[u8],
     width: u32,
@@ -268,7 +330,7 @@ where
 }
 
 /// Decode BMP to typed pixels.
-#[cfg(all(feature = "basic-bmp", feature = "rgb"))]
+#[cfg(all(feature = "bmp", feature = "rgb"))]
 pub fn decode_bmp_pixels<P: DecodePixel>(
     data: &[u8],
     stop: impl Stop,
@@ -281,7 +343,7 @@ where
 }
 
 /// Decode BMP to typed pixels with resource limits.
-#[cfg(all(feature = "basic-bmp", feature = "rgb"))]
+#[cfg(all(feature = "bmp", feature = "rgb"))]
 pub fn decode_bmp_pixels_with_limits<P: DecodePixel>(
     data: &[u8],
     limits: &Limits,
@@ -370,7 +432,7 @@ where
 }
 
 /// Encode typed pixels as 24-bit BMP.
-#[cfg(all(feature = "basic-bmp", feature = "rgb"))]
+#[cfg(all(feature = "bmp", feature = "rgb"))]
 pub fn encode_bmp_pixels<P: EncodePixel>(
     pixels: &[P],
     width: u32,
@@ -384,7 +446,7 @@ where
 }
 
 /// Encode typed pixels as 32-bit BMP (RGBA).
-#[cfg(all(feature = "basic-bmp", feature = "rgb"))]
+#[cfg(all(feature = "bmp", feature = "rgb"))]
 pub fn encode_bmp_rgba_pixels<P: EncodePixel>(
     pixels: &[P],
     width: u32,
@@ -427,7 +489,7 @@ where
 }
 
 /// Decode BMP to an [`imgref::ImgVec`].
-#[cfg(all(feature = "basic-bmp", feature = "imgref"))]
+#[cfg(all(feature = "bmp", feature = "imgref"))]
 pub fn decode_bmp_img<P: DecodePixel>(
     data: &[u8],
     stop: impl Stop,
@@ -440,7 +502,7 @@ where
 }
 
 /// Decode BMP to an [`imgref::ImgVec`] with resource limits.
-#[cfg(all(feature = "basic-bmp", feature = "imgref"))]
+#[cfg(all(feature = "bmp", feature = "imgref"))]
 pub fn decode_bmp_img_with_limits<P: DecodePixel>(
     data: &[u8],
     limits: &Limits,
@@ -471,7 +533,7 @@ where
 }
 
 /// Decode BMP into an existing [`imgref::ImgRefMut`] buffer.
-#[cfg(all(feature = "basic-bmp", feature = "imgref"))]
+#[cfg(all(feature = "bmp", feature = "imgref"))]
 pub fn decode_bmp_into<P: DecodePixel>(
     data: &[u8],
     output: imgref::ImgRefMut<'_, P>,
@@ -571,7 +633,7 @@ where
 }
 
 /// Encode an [`imgref::ImgRef`] as 24-bit BMP.
-#[cfg(all(feature = "basic-bmp", feature = "imgref"))]
+#[cfg(all(feature = "bmp", feature = "imgref"))]
 pub fn encode_bmp_img<P: EncodePixel>(
     img: imgref::ImgRef<'_, P>,
     stop: impl Stop,
@@ -584,7 +646,7 @@ where
 }
 
 /// Encode an [`imgref::ImgRef`] as 32-bit BMP (RGBA).
-#[cfg(all(feature = "basic-bmp", feature = "imgref"))]
+#[cfg(all(feature = "bmp", feature = "imgref"))]
 pub fn encode_bmp_rgba_img<P: EncodePixel>(
     img: imgref::ImgRef<'_, P>,
     stop: impl Stop,

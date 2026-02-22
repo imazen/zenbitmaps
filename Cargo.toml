@@ -4,9 +4,9 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
 license = "MIT OR Apache-2.0"
-description = "PNM/PAM/PFM image format decoder and encoder (P5, P6, P7, PFM) with optional basic BMP"
+description = "PNM/PAM/PFM, BMP, and farbfeld image format decoder and encoder"
 categories = ["multimedia::images"]
-keywords = ["image", "pnm", "pam", "ppm", "pgm"]
+keywords = ["image", "pnm", "bmp", "farbfeld", "pam"]
 repository = "https://github.com/imazen/zenpnm"
 documentation = "https://docs.rs/zenpnm"
 readme = "README.md"
@@ -28,7 +28,7 @@ default = []
 std = []
 
 # Format groups
-basic-bmp = []   # Basic uncompressed 24/32-bit BMP (not auto-detected, explicit use only)
+bmp = []   # Full BMP support (all bit depths, RLE, bitfields, palettes)
 
 # Typed pixel support
 rgb = ["dep:rgb"]              # RGB8, RGBA8 etc. typed pixel encode/decode
@@ -38,4 +38,4 @@ imgref = ["dep:imgref", "rgb"] # ImgVec/ImgRef 2D buffer support (implies rgb)
 zencodec = ["dep:zencodec-types", "imgref", "rgb", "dep:linear-srgb"]
 
 # All optional features
-all = ["basic-bmp", "rgb", "imgref"]
+all = ["bmp", "rgb", "imgref"]

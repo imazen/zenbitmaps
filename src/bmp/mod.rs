@@ -2,7 +2,7 @@
 //!
 //! Use top-level [`crate::decode_bmp`], [`crate::encode_bmp`], etc.
 
-mod decode;
+pub(crate) mod decode;
 mod encode;
 mod utils;
 

@@ -390,6 +390,22 @@ impl zencodec_types::DecoderConfig for PnmDecoderConfig {
     }
 
     fn probe_header(&self, data: &[u8]) -> Result<ImageInfo, PnmError> {
+        // Auto-detect BMP and farbfeld before falling back to PNM
+        #[cfg(feature = "bmp")]
+        if data.len() >= 2 && &data[0..2] == b"BM" {
+            let header = crate::bmp::decode::parse_bmp_header(data)?;
+            let has_alpha = matches!(
+                header.layout,
+                crate::PixelLayout::Rgba8 | crate::PixelLayout::Bgra8
+            );
+            return Ok(
+                ImageInfo::new(header.width, header.height, ImageFormat::Pnm).with_alpha(has_alpha),
+            );
+        }
+        if data.len() >= 8 && &data[0..8] == b"farbfeld" {
+            let (width, height) = crate::farbfeld::decode::parse_header(data)?;
+            return Ok(ImageInfo::new(width, height, ImageFormat::Pnm).with_alpha(true));
+        }
         let header = pnm::decode::parse_header(data)?;
         Ok(header_to_image_info(&header))
     }
@@ -417,6 +433,27 @@ impl<'a> zencodec_types::DecodeJob<'a> for PnmDecodeJob<'a> {
     }
 
     fn output_info(&self, data: &[u8]) -> Result<OutputInfo, PnmError> {
+        // Auto-detect format for output info
+        #[cfg(feature = "bmp")]
+        if data.len() >= 2 && &data[0..2] == b"BM" {
+            let header = crate::bmp::decode::parse_bmp_header(data)?;
+            let has_alpha = matches!(
+                header.layout,
+                crate::PixelLayout::Rgba8 | crate::PixelLayout::Bgra8
+            );
+            let native_format = layout_to_descriptor(header.layout);
+            return Ok(
+                OutputInfo::full_decode(header.width, header.height, native_format)
+                    .with_alpha(has_alpha),
+            );
+        }
+        if data.len() >= 8 && &data[0..8] == b"farbfeld" {
+            let (width, height) = crate::farbfeld::decode::parse_header(data)?;
+            return Ok(
+                OutputInfo::full_decode(width, height, PixelDescriptor::RGBA16_SRGB)
+                    .with_alpha(true),
+            );
+        }
         let header = pnm::decode::parse_header(data)?;
         let has_alpha = matches!(
             header.layout,
@@ -462,7 +499,7 @@ impl zencodec_types::Decoder for PnmDecoder<'_> {
 
     fn decode(self, data: &[u8]) -> Result<DecodeOutput, PnmError> {
         let limits = self.effective_limits();
-        let decoded = pnm::decode(data, limits, &enough::Unstoppable)?;
+        let decoded = crate::decode_dispatch(data, limits, &enough::Unstoppable)?;
 
         let has_alpha = matches!(
             decoded.layout,

@@ -6,7 +6,7 @@
 //! Implementation draws from [zune-farbfeld](https://github.com/etemesi254/zune-image)
 //! by Caleb Etemesi (MIT/Apache-2.0/Zlib licensed).
 
-mod decode;
+pub(crate) mod decode;
 mod encode;
 
 use crate::decode::DecodeOutput;
@@ -15,9 +15,6 @@ use crate::limits::Limits;
 use crate::pixel::PixelLayout;
 use alloc::vec::Vec;
 use enough::Stop;
-
-/// The magic bytes for farbfeld format.
-pub(crate) const MAGIC: &[u8; 8] = b"farbfeld";
 
 /// Decode farbfeld data to RGBA16 pixels (native endian).
 pub(crate) fn decode<'a>(

@@ -52,7 +52,7 @@ fn pgm_roundtrip_gray8() {
     assert!(decoded.is_borrowed());
 }
 
-#[cfg(feature = "basic-bmp")]
+#[cfg(feature = "bmp")]
 #[test]
 fn bmp_roundtrip_rgb8() {
     let pixels = vec![
@@ -68,11 +68,12 @@ fn bmp_roundtrip_rgb8() {
     assert_eq!(decoded.pixels(), &pixels[..]);
     assert!(!decoded.is_borrowed());
 
-    // Auto-detect rejects BMP
-    assert!(decode(&encoded, Unstoppable).is_err());
+    // Auto-detect now recognizes BMP via "BM" magic
+    let auto_decoded = decode(&encoded, Unstoppable).unwrap();
+    assert_eq!(auto_decoded.pixels(), &pixels[..]);
 }
 
-#[cfg(feature = "basic-bmp")]
+#[cfg(feature = "bmp")]
 #[test]
 fn bmp_roundtrip_rgba8() {
     let pixels = vec![
