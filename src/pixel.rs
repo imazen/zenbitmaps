@@ -20,6 +20,8 @@ pub enum PixelLayout {
     GrayF32,
     /// 3 channels, 32-bit float RGB.
     RgbF32,
+    /// 4 channels, 16-bit RGBA (native endian).
+    Rgba16,
 }
 
 impl PixelLayout {
@@ -32,6 +34,7 @@ impl PixelLayout {
             Self::Rgba8 | Self::Bgra8 | Self::Bgrx8 => 4,
             Self::GrayF32 => 4,
             Self::RgbF32 => 12,
+            Self::Rgba16 => 8,
         }
     }
 
@@ -40,7 +43,7 @@ impl PixelLayout {
         match self {
             Self::Gray8 | Self::Gray16 | Self::GrayF32 => 1,
             Self::Rgb8 | Self::Bgr8 | Self::RgbF32 => 3,
-            Self::Rgba8 | Self::Bgra8 | Self::Bgrx8 => 4,
+            Self::Rgba8 | Self::Bgra8 | Self::Bgrx8 | Self::Rgba16 => 4,
         }
     }
 

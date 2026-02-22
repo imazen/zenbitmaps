@@ -24,6 +24,7 @@ static DECODE_CAPS: CodecCapabilities = CodecCapabilities::new()
 static ENCODE_DESCRIPTORS: &[PixelDescriptor] = &[
     PixelDescriptor::RGB8_SRGB,
     PixelDescriptor::RGBA8_SRGB,
+    PixelDescriptor::RGBA16_SRGB,
     PixelDescriptor::GRAY8_SRGB,
     PixelDescriptor::BGRA8_SRGB,
     PixelDescriptor::RGBF32_LINEAR,
@@ -34,6 +35,7 @@ static ENCODE_DESCRIPTORS: &[PixelDescriptor] = &[
 static DECODE_DESCRIPTORS: &[PixelDescriptor] = &[
     PixelDescriptor::RGB8_SRGB,
     PixelDescriptor::RGBA8_SRGB,
+    PixelDescriptor::RGBA16_SRGB,
     PixelDescriptor::GRAY8_SRGB,
     PixelDescriptor::BGRA8_SRGB,
     PixelDescriptor::RGBF32_LINEAR,
@@ -603,6 +605,7 @@ fn layout_to_descriptor(layout: crate::PixelLayout) -> PixelDescriptor {
         PixelLayout::RgbF32 => PixelDescriptor::RGBF32_LINEAR,
         PixelLayout::Bgr8 | PixelLayout::Bgrx8 => PixelDescriptor::RGB8_SRGB,
         PixelLayout::Bgra8 => PixelDescriptor::BGRA8_SRGB,
+        PixelLayout::Rgba16 => PixelDescriptor::RGBA16_SRGB,
     }
 }
 
@@ -674,6 +677,20 @@ fn layout_to_pixel_data(decoded: &crate::decode::DecodeOutput<'_>) -> Result<Pix
             // Treat BGRX as BGRA (padding byte becomes alpha)
             let pixels: &[rgb::alt::BGRA<u8>] = bytes.as_pixels();
             Ok(PixelData::Bgra8(imgref::ImgVec::new(pixels.to_vec(), w, h)))
+        }
+        PixelLayout::Rgba16 => {
+            let pixels: Vec<rgb::Rgba<u16>> = bytes
+                .chunks_exact(8)
+                .map(|c| {
+                    rgb::Rgba {
+                        r: u16::from_ne_bytes([c[0], c[1]]),
+                        g: u16::from_ne_bytes([c[2], c[3]]),
+                        b: u16::from_ne_bytes([c[4], c[5]]),
+                        a: u16::from_ne_bytes([c[6], c[7]]),
+                    }
+                })
+                .collect();
+            Ok(PixelData::Rgba16(imgref::ImgVec::new(pixels, w, h)))
         }
     }
 }
