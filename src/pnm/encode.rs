@@ -192,16 +192,19 @@ fn encode_pam(
     w: usize,
     h: usize,
     layout: PixelLayout,
-    _stop: &dyn Stop,
+    stop: &dyn Stop,
 ) -> Result<Vec<u8>, BitmapError> {
     let (depth, tupltype, maxval) = match layout {
         PixelLayout::Gray8 => (1, "GRAYSCALE", 255),
         PixelLayout::Gray16 => (1, "GRAYSCALE", 65535),
         PixelLayout::Rgb8 => (3, "RGB", 255),
         PixelLayout::Rgba8 => (4, "RGB_ALPHA", 255),
+        PixelLayout::Bgr8 => (3, "RGB", 255),
+        PixelLayout::Bgra8 => (4, "RGB_ALPHA", 255),
+        PixelLayout::Bgrx8 => (4, "RGB_ALPHA", 255),
         _ => {
             return Err(BitmapError::UnsupportedVariant(format!(
-                "cannot encode {:?} as PAM directly; convert to RGB/RGBA first",
+                "cannot encode {:?} as PAM",
                 layout
             )));
         }
@@ -211,11 +214,56 @@ fn encode_pam(
         "P7\nWIDTH {width}\nHEIGHT {height}\nDEPTH {depth}\nMAXVAL {maxval}\nTUPLTYPE {tupltype}\nENDHDR\n"
     );
 
-    let pixel_bytes = w * h * layout.bytes_per_pixel();
-    let mut out = Vec::with_capacity(header.len() + pixel_bytes);
+    let pixel_count = w * h;
+    let out_bytes = pixel_count * depth;
+    let mut out = Vec::with_capacity(header.len() + out_bytes);
     out.extend_from_slice(header.as_bytes());
-    // PAM is a direct copy of the pixel data — zero transformation
-    out.extend_from_slice(&pixels[..pixel_bytes]);
+
+    match layout {
+        PixelLayout::Bgr8 => {
+            // Swizzle BGR → RGB
+            for i in 0..pixel_count {
+                if i % w.saturating_mul(16).max(1) == 0 {
+                    stop.check()?;
+                }
+                let off = i * 3;
+                out.push(pixels[off + 2]); // R
+                out.push(pixels[off + 1]); // G
+                out.push(pixels[off]); // B
+            }
+        }
+        PixelLayout::Bgra8 => {
+            // Swizzle BGRA → RGBA
+            for i in 0..pixel_count {
+                if i % w.saturating_mul(16).max(1) == 0 {
+                    stop.check()?;
+                }
+                let off = i * 4;
+                out.push(pixels[off + 2]); // R
+                out.push(pixels[off + 1]); // G
+                out.push(pixels[off]); // B
+                out.push(pixels[off + 3]); // A
+            }
+        }
+        PixelLayout::Bgrx8 => {
+            // Swizzle BGRX → RGBA (A=255)
+            for i in 0..pixel_count {
+                if i % w.saturating_mul(16).max(1) == 0 {
+                    stop.check()?;
+                }
+                let off = i * 4;
+                out.push(pixels[off + 2]); // R
+                out.push(pixels[off + 1]); // G
+                out.push(pixels[off]); // B
+                out.push(255); // A (opaque)
+            }
+        }
+        _ => {
+            // Direct copy for native-order formats
+            let pixel_bytes = pixel_count * layout.bytes_per_pixel();
+            out.extend_from_slice(&pixels[..pixel_bytes]);
+        }
+    }
 
     Ok(out)
 }

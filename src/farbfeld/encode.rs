@@ -93,6 +93,58 @@ pub(crate) fn encode_farbfeld(
                 }
             }
         }
+        PixelLayout::Bgra8 => {
+            // Expand BGRA u8 → RGBA u16 (swap B↔R)
+            for (row_idx, row) in pixels[..expected].chunks_exact(w * 4).enumerate() {
+                if row_idx % 16 == 0 {
+                    stop.check()?;
+                }
+                for pixel in row.chunks_exact(4) {
+                    let r: u16 = pixel[2] as u16 * 257;
+                    let g: u16 = pixel[1] as u16 * 257;
+                    let b: u16 = pixel[0] as u16 * 257;
+                    let a: u16 = pixel[3] as u16 * 257;
+                    out.extend_from_slice(&r.to_be_bytes());
+                    out.extend_from_slice(&g.to_be_bytes());
+                    out.extend_from_slice(&b.to_be_bytes());
+                    out.extend_from_slice(&a.to_be_bytes());
+                }
+            }
+        }
+        PixelLayout::Bgrx8 => {
+            // Expand BGRX u8 → RGBA u16 (swap B↔R, alpha=65535)
+            for (row_idx, row) in pixels[..expected].chunks_exact(w * 4).enumerate() {
+                if row_idx % 16 == 0 {
+                    stop.check()?;
+                }
+                for pixel in row.chunks_exact(4) {
+                    let r: u16 = pixel[2] as u16 * 257;
+                    let g: u16 = pixel[1] as u16 * 257;
+                    let b: u16 = pixel[0] as u16 * 257;
+                    out.extend_from_slice(&r.to_be_bytes());
+                    out.extend_from_slice(&g.to_be_bytes());
+                    out.extend_from_slice(&b.to_be_bytes());
+                    out.extend_from_slice(&65535u16.to_be_bytes());
+                }
+            }
+        }
+        PixelLayout::Bgr8 => {
+            // Expand BGR u8 → RGBA u16 (swap B↔R, alpha=65535)
+            for (row_idx, row) in pixels[..expected].chunks_exact(w * 3).enumerate() {
+                if row_idx % 16 == 0 {
+                    stop.check()?;
+                }
+                for pixel in row.chunks_exact(3) {
+                    let r: u16 = pixel[2] as u16 * 257;
+                    let g: u16 = pixel[1] as u16 * 257;
+                    let b: u16 = pixel[0] as u16 * 257;
+                    out.extend_from_slice(&r.to_be_bytes());
+                    out.extend_from_slice(&g.to_be_bytes());
+                    out.extend_from_slice(&b.to_be_bytes());
+                    out.extend_from_slice(&65535u16.to_be_bytes());
+                }
+            }
+        }
         PixelLayout::Gray8 => {
             // Expand gray u8 → RGBA u16 (R=G=B=gray, alpha=65535)
             for (row_idx, row) in pixels[..expected].chunks_exact(w).enumerate() {
