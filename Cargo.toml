@@ -13,7 +13,7 @@ readme = "README.md"
 
 [dependencies]
 # Core (always available)
-enough = "0.3"
+enough = "0.4"
 imgref = { version = "1.12", default-features = false, optional = true }
 rgb = { version = "0.8", default-features = false, features = ["as-bytes"], optional = true }
 thiserror = { version = "2.0", default-features = false }
@@ -21,7 +21,7 @@ zencodec-types = { path = "../zencodec-types", optional = true }
 linear-srgb = { version = "0.5.1", optional = true }
 
 [dev-dependencies]
-archmage = { version = "0.7", features = ["std"] }
+archmage = { version = "0.8.4", features = ["std"] }
 
 [features]
 default = []

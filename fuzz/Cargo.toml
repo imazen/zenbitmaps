@@ -9,7 +9,7 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-enough = "0.3"
+enough = "0.4"
 
 [dependencies.zenpnm]
 path = ".."

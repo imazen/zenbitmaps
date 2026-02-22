@@ -71,6 +71,10 @@ impl zencodec_types::EncoderConfig for PnmEncoderConfig {
     type Error = PnmError;
     type Job<'a> = PnmEncodeJob<'a>;
 
+    fn format() -> ImageFormat {
+        ImageFormat::Pnm
+    }
+
     fn supported_descriptors() -> &'static [PixelDescriptor] {
         ENCODE_DESCRIPTORS
     }
@@ -364,6 +368,10 @@ impl zencodec_types::DecoderConfig for PnmDecoderConfig {
     type Error = PnmError;
     type Job<'a> = PnmDecodeJob<'a>;
 
+    fn format() -> ImageFormat {
+        ImageFormat::Pnm
+    }
+
     fn supported_descriptors() -> &'static [PixelDescriptor] {
         DECODE_DESCRIPTORS
     }
@@ -431,7 +439,6 @@ impl<'a> zencodec_types::DecodeJob<'a> for PnmDecodeJob<'a> {
             "PNM does not support animation".into(),
         ))
     }
-
 }
 
 // ── PnmDecoder ───────────────────────────────────────────────────────
@@ -704,7 +711,7 @@ where
 fn decode_into_rgb_f32(output: DecodeOutput, is_float: bool, dst: &mut PixelSliceMut<'_>) {
     use linear_srgb::default::srgb_to_linear_fast;
 
-    let src = output.into_rgb_f32();
+    let src = output.into_pixels().into_rgb8();
     for y in 0..src.height().min(dst.rows() as usize) {
         let src_row = &src.buf()[y * src.stride()..][..src.width()];
         let dst_row = dst.row_mut(y as u32);
@@ -713,13 +720,16 @@ fn decode_into_rgb_f32(output: DecodeOutput, is_float: bool, dst: &mut PixelSlic
             if offset + 12 > dst_row.len() {
                 break;
             }
-            let (r, g, b) = if is_float {
-                (s.r, s.g, s.b) // PFM: already linear
+            let rf = s.r as f32 / 255.0;
+            let gf = s.g as f32 / 255.0;
+            let bf = s.b as f32 / 255.0;
+            let (r, g, b): (f32, f32, f32) = if is_float {
+                (rf, gf, bf)
             } else {
                 (
-                    srgb_to_linear_fast(s.r),
-                    srgb_to_linear_fast(s.g),
-                    srgb_to_linear_fast(s.b),
+                    srgb_to_linear_fast(rf),
+                    srgb_to_linear_fast(gf),
+                    srgb_to_linear_fast(bf),
                 )
             };
             dst_row[offset..offset + 4].copy_from_slice(&r.to_ne_bytes());
@@ -733,7 +743,7 @@ fn decode_into_rgb_f32(output: DecodeOutput, is_float: bool, dst: &mut PixelSlic
 fn decode_into_rgba_f32(output: DecodeOutput, is_float: bool, dst: &mut PixelSliceMut<'_>) {
     use linear_srgb::default::srgb_to_linear_fast;
 
-    let src = output.into_rgba_f32();
+    let src = output.into_pixels().into_rgba8();
     for y in 0..src.height().min(dst.rows() as usize) {
         let src_row = &src.buf()[y * src.stride()..][..src.width()];
         let dst_row = dst.row_mut(y as u32);
@@ -742,19 +752,23 @@ fn decode_into_rgba_f32(output: DecodeOutput, is_float: bool, dst: &mut PixelSli
             if offset + 16 > dst_row.len() {
                 break;
             }
-            let (r, g, b) = if is_float {
-                (s.r, s.g, s.b)
+            let rf = s.r as f32 / 255.0;
+            let gf = s.g as f32 / 255.0;
+            let bf = s.b as f32 / 255.0;
+            let af = s.a as f32 / 255.0;
+            let (r, g, b): (f32, f32, f32) = if is_float {
+                (rf, gf, bf)
             } else {
                 (
-                    srgb_to_linear_fast(s.r),
-                    srgb_to_linear_fast(s.g),
-                    srgb_to_linear_fast(s.b),
+                    srgb_to_linear_fast(rf),
+                    srgb_to_linear_fast(gf),
+                    srgb_to_linear_fast(bf),
                 )
             };
             dst_row[offset..offset + 4].copy_from_slice(&r.to_ne_bytes());
             dst_row[offset + 4..offset + 8].copy_from_slice(&g.to_ne_bytes());
             dst_row[offset + 8..offset + 12].copy_from_slice(&b.to_ne_bytes());
-            dst_row[offset + 12..offset + 16].copy_from_slice(&s.a.to_ne_bytes());
+            dst_row[offset + 12..offset + 16].copy_from_slice(&af.to_ne_bytes());
         }
     }
 }
@@ -763,7 +777,7 @@ fn decode_into_rgba_f32(output: DecodeOutput, is_float: bool, dst: &mut PixelSli
 fn decode_into_gray_f32(output: DecodeOutput, is_float: bool, dst: &mut PixelSliceMut<'_>) {
     use linear_srgb::default::srgb_to_linear_fast;
 
-    let src = output.into_gray_f32();
+    let src = output.into_pixels().into_gray8();
     for y in 0..src.height().min(dst.rows() as usize) {
         let src_row = &src.buf()[y * src.stride()..][..src.width()];
         let dst_row = dst.row_mut(y as u32);
@@ -772,10 +786,11 @@ fn decode_into_gray_f32(output: DecodeOutput, is_float: bool, dst: &mut PixelSli
             if offset + 4 > dst_row.len() {
                 break;
             }
-            let v = if is_float {
-                s.value()
+            let vf = s.value() as f32 / 255.0;
+            let v: f32 = if is_float {
+                vf
             } else {
-                srgb_to_linear_fast(s.value())
+                srgb_to_linear_fast(vf)
             };
             dst_row[offset..offset + 4].copy_from_slice(&v.to_ne_bytes());
         }
@@ -1177,15 +1192,27 @@ mod tests {
         assert_eq!(output.format(), ImageFormat::Pnm);
 
         // Decode and verify f32 values survive PFM roundtrip
+        // PFM RGB → zencodec PixelData::RgbaF32 (alpha = 1.0)
         let dec = PnmDecoderConfig::new();
         let decoded = dec.decode(output.bytes()).unwrap();
-        let rgb_img = decoded.into_rgb_f32();
-        let buf = rgb_img.buf();
-        for (orig, decoded) in pixels.iter().zip(buf.iter()) {
-            assert!((orig.r - decoded.r).abs() < 1e-6);
-            assert!((orig.g - decoded.g).abs() < 1e-6);
-            assert!((orig.b - decoded.b).abs() < 1e-6);
+        let rgba_img = decoded.into_rgba8();
+        // PFM stores f32 natively; going through into_rgba8 will quantize to u8.
+        // Use the raw PixelData instead.
+        let dec2 = PnmDecoderConfig::new();
+        let decoded2 = dec2.decode(output.bytes()).unwrap();
+        match decoded2.into_pixels() {
+            PixelData::RgbaF32(img) => {
+                let buf = img.buf();
+                for (orig, decoded) in pixels.iter().zip(buf.iter()) {
+                    assert!((orig.r - decoded.r).abs() < 1e-6);
+                    assert!((orig.g - decoded.g).abs() < 1e-6);
+                    assert!((orig.b - decoded.b).abs() < 1e-6);
+                }
+            }
+            other => panic!("expected RgbaF32, got {:?}", other),
         }
+        // Ensure the u8 path didn't panic
+        drop(rgba_img);
     }
 
     #[test]
@@ -1202,10 +1229,14 @@ mod tests {
 
         let dec = PnmDecoderConfig::new();
         let decoded = dec.decode(output.bytes()).unwrap();
-        let gray_img = decoded.into_gray_f32();
-        let buf = gray_img.buf();
-        for (orig, decoded) in pixels.iter().zip(buf.iter()) {
-            assert!((orig.value() - decoded.value()).abs() < 1e-6);
+        match decoded.into_pixels() {
+            PixelData::GrayF32(img) => {
+                let buf = img.buf();
+                for (orig, decoded) in pixels.iter().zip(buf.iter()) {
+                    assert!((orig.value() - decoded.value()).abs() < 1e-6);
+                }
+            }
+            other => panic!("expected GrayF32, got {:?}", other),
         }
     }
 
@@ -1244,12 +1275,16 @@ mod tests {
 
         let dec = PnmDecoderConfig::new();
         let decoded = dec.decode(output.bytes()).unwrap();
-        let rgb_img = decoded.into_rgb_f32();
-        let buf = rgb_img.buf();
-        for (orig, decoded) in pixels.iter().zip(buf.iter()) {
-            assert!((orig.r - decoded.r).abs() < 1e-6);
-            assert!((orig.g - decoded.g).abs() < 1e-6);
-            assert!((orig.b - decoded.b).abs() < 1e-6);
+        match decoded.into_pixels() {
+            PixelData::RgbaF32(img) => {
+                let buf = img.buf();
+                for (orig, decoded) in pixels.iter().zip(buf.iter()) {
+                    assert!((orig.r - decoded.r).abs() < 1e-6);
+                    assert!((orig.g - decoded.g).abs() < 1e-6);
+                    assert!((orig.b - decoded.b).abs() < 1e-6);
+                }
+            }
+            other => panic!("expected RgbaF32, got {:?}", other),
         }
     }
 

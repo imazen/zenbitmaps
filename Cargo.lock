@@ -8,7 +8,16 @@ version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "61bd463aee29794a0318115ab857c2486842b28956c3f75365b304f1047b4758"
 dependencies = [
- "archmage-macros",
+ "archmage-macros 0.7.0",
+]
+
+[[package]]
+name = "archmage"
+version = "0.8.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fba21e64cb000b4890dc6348042557208486e5ea4e9f574b7f75f7a45e99e19d"
+dependencies = [
+ "archmage-macros 0.8.4",
  "safe_unaligned_simd",
 ]
 
@@ -17,6 +26,17 @@ name = "archmage-macros"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "02b01e2d131ffadba47bdff5d5e1d5d8a3b9743dc6b3d6ce4847ae2d6d306058"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "archmage-macros"
+version = "0.8.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "35c9306deb9d68bc48cd4fa5ab2281b31c82ff2831360419ffbaf2f701b19a5a"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -37,9 +57,9 @@ checksum = "c8efb64bd706a16a1bdde310ae86b351e4d21550d98d056f22f8a7f7a2183fec"
 
 [[package]]
 name = "enough"
-version = "0.3.1"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "65641ff0923e45cf34a4cb0115080cb7fc8bf4fd419c2207670d5722bab4c581"
+checksum = "177a59811828ea5dbc8927662d444ffee7b55a44696486f1b1a245ae9e652533"
 
 [[package]]
 name = "imgref"
@@ -59,7 +79,7 @@ version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "46acebace6b3e1f5c69d2ea97e89f37e389c2e7ae8e7bbaaaeafadf633d88f9e"
 dependencies = [
- "archmage",
+ "archmage 0.7.0",
  "bytemuck",
  "magetypes",
  "num-traits",
@@ -72,7 +92,7 @@ version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d55dd4e83507ff9fe129b01669adca1e302ef346dac252ef59139c78def312a"
 dependencies = [
- "archmage",
+ "archmage 0.7.0",
 ]
 
 [[package]]
@@ -194,7 +214,7 @@ dependencies = [
 name = "zenpnm"
 version = "0.1.0"
 dependencies = [
- "archmage",
+ "archmage 0.8.4",
  "enough",
  "imgref",
  "linear-srgb",
