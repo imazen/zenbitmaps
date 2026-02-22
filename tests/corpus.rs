@@ -787,7 +787,6 @@ mod bmp_corpus {
     /// - rgb24jpeg.bmp, rgb24png.bmp: BI_JPEG/BI_PNG compression
     /// - rgb24rle24.bmp: non-standard RLE24 compression
     /// - hopper_rle8_row_overflow.bmp: RLE data overflows row boundary
-    /// - l2rgb_read.bmp: truncated/malformed file (planes=12336)
     /// - pal8oversizepal.bmp: palette count (300) exceeds 8-bit max (256)
     #[test]
     #[ignore]
@@ -803,7 +802,6 @@ mod bmp_corpus {
         // features or structural violations detected by the new checks.
         let expected_failures: &[&str] = &[
             "hopper_rle8_row_overflow.bmp",
-            "l2rgb_read.bmp",
             "pal8oversizepal.bmp",
             "rgb24jpeg.bmp",
             "rgb24png.bmp",
@@ -860,12 +858,11 @@ mod bmp_corpus {
         };
         let files = bmp_files(&dir);
 
-        // These have fundamental issues (zero bpp, unimplemented compression,
-        // or structural problems) that even Permissive can't recover.
+        // These have fundamental issues (zero bpp, unimplemented compression)
+        // that even Permissive can't recover.
         let expected_permissive_failures: &[&str] = &[
-            "l2rgb_read.bmp", // truncated + bogus header fields
-            "rgb24jpeg.bmp",  // bpp=0 in JPEG-compressed BMP
-            "rgb24png.bmp",   // bpp=0 in PNG-compressed BMP
+            "rgb24jpeg.bmp", // bpp=0 in JPEG-compressed BMP
+            "rgb24png.bmp",  // bpp=0 in PNG-compressed BMP
         ];
 
         let mut unexpected_failures = Vec::new();
@@ -913,14 +910,10 @@ mod bmp_corpus {
         let files = bmp_files(&dir);
         assert!(!files.is_empty());
 
-        // These have non-critical metadata errors that don't affect
-        // pixel accuracy, so Standard correctly accepts them.
-        let acceptable_passes: &[&str] = &[
-            "badbitssize.bmp", // image data size field wrong, unused
-            "baddens1.bmp",    // bad DPI, doesn't affect pixels
-            "baddens2.bmp",    // bad DPI, doesn't affect pixels
-            "badfilesize.bmp", // file size field wrong, unused
-        ];
+        // No invalid/ files should pass Standard — all remaining files
+        // have errors that affect correct decoding or violate structural
+        // requirements that Standard enforces.
+        let acceptable_passes: &[&str] = &[];
 
         let mut unexpected_passes = Vec::new();
         let mut pass = 0u32;
