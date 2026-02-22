@@ -29,7 +29,7 @@ impl BmpCompression {
             0 => Some(Self::Rgb),
             1 => Some(Self::Rle8),
             2 => Some(Self::Rle4),
-            3 => Some(Self::Bitfields),
+            3 | 6 => Some(Self::Bitfields), // 6 = BI_ALPHABITFIELDS
             _ => None,
         }
     }
@@ -429,7 +429,12 @@ impl<'a> BmpDecoderState<'a> {
                 if compression == BmpCompression::Rgb {
                     self.pix_fmt = BmpPixelFormat::Rgb;
                 } else if compression == BmpCompression::Bitfields {
-                    self.pix_fmt = BmpPixelFormat::Rgba;
+                    // Only RGBA if the alpha mask is non-zero
+                    if self.rgb_bitfields[3] != 0 {
+                        self.pix_fmt = BmpPixelFormat::Rgba;
+                    } else {
+                        self.pix_fmt = BmpPixelFormat::Rgb;
+                    }
                 }
             }
             8 => {

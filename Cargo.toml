@@ -10,6 +10,7 @@ keywords = ["image", "pnm", "bmp", "farbfeld", "pam"]
 repository = "https://github.com/imazen/zenpnm"
 documentation = "https://docs.rs/zenpnm"
 readme = "README.md"
+exclude = ["tests/bmp-fixtures/"]
 
 [dependencies]
 # Core (always available)

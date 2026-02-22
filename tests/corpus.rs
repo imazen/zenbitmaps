@@ -520,6 +520,119 @@ fn bmp_auto_detect_rgba() {
     assert_eq!(decoded.pixels(), &pixels[..]);
 }
 
+// ── BMP fixture decoding (tests/bmp-fixtures/) ─────────────────────
+
+#[cfg(feature = "bmp")]
+mod bmp_fixtures {
+    use enough::Unstoppable;
+    use zenpnm::*;
+
+    fn fixture(name: &str) -> Vec<u8> {
+        let path = format!("{}/tests/bmp-fixtures/{name}", env!("CARGO_MANIFEST_DIR"));
+        std::fs::read(&path).unwrap_or_else(|e| panic!("failed to read {path}: {e}"))
+    }
+
+    fn assert_fixture(name: &str, expected_layout: PixelLayout) {
+        let data = fixture(name);
+        let decoded =
+            decode_bmp(&data, Unstoppable).unwrap_or_else(|e| panic!("{name}: decode failed: {e}"));
+        assert!(decoded.width > 0, "{name}: zero width");
+        assert!(decoded.height > 0, "{name}: zero height");
+        assert_eq!(decoded.layout, expected_layout, "{name}: layout mismatch");
+        let expected_bytes =
+            decoded.width as usize * decoded.height as usize * decoded.layout.bytes_per_pixel();
+        assert_eq!(
+            decoded.pixels().len(),
+            expected_bytes,
+            "{name}: pixel buffer size mismatch"
+        );
+    }
+
+    #[test]
+    fn fixture_pal1() {
+        assert_fixture("pal1.bmp", PixelLayout::Rgb8);
+    }
+
+    #[test]
+    fn fixture_pal4() {
+        assert_fixture("pal4.bmp", PixelLayout::Rgb8);
+    }
+
+    #[test]
+    fn fixture_pal4rle() {
+        assert_fixture("pal4rle.bmp", PixelLayout::Rgb8);
+    }
+
+    #[test]
+    fn fixture_pal8() {
+        assert_fixture("pal8.bmp", PixelLayout::Rgb8);
+    }
+
+    #[test]
+    fn fixture_pal8rle() {
+        assert_fixture("pal8rle.bmp", PixelLayout::Rgb8);
+    }
+
+    #[test]
+    fn fixture_pal8os2() {
+        assert_fixture("pal8os2.bmp", PixelLayout::Rgb8);
+    }
+
+    #[test]
+    fn fixture_pal8topdown() {
+        assert_fixture("pal8topdown.bmp", PixelLayout::Rgb8);
+    }
+
+    #[test]
+    fn fixture_rgb16() {
+        assert_fixture("rgb16.bmp", PixelLayout::Rgb8); // 16-bit expands to RGB8
+    }
+
+    #[test]
+    fn fixture_rgb16_565() {
+        assert_fixture("rgb16-565.bmp", PixelLayout::Rgb8);
+    }
+
+    #[test]
+    fn fixture_rgb24() {
+        assert_fixture("rgb24.bmp", PixelLayout::Rgb8);
+    }
+
+    #[test]
+    fn fixture_rgb32() {
+        assert_fixture("rgb32.bmp", PixelLayout::Rgba8);
+    }
+
+    #[test]
+    fn fixture_rgba32abf() {
+        assert_fixture("rgba32abf.bmp", PixelLayout::Rgba8);
+    }
+
+    /// All fixtures must also work through auto-detection.
+    #[test]
+    fn fixtures_auto_detect() {
+        for name in [
+            "pal1.bmp",
+            "pal4.bmp",
+            "pal4rle.bmp",
+            "pal8.bmp",
+            "pal8rle.bmp",
+            "pal8os2.bmp",
+            "pal8topdown.bmp",
+            "rgb16.bmp",
+            "rgb16-565.bmp",
+            "rgb24.bmp",
+            "rgb32.bmp",
+            "rgba32abf.bmp",
+        ] {
+            let data = fixture(name);
+            let decoded = decode(&data, Unstoppable)
+                .unwrap_or_else(|e| panic!("{name}: auto-detect decode failed: {e}"));
+            assert!(decoded.width > 0, "{name}: zero width via auto-detect");
+        }
+    }
+}
+
 // ── External files ───────────────────────────────────────────────────
 
 #[test]
