@@ -24,6 +24,9 @@ linear-srgb = { version = "0.5.1", optional = true }
 [dev-dependencies]
 archmage = { version = "0.8.4", features = ["std"] }
 
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+codec-corpus = "1"
+
 [features]
 default = []
 std = []

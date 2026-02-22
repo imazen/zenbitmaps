@@ -673,3 +673,358 @@ fn decode_external_bmp_if_available() {
         assert_eq!(decoded.pixels(), decoded2.pixels());
     }
 }
+
+// ── BMP conformance corpus tests (codec-corpus crate) ────────────────
+
+#[cfg(all(feature = "bmp", not(target_arch = "wasm32")))]
+mod bmp_corpus {
+    use zenpnm::*;
+
+    fn get_corpus(subdir: &str) -> Option<std::path::PathBuf> {
+        let corpus = codec_corpus::Corpus::new().ok()?;
+        corpus.get(&format!("bmp-conformance/{subdir}")).ok()
+    }
+
+    fn bmp_files(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+        let mut files: Vec<_> = std::fs::read_dir(dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| p.extension().map_or(false, |e| e == "bmp"))
+            .collect();
+        files.sort();
+        files
+    }
+
+    fn file_name(p: &std::path::Path) -> String {
+        p.file_name().unwrap().to_string_lossy().into_owned()
+    }
+
+    // ── valid/ ───────────────────────────────────────────────────────
+
+    /// All valid BMP files must decode under Standard (default).
+    #[test]
+    #[ignore]
+    fn valid_standard() {
+        let Some(dir) = get_corpus("valid") else {
+            eprintln!("Skipping: bmp-conformance corpus not available");
+            return;
+        };
+        let files = bmp_files(&dir);
+        assert!(!files.is_empty(), "no BMP files found in valid/");
+
+        let mut failures = Vec::new();
+        for path in &files {
+            let data = std::fs::read(path).unwrap();
+            if let Err(e) = decode_bmp(&data, Unstoppable) {
+                failures.push(format!("{}: {e}", file_name(path)));
+            }
+        }
+        assert!(
+            failures.is_empty(),
+            "valid/ files that failed Standard:\n  {}",
+            failures.join("\n  ")
+        );
+        eprintln!("valid/: {}/{} pass Standard", files.len(), files.len());
+    }
+
+    /// All valid BMP files must also decode under Strict.
+    #[test]
+    #[ignore]
+    fn valid_strict() {
+        let Some(dir) = get_corpus("valid") else {
+            eprintln!("Skipping: bmp-conformance corpus not available");
+            return;
+        };
+        let files = bmp_files(&dir);
+
+        let mut failures = Vec::new();
+        for path in &files {
+            let data = std::fs::read(path).unwrap();
+            if let Err(e) = decode_bmp_permissive(&data, BmpPermissiveness::Strict, Unstoppable) {
+                failures.push(format!("{}: {e}", file_name(path)));
+            }
+        }
+        assert!(
+            failures.is_empty(),
+            "valid/ files that failed Strict:\n  {}",
+            failures.join("\n  ")
+        );
+        eprintln!("valid/: {}/{} pass Strict", files.len(), files.len());
+    }
+
+    /// All valid BMP files must decode under Permissive.
+    #[test]
+    #[ignore]
+    fn valid_permissive() {
+        let Some(dir) = get_corpus("valid") else {
+            eprintln!("Skipping: bmp-conformance corpus not available");
+            return;
+        };
+        let files = bmp_files(&dir);
+
+        let mut failures = Vec::new();
+        for path in &files {
+            let data = std::fs::read(path).unwrap();
+            if let Err(e) = decode_bmp_permissive(&data, BmpPermissiveness::Permissive, Unstoppable)
+            {
+                failures.push(format!("{}: {e}", file_name(path)));
+            }
+        }
+        assert!(
+            failures.is_empty(),
+            "valid/ files that failed Permissive:\n  {}",
+            failures.join("\n  ")
+        );
+    }
+
+    // ── non-conformant/ ──────────────────────────────────────────────
+
+    /// Non-conformant files: document which pass/fail under Standard.
+    /// Files that deviate from spec but are accepted by many decoders.
+    ///
+    /// Expected failures (unimplemented compression or structural issues):
+    /// - rgb24jpeg.bmp, rgb24png.bmp: BI_JPEG/BI_PNG compression
+    /// - rgb24rle24.bmp: non-standard RLE24 compression
+    /// - hopper_rle8_row_overflow.bmp: RLE data overflows row boundary
+    /// - l2rgb_read.bmp: truncated/malformed file (planes=12336)
+    /// - pal8oversizepal.bmp: palette count (300) exceeds 8-bit max (256)
+    #[test]
+    #[ignore]
+    fn non_conformant_standard() {
+        let Some(dir) = get_corpus("non-conformant") else {
+            eprintln!("Skipping: bmp-conformance corpus not available");
+            return;
+        };
+        let files = bmp_files(&dir);
+        assert!(!files.is_empty());
+
+        // Files that are expected to fail Standard due to unimplemented
+        // features or structural violations detected by the new checks.
+        let expected_failures: &[&str] = &[
+            "hopper_rle8_row_overflow.bmp",
+            "l2rgb_read.bmp",
+            "pal8oversizepal.bmp",
+            "rgb24jpeg.bmp",
+            "rgb24png.bmp",
+            "rgb24rle24.bmp",
+        ];
+
+        let mut unexpected_failures = Vec::new();
+        let mut unexpected_passes = Vec::new();
+        let mut pass = 0u32;
+        let mut fail = 0u32;
+
+        for path in &files {
+            let data = std::fs::read(path).unwrap();
+            let name = file_name(path);
+            let expected_fail = expected_failures.contains(&name.as_str());
+
+            match decode_bmp(&data, Unstoppable) {
+                Ok(_) => {
+                    pass += 1;
+                    if expected_fail {
+                        unexpected_passes.push(name);
+                    }
+                }
+                Err(e) => {
+                    fail += 1;
+                    if !expected_fail {
+                        unexpected_failures.push(format!("{name}: {e}"));
+                    }
+                }
+            }
+        }
+
+        eprintln!("non-conformant/: {pass} pass, {fail} fail under Standard");
+
+        assert!(
+            unexpected_failures.is_empty(),
+            "non-conformant/ unexpected Standard failures:\n  {}",
+            unexpected_failures.join("\n  ")
+        );
+        assert!(
+            unexpected_passes.is_empty(),
+            "non-conformant/ expected-fail files that unexpectedly passed:\n  {}",
+            unexpected_passes.join("\n  ")
+        );
+    }
+
+    /// Permissive should recover more non-conformant files.
+    #[test]
+    #[ignore]
+    fn non_conformant_permissive() {
+        let Some(dir) = get_corpus("non-conformant") else {
+            eprintln!("Skipping: bmp-conformance corpus not available");
+            return;
+        };
+        let files = bmp_files(&dir);
+
+        // These have fundamental issues (zero bpp, unimplemented compression,
+        // or structural problems) that even Permissive can't recover.
+        let expected_permissive_failures: &[&str] = &[
+            "l2rgb_read.bmp", // truncated + bogus header fields
+            "rgb24jpeg.bmp",  // bpp=0 in JPEG-compressed BMP
+            "rgb24png.bmp",   // bpp=0 in PNG-compressed BMP
+        ];
+
+        let mut unexpected_failures = Vec::new();
+        let mut pass = 0u32;
+        let mut fail = 0u32;
+
+        for path in &files {
+            let data = std::fs::read(path).unwrap();
+            let name = file_name(path);
+            let expected_fail = expected_permissive_failures.contains(&name.as_str());
+
+            match decode_bmp_permissive(&data, BmpPermissiveness::Permissive, Unstoppable) {
+                Ok(_) => {
+                    pass += 1;
+                }
+                Err(e) => {
+                    fail += 1;
+                    if !expected_fail {
+                        unexpected_failures.push(format!("{name}: {e}"));
+                    }
+                }
+            }
+        }
+
+        eprintln!("non-conformant/: {pass} pass, {fail} fail under Permissive");
+
+        assert!(
+            unexpected_failures.is_empty(),
+            "non-conformant/ unexpected Permissive failures:\n  {}",
+            unexpected_failures.join("\n  ")
+        );
+    }
+
+    // ── invalid/ ─────────────────────────────────────────────────────
+
+    /// Invalid files: Standard should reject most of them.
+    /// Only non-critical metadata errors (DPI, file size) are accepted.
+    #[test]
+    #[ignore]
+    fn invalid_standard() {
+        let Some(dir) = get_corpus("invalid") else {
+            eprintln!("Skipping: bmp-conformance corpus not available");
+            return;
+        };
+        let files = bmp_files(&dir);
+        assert!(!files.is_empty());
+
+        // These have non-critical metadata errors that don't affect
+        // pixel accuracy, so Standard correctly accepts them.
+        let acceptable_passes: &[&str] = &[
+            "badbitssize.bmp", // image data size field wrong, unused
+            "baddens1.bmp",    // bad DPI, doesn't affect pixels
+            "baddens2.bmp",    // bad DPI, doesn't affect pixels
+            "badfilesize.bmp", // file size field wrong, unused
+        ];
+
+        let mut unexpected_passes = Vec::new();
+        let mut pass = 0u32;
+        let mut fail = 0u32;
+
+        for path in &files {
+            let data = std::fs::read(path).unwrap();
+            let name = file_name(path);
+
+            match decode_bmp(&data, Unstoppable) {
+                Ok(_) => {
+                    pass += 1;
+                    if !acceptable_passes.contains(&name.as_str()) {
+                        unexpected_passes.push(name);
+                    }
+                }
+                Err(_) => {
+                    fail += 1;
+                }
+            }
+        }
+
+        eprintln!("invalid/: {pass} pass, {fail} fail under Standard");
+
+        assert!(
+            unexpected_passes.is_empty(),
+            "invalid/ files that unexpectedly passed Standard:\n  {}",
+            unexpected_passes.join("\n  ")
+        );
+    }
+
+    /// Strict should reject ALL invalid files.
+    #[test]
+    #[ignore]
+    fn invalid_strict() {
+        let Some(dir) = get_corpus("invalid") else {
+            eprintln!("Skipping: bmp-conformance corpus not available");
+            return;
+        };
+        let files = bmp_files(&dir);
+
+        let mut unexpected_passes = Vec::new();
+
+        for path in &files {
+            let data = std::fs::read(path).unwrap();
+            let name = file_name(path);
+
+            if decode_bmp_permissive(&data, BmpPermissiveness::Strict, Unstoppable).is_ok() {
+                unexpected_passes.push(name);
+            }
+        }
+
+        assert!(
+            unexpected_passes.is_empty(),
+            "invalid/ files that passed Strict (should all fail):\n  {}",
+            unexpected_passes.join("\n  ")
+        );
+        eprintln!(
+            "invalid/: 0 pass, {} fail under Strict (all rejected)",
+            files.len()
+        );
+    }
+
+    /// No invalid file should cause a panic under any permissiveness level.
+    /// Uses a 64MB memory limit to prevent OOM on pathological files.
+    #[test]
+    #[ignore]
+    fn invalid_no_panics() {
+        let Some(dir) = get_corpus("invalid") else {
+            eprintln!("Skipping: bmp-conformance corpus not available");
+            return;
+        };
+        let files = bmp_files(&dir);
+        let limits = Limits {
+            max_memory_bytes: Some(64 * 1024 * 1024),
+            ..Default::default()
+        };
+
+        let mut panics = Vec::new();
+        for path in &files {
+            let data = std::fs::read(path).unwrap();
+            let name = file_name(path);
+
+            for level in [
+                BmpPermissiveness::Strict,
+                BmpPermissiveness::Standard,
+                BmpPermissiveness::Permissive,
+            ] {
+                let data = data.clone();
+                let limits = limits.clone();
+                if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    let _ = decode_bmp_permissive_with_limits(&data, level, &limits, Unstoppable);
+                }))
+                .is_err()
+                {
+                    panics.push(format!("{name} ({level:?})"));
+                }
+            }
+        }
+
+        assert!(
+            panics.is_empty(),
+            "invalid/ files that panicked:\n  {}",
+            panics.join("\n  ")
+        );
+    }
+}

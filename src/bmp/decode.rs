@@ -353,6 +353,11 @@ struct BmpDecoderState<'a> {
 }
 
 impl<'a> BmpDecoderState<'a> {
+    /// Hard cap on output buffer size (1 GiB). Prevents OOM from
+    /// pathological headers like 3M×2M. Callers can set lower limits
+    /// via the `Limits` API. This limit is independent of system memory.
+    const MAX_OUTPUT_BYTES: usize = 1024 * 1024 * 1024;
+
     fn new(data: &'a [u8], permissiveness: BmpPermissiveness) -> Self {
         let mut cursor = Cursor::new(data);
         cursor.permissive = permissiveness == BmpPermissiveness::Permissive;
@@ -446,17 +451,19 @@ impl<'a> BmpDecoderState<'a> {
 
                     // Strict: validate DPI and image data size fields
                     if is_strict {
-                        // DPI values interpreted as i32 should be non-negative
-                        if (x_pixels as i32) < 0 {
+                        // Resolution: must be non-negative and reasonable.
+                        // Max ~1M pixels/meter ≈ 25,400 DPI, more than any real device.
+                        const MAX_RESOLUTION: u32 = 1_000_000;
+                        let x_signed = x_pixels as i32;
+                        let y_signed = y_pixels as i32;
+                        if x_signed < 0 || x_pixels > MAX_RESOLUTION {
                             return Err(PnmError::InvalidHeader(alloc::format!(
-                                "BMP horizontal resolution is negative ({})",
-                                x_pixels as i32
+                                "BMP horizontal resolution out of range ({x_signed})"
                             )));
                         }
-                        if (y_pixels as i32) < 0 {
+                        if y_signed < 0 || y_pixels > MAX_RESOLUTION {
                             return Err(PnmError::InvalidHeader(alloc::format!(
-                                "BMP vertical resolution is negative ({})",
-                                y_pixels as i32
+                                "BMP vertical resolution out of range ({y_signed})"
                             )));
                         }
                         // Image data size should be 0 or match expected (for uncompressed)
@@ -658,6 +665,7 @@ impl<'a> BmpDecoderState<'a> {
         self.width
             .checked_mul(self.height)
             .and_then(|wh| wh.checked_mul(self.pix_fmt.num_components()))
+            .filter(|&size| size <= Self::MAX_OUTPUT_BYTES)
             .ok_or(PnmError::DimensionsTooLarge {
                 width: self.width as u32,
                 height: self.height as u32,
@@ -996,6 +1004,13 @@ impl<'a> BmpDecoderState<'a> {
                 height: self.height as u32,
             })?
             >> 3;
+
+        if alloc_size > Self::MAX_OUTPUT_BYTES {
+            return Err(PnmError::DimensionsTooLarge {
+                width: self.width as u32,
+                height: self.height as u32,
+            });
+        }
 
         let mut pixels = vec![0u8; alloc_size];
         let mut line = (self.height - 1) as i32;
