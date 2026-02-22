@@ -730,9 +730,19 @@ fn collect_img_bytes<P: EncodePixel>(img: imgref::ImgRef<'_, P>) -> (alloc::vec:
 where
     [P]: rgb::ComponentBytes<u8>,
 {
-    let w = img.width() as u32;
-    let h = img.height() as u32;
-    let pixels: alloc::vec::Vec<P> = img.rows().flat_map(|row| row.iter().copied()).collect();
-    let bytes = pixels.as_bytes().to_vec();
-    (bytes, w, h)
+    let w = img.width();
+    let h = img.height();
+    if img.stride() == w {
+        // Contiguous — single memcpy, no intermediate Vec<P>
+        let pixels = &img.buf()[..w * h];
+        (pixels.as_bytes().to_vec(), w as u32, h as u32)
+    } else {
+        // Strided — collect row-by-row directly into bytes
+        let bpp = core::mem::size_of::<P>();
+        let mut bytes = alloc::vec::Vec::with_capacity(w * h * bpp);
+        for row in img.rows() {
+            bytes.extend_from_slice(row.as_bytes());
+        }
+        (bytes, w as u32, h as u32)
+    }
 }
