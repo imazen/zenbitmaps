@@ -3,7 +3,7 @@
 //! Credits: Draws from zune-ppm by Caleb Etemesi (MIT/Apache-2.0/Zlib).
 
 use super::PnmFormat;
-use crate::error::PnmError;
+use crate::error::BitmapError;
 use crate::pixel::PixelLayout;
 use alloc::format;
 use alloc::vec::Vec;
@@ -17,15 +17,15 @@ pub(crate) fn encode_pnm(
     layout: PixelLayout,
     fmt: PnmFormat,
     stop: &dyn Stop,
-) -> Result<Vec<u8>, PnmError> {
+) -> Result<Vec<u8>, BitmapError> {
     let w = width as usize;
     let h = height as usize;
     let expected = w
         .checked_mul(h)
         .and_then(|wh| wh.checked_mul(layout.bytes_per_pixel()))
-        .ok_or(PnmError::DimensionsTooLarge { width, height })?;
+        .ok_or(BitmapError::DimensionsTooLarge { width, height })?;
     if pixels.len() < expected {
-        return Err(PnmError::BufferTooSmall {
+        return Err(BitmapError::BufferTooSmall {
             needed: expected,
             actual: pixels.len(),
         });
@@ -49,7 +49,7 @@ fn encode_pgm(
     h: usize,
     layout: PixelLayout,
     stop: &dyn Stop,
-) -> Result<Vec<u8>, PnmError> {
+) -> Result<Vec<u8>, BitmapError> {
     let header = format!("P5\n{width} {height}\n255\n");
     let mut out = Vec::with_capacity(header.len() + w * h);
     out.extend_from_slice(header.as_bytes());
@@ -107,7 +107,7 @@ fn encode_pgm(
             }
         }
         _ => {
-            return Err(PnmError::UnsupportedVariant(format!(
+            return Err(BitmapError::UnsupportedVariant(format!(
                 "cannot encode {:?} as PGM",
                 layout
             )));
@@ -125,7 +125,7 @@ fn encode_ppm(
     h: usize,
     layout: PixelLayout,
     stop: &dyn Stop,
-) -> Result<Vec<u8>, PnmError> {
+) -> Result<Vec<u8>, BitmapError> {
     let header = format!("P6\n{width} {height}\n255\n");
     let mut out = Vec::with_capacity(header.len() + w * h * 3);
     out.extend_from_slice(header.as_bytes());
@@ -175,7 +175,7 @@ fn encode_ppm(
             }
         }
         _ => {
-            return Err(PnmError::UnsupportedVariant(format!(
+            return Err(BitmapError::UnsupportedVariant(format!(
                 "cannot encode {:?} as PPM",
                 layout
             )));
@@ -193,14 +193,14 @@ fn encode_pam(
     h: usize,
     layout: PixelLayout,
     _stop: &dyn Stop,
-) -> Result<Vec<u8>, PnmError> {
+) -> Result<Vec<u8>, BitmapError> {
     let (depth, tupltype, maxval) = match layout {
         PixelLayout::Gray8 => (1, "GRAYSCALE", 255),
         PixelLayout::Gray16 => (1, "GRAYSCALE", 65535),
         PixelLayout::Rgb8 => (3, "RGB", 255),
         PixelLayout::Rgba8 => (4, "RGB_ALPHA", 255),
         _ => {
-            return Err(PnmError::UnsupportedVariant(format!(
+            return Err(BitmapError::UnsupportedVariant(format!(
                 "cannot encode {:?} as PAM directly; convert to RGB/RGBA first",
                 layout
             )));
@@ -228,12 +228,12 @@ fn encode_pfm(
     h: usize,
     layout: PixelLayout,
     stop: &dyn Stop,
-) -> Result<Vec<u8>, PnmError> {
+) -> Result<Vec<u8>, BitmapError> {
     let (magic, depth) = match layout {
         PixelLayout::GrayF32 => ("Pf", 1),
         PixelLayout::RgbF32 => ("PF", 3),
         _ => {
-            return Err(PnmError::UnsupportedVariant(format!(
+            return Err(BitmapError::UnsupportedVariant(format!(
                 "PFM requires GrayF32 or RgbF32, got {:?}",
                 layout
             )));
@@ -244,10 +244,10 @@ fn encode_pfm(
     let row_bytes = w
         .checked_mul(depth)
         .and_then(|wd| wd.checked_mul(4))
-        .ok_or(PnmError::DimensionsTooLarge { width, height })?;
+        .ok_or(BitmapError::DimensionsTooLarge { width, height })?;
     let total_pixels = h
         .checked_mul(row_bytes)
-        .ok_or(PnmError::DimensionsTooLarge { width, height })?;
+        .ok_or(BitmapError::DimensionsTooLarge { width, height })?;
     let mut out = Vec::with_capacity(header.len().saturating_add(total_pixels));
     out.extend_from_slice(header.as_bytes());
 

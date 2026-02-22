@@ -5,7 +5,7 @@
 use alloc::vec::Vec;
 use enough::Stop;
 
-use crate::error::PnmError;
+use crate::error::BitmapError;
 use crate::pixel::PixelLayout;
 
 /// Encode pixels to farbfeld format.
@@ -18,16 +18,16 @@ pub(crate) fn encode_farbfeld(
     height: u32,
     layout: PixelLayout,
     stop: &dyn Stop,
-) -> Result<Vec<u8>, PnmError> {
+) -> Result<Vec<u8>, BitmapError> {
     let w = width as usize;
     let h = height as usize;
     let bpp = layout.bytes_per_pixel();
     let expected = w
         .checked_mul(h)
         .and_then(|wh| wh.checked_mul(bpp))
-        .ok_or(PnmError::DimensionsTooLarge { width, height })?;
+        .ok_or(BitmapError::DimensionsTooLarge { width, height })?;
     if pixels.len() < expected {
-        return Err(PnmError::BufferTooSmall {
+        return Err(BitmapError::BufferTooSmall {
             needed: expected,
             actual: pixels.len(),
         });
@@ -37,10 +37,10 @@ pub(crate) fn encode_farbfeld(
     let pixel_bytes = w
         .checked_mul(h)
         .and_then(|wh| wh.checked_mul(8))
-        .ok_or(PnmError::DimensionsTooLarge { width, height })?;
+        .ok_or(BitmapError::DimensionsTooLarge { width, height })?;
     let total = pixel_bytes
         .checked_add(16)
-        .ok_or(PnmError::DimensionsTooLarge { width, height })?;
+        .ok_or(BitmapError::DimensionsTooLarge { width, height })?;
 
     let mut out = Vec::with_capacity(total);
 
@@ -109,7 +109,7 @@ pub(crate) fn encode_farbfeld(
             }
         }
         _ => {
-            return Err(PnmError::UnsupportedVariant(alloc::format!(
+            return Err(BitmapError::UnsupportedVariant(alloc::format!(
                 "cannot encode {:?} as farbfeld (supported: Rgba16, Rgba8, Rgb8, Gray8)",
                 layout
             )));

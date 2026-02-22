@@ -1,4 +1,4 @@
-//! # zenpnm
+//! # zenbitmaps
 //!
 //! PNM/PAM/PFM, BMP, and farbfeld image format decoder and encoder.
 //!
@@ -31,7 +31,7 @@
 //! ## Usage
 //!
 //! ```no_run
-//! use zenpnm::*;
+//! use zenbitmaps::*;
 //! use enough::Unstoppable;
 //!
 //! // Encode pixels to PPM
@@ -42,7 +42,7 @@
 //! let decoded = decode(&encoded, Unstoppable)?;
 //! assert!(decoded.is_borrowed()); // zero-copy for PPM with maxval=255
 //! assert_eq!(decoded.pixels(), &pixels[..]);
-//! # Ok::<(), zenpnm::PnmError>(())
+//! # Ok::<(), zenbitmaps::BitmapError>(())
 //! ```
 //!
 //! ## Credits
@@ -82,7 +82,7 @@ mod zencodec;
 
 pub use decode::DecodeOutput;
 pub use enough::{Stop, Unstoppable};
-pub use error::PnmError;
+pub use error::BitmapError;
 pub use limits::Limits;
 pub use pixel::PixelLayout;
 
@@ -96,6 +96,18 @@ pub use pixel_traits::{DecodePixel, EncodePixel};
 pub use zencodec::{
     PnmDecodeJob, PnmDecoder, PnmDecoderConfig, PnmEncodeJob, PnmEncoder, PnmEncoderConfig,
     PnmFrameDecoder, PnmFrameEncoder,
+};
+
+#[cfg(all(feature = "zencodec", feature = "bmp"))]
+pub use zencodec::{
+    BmpDecodeJob, BmpDecoder, BmpDecoderConfig, BmpEncodeJob, BmpEncoder, BmpEncoderConfig,
+    BmpFrameDecoder, BmpFrameEncoder,
+};
+
+#[cfg(feature = "zencodec")]
+pub use zencodec::{
+    FarbfeldDecodeJob, FarbfeldDecoder, FarbfeldDecoderConfig, FarbfeldEncodeJob, FarbfeldEncoder,
+    FarbfeldEncoderConfig, FarbfeldFrameDecoder, FarbfeldFrameEncoder,
 };
 
 // Re-export rgb pixel types for convenience
@@ -127,7 +139,7 @@ pub type BGRA8 = rgb::alt::BGRA<u8>;
 ///
 /// Detects PNM (P5/P6/P7/PFM), farbfeld, and BMP (if the `bmp` feature is enabled).
 /// Zero-copy when possible — PNM with maxval=255 returns a borrowed slice.
-pub fn decode(data: &[u8], stop: impl Stop) -> Result<DecodeOutput<'_>, PnmError> {
+pub fn decode(data: &[u8], stop: impl Stop) -> Result<DecodeOutput<'_>, BitmapError> {
     decode_dispatch(data, None, &stop)
 }
 
@@ -136,7 +148,7 @@ pub fn decode_with_limits<'a>(
     data: &'a [u8],
     limits: &'a Limits,
     stop: impl Stop,
-) -> Result<DecodeOutput<'a>, PnmError> {
+) -> Result<DecodeOutput<'a>, BitmapError> {
     decode_dispatch(data, Some(limits), &stop)
 }
 
@@ -144,12 +156,12 @@ fn decode_dispatch<'a>(
     data: &'a [u8],
     limits: Option<&Limits>,
     stop: &dyn enough::Stop,
-) -> Result<DecodeOutput<'a>, PnmError> {
+) -> Result<DecodeOutput<'a>, BitmapError> {
     if data.len() >= 2 && &data[0..2] == b"BM" {
         #[cfg(feature = "bmp")]
         return bmp::decode(data, limits, stop);
         #[cfg(not(feature = "bmp"))]
-        return Err(PnmError::UnsupportedVariant(
+        return Err(BitmapError::UnsupportedVariant(
             "BMP support requires the 'bmp' feature".into(),
         ));
     }
@@ -168,7 +180,7 @@ pub fn encode_ppm(
     height: u32,
     layout: PixelLayout,
     stop: impl Stop,
-) -> Result<alloc::vec::Vec<u8>, PnmError> {
+) -> Result<alloc::vec::Vec<u8>, BitmapError> {
     pnm::encode(pixels, width, height, layout, pnm::PnmFormat::Ppm, &stop)
 }
 
@@ -179,7 +191,7 @@ pub fn encode_pgm(
     height: u32,
     layout: PixelLayout,
     stop: impl Stop,
-) -> Result<alloc::vec::Vec<u8>, PnmError> {
+) -> Result<alloc::vec::Vec<u8>, BitmapError> {
     pnm::encode(pixels, width, height, layout, pnm::PnmFormat::Pgm, &stop)
 }
 
@@ -190,7 +202,7 @@ pub fn encode_pam(
     height: u32,
     layout: PixelLayout,
     stop: impl Stop,
-) -> Result<alloc::vec::Vec<u8>, PnmError> {
+) -> Result<alloc::vec::Vec<u8>, BitmapError> {
     pnm::encode(pixels, width, height, layout, pnm::PnmFormat::Pam, &stop)
 }
 
@@ -201,7 +213,7 @@ pub fn encode_pfm(
     height: u32,
     layout: PixelLayout,
     stop: impl Stop,
-) -> Result<alloc::vec::Vec<u8>, PnmError> {
+) -> Result<alloc::vec::Vec<u8>, BitmapError> {
     pnm::encode(pixels, width, height, layout, pnm::PnmFormat::Pfm, &stop)
 }
 
@@ -211,7 +223,7 @@ pub fn encode_pfm(
 ///
 /// Also auto-detected by [`decode()`] via the `"farbfeld"` magic bytes.
 /// Output layout is always [`PixelLayout::Rgba16`].
-pub fn decode_farbfeld(data: &[u8], stop: impl Stop) -> Result<DecodeOutput<'_>, PnmError> {
+pub fn decode_farbfeld(data: &[u8], stop: impl Stop) -> Result<DecodeOutput<'_>, BitmapError> {
     farbfeld::decode(data, None, &stop)
 }
 
@@ -220,7 +232,7 @@ pub fn decode_farbfeld_with_limits<'a>(
     data: &'a [u8],
     limits: &'a Limits,
     stop: impl Stop,
-) -> Result<DecodeOutput<'a>, PnmError> {
+) -> Result<DecodeOutput<'a>, BitmapError> {
     farbfeld::decode(data, Some(limits), &stop)
 }
 
@@ -234,7 +246,7 @@ pub fn encode_farbfeld(
     height: u32,
     layout: PixelLayout,
     stop: impl Stop,
-) -> Result<alloc::vec::Vec<u8>, PnmError> {
+) -> Result<alloc::vec::Vec<u8>, BitmapError> {
     farbfeld::encode(pixels, width, height, layout, &stop)
 }
 
@@ -245,7 +257,7 @@ pub fn encode_farbfeld(
 /// Also auto-detected by [`decode()`] via the `"BM"` magic bytes.
 /// BMP always allocates (BGR→RGB conversion + row flip).
 #[cfg(feature = "bmp")]
-pub fn decode_bmp(data: &[u8], stop: impl Stop) -> Result<DecodeOutput<'_>, PnmError> {
+pub fn decode_bmp(data: &[u8], stop: impl Stop) -> Result<DecodeOutput<'_>, BitmapError> {
     bmp::decode(data, None, &stop)
 }
 
@@ -255,7 +267,7 @@ pub fn decode_bmp_with_limits<'a>(
     data: &'a [u8],
     limits: &'a Limits,
     stop: impl Stop,
-) -> Result<DecodeOutput<'a>, PnmError> {
+) -> Result<DecodeOutput<'a>, BitmapError> {
     bmp::decode(data, Some(limits), &stop)
 }
 
@@ -265,7 +277,7 @@ pub fn decode_bmp_with_limits<'a>(
 /// returning pixels in the BMP-native byte order. The output layout will be
 /// [`PixelLayout::Bgr8`], [`PixelLayout::Bgra8`], or [`PixelLayout::Gray8`].
 #[cfg(feature = "bmp")]
-pub fn decode_bmp_native(data: &[u8], stop: impl Stop) -> Result<DecodeOutput<'_>, PnmError> {
+pub fn decode_bmp_native(data: &[u8], stop: impl Stop) -> Result<DecodeOutput<'_>, BitmapError> {
     bmp::decode_native(data, None, &stop)
 }
 
@@ -275,7 +287,7 @@ pub fn decode_bmp_native_with_limits<'a>(
     data: &'a [u8],
     limits: &'a Limits,
     stop: impl Stop,
-) -> Result<DecodeOutput<'a>, PnmError> {
+) -> Result<DecodeOutput<'a>, BitmapError> {
     bmp::decode_native(data, Some(limits), &stop)
 }
 
@@ -291,7 +303,7 @@ pub fn decode_bmp_permissive(
     data: &[u8],
     permissiveness: BmpPermissiveness,
     stop: impl Stop,
-) -> Result<DecodeOutput<'_>, PnmError> {
+) -> Result<DecodeOutput<'_>, BitmapError> {
     bmp::decode_with_permissiveness(data, None, permissiveness, &stop)
 }
 
@@ -302,7 +314,7 @@ pub fn decode_bmp_permissive_with_limits<'a>(
     permissiveness: BmpPermissiveness,
     limits: &'a Limits,
     stop: impl Stop,
-) -> Result<DecodeOutput<'a>, PnmError> {
+) -> Result<DecodeOutput<'a>, BitmapError> {
     bmp::decode_with_permissiveness(data, Some(limits), permissiveness, &stop)
 }
 
@@ -314,7 +326,7 @@ pub fn encode_bmp(
     height: u32,
     layout: PixelLayout,
     stop: impl Stop,
-) -> Result<alloc::vec::Vec<u8>, PnmError> {
+) -> Result<alloc::vec::Vec<u8>, BitmapError> {
     bmp::encode(pixels, width, height, layout, false, &stop)
 }
 
@@ -326,7 +338,7 @@ pub fn encode_bmp_rgba(
     height: u32,
     layout: PixelLayout,
     stop: impl Stop,
-) -> Result<alloc::vec::Vec<u8>, PnmError> {
+) -> Result<alloc::vec::Vec<u8>, BitmapError> {
     bmp::encode(pixels, width, height, layout, true, &stop)
 }
 
@@ -337,7 +349,7 @@ pub fn encode_bmp_rgba(
 pub fn decode_pixels<P: DecodePixel>(
     data: &[u8],
     stop: impl Stop,
-) -> Result<(alloc::vec::Vec<P>, u32, u32), PnmError>
+) -> Result<(alloc::vec::Vec<P>, u32, u32), BitmapError>
 where
     [u8]: rgb::AsPixels<P>,
 {
@@ -351,7 +363,7 @@ pub fn decode_pixels_with_limits<P: DecodePixel>(
     data: &[u8],
     limits: &Limits,
     stop: impl Stop,
-) -> Result<(alloc::vec::Vec<P>, u32, u32), PnmError>
+) -> Result<(alloc::vec::Vec<P>, u32, u32), BitmapError>
 where
     [u8]: rgb::AsPixels<P>,
 {
@@ -364,7 +376,7 @@ where
 pub fn decode_bmp_pixels<P: DecodePixel>(
     data: &[u8],
     stop: impl Stop,
-) -> Result<(alloc::vec::Vec<P>, u32, u32), PnmError>
+) -> Result<(alloc::vec::Vec<P>, u32, u32), BitmapError>
 where
     [u8]: rgb::AsPixels<P>,
 {
@@ -378,7 +390,7 @@ pub fn decode_bmp_pixels_with_limits<P: DecodePixel>(
     data: &[u8],
     limits: &Limits,
     stop: impl Stop,
-) -> Result<(alloc::vec::Vec<P>, u32, u32), PnmError>
+) -> Result<(alloc::vec::Vec<P>, u32, u32), BitmapError>
 where
     [u8]: rgb::AsPixels<P>,
 {
@@ -389,12 +401,12 @@ where
 #[cfg(feature = "rgb")]
 fn decoded_to_pixels<P: DecodePixel>(
     decoded: DecodeOutput<'_>,
-) -> Result<(alloc::vec::Vec<P>, u32, u32), PnmError>
+) -> Result<(alloc::vec::Vec<P>, u32, u32), BitmapError>
 where
     [u8]: rgb::AsPixels<P>,
 {
     if !decoded.layout.is_memory_compatible(P::layout()) {
-        return Err(PnmError::LayoutMismatch {
+        return Err(BitmapError::LayoutMismatch {
             expected: P::layout(),
             actual: decoded.layout,
         });
@@ -412,7 +424,7 @@ pub fn encode_ppm_pixels<P: EncodePixel>(
     width: u32,
     height: u32,
     stop: impl Stop,
-) -> Result<alloc::vec::Vec<u8>, PnmError>
+) -> Result<alloc::vec::Vec<u8>, BitmapError>
 where
     [P]: rgb::ComponentBytes<u8>,
 {
@@ -426,7 +438,7 @@ pub fn encode_pgm_pixels<P: EncodePixel>(
     width: u32,
     height: u32,
     stop: impl Stop,
-) -> Result<alloc::vec::Vec<u8>, PnmError>
+) -> Result<alloc::vec::Vec<u8>, BitmapError>
 where
     [P]: rgb::ComponentBytes<u8>,
 {
@@ -440,7 +452,7 @@ pub fn encode_pam_pixels<P: EncodePixel>(
     width: u32,
     height: u32,
     stop: impl Stop,
-) -> Result<alloc::vec::Vec<u8>, PnmError>
+) -> Result<alloc::vec::Vec<u8>, BitmapError>
 where
     [P]: rgb::ComponentBytes<u8>,
 {
@@ -454,7 +466,7 @@ pub fn encode_pfm_pixels<P: EncodePixel>(
     width: u32,
     height: u32,
     stop: impl Stop,
-) -> Result<alloc::vec::Vec<u8>, PnmError>
+) -> Result<alloc::vec::Vec<u8>, BitmapError>
 where
     [P]: rgb::ComponentBytes<u8>,
 {
@@ -468,7 +480,7 @@ pub fn encode_bmp_pixels<P: EncodePixel>(
     width: u32,
     height: u32,
     stop: impl Stop,
-) -> Result<alloc::vec::Vec<u8>, PnmError>
+) -> Result<alloc::vec::Vec<u8>, BitmapError>
 where
     [P]: rgb::ComponentBytes<u8>,
 {
@@ -482,7 +494,7 @@ pub fn encode_bmp_rgba_pixels<P: EncodePixel>(
     width: u32,
     height: u32,
     stop: impl Stop,
-) -> Result<alloc::vec::Vec<u8>, PnmError>
+) -> Result<alloc::vec::Vec<u8>, BitmapError>
 where
     [P]: rgb::ComponentBytes<u8>,
 {
@@ -496,7 +508,7 @@ where
 pub fn decode_img<P: DecodePixel>(
     data: &[u8],
     stop: impl Stop,
-) -> Result<imgref::ImgVec<P>, PnmError>
+) -> Result<imgref::ImgVec<P>, BitmapError>
 where
     [u8]: rgb::AsPixels<P>,
 {
@@ -510,7 +522,7 @@ pub fn decode_img_with_limits<P: DecodePixel>(
     data: &[u8],
     limits: &Limits,
     stop: impl Stop,
-) -> Result<imgref::ImgVec<P>, PnmError>
+) -> Result<imgref::ImgVec<P>, BitmapError>
 where
     [u8]: rgb::AsPixels<P>,
 {
@@ -523,7 +535,7 @@ where
 pub fn decode_bmp_img<P: DecodePixel>(
     data: &[u8],
     stop: impl Stop,
-) -> Result<imgref::ImgVec<P>, PnmError>
+) -> Result<imgref::ImgVec<P>, BitmapError>
 where
     [u8]: rgb::AsPixels<P>,
 {
@@ -537,7 +549,7 @@ pub fn decode_bmp_img_with_limits<P: DecodePixel>(
     data: &[u8],
     limits: &Limits,
     stop: impl Stop,
-) -> Result<imgref::ImgVec<P>, PnmError>
+) -> Result<imgref::ImgVec<P>, BitmapError>
 where
     [u8]: rgb::AsPixels<P>,
 {
@@ -554,7 +566,7 @@ pub fn decode_into<P: DecodePixel>(
     data: &[u8],
     output: imgref::ImgRefMut<'_, P>,
     stop: impl Stop,
-) -> Result<(), PnmError>
+) -> Result<(), BitmapError>
 where
     [u8]: rgb::AsPixels<P>,
 {
@@ -568,7 +580,7 @@ pub fn decode_bmp_into<P: DecodePixel>(
     data: &[u8],
     output: imgref::ImgRefMut<'_, P>,
     stop: impl Stop,
-) -> Result<(), PnmError>
+) -> Result<(), BitmapError>
 where
     [u8]: rgb::AsPixels<P>,
 {
@@ -580,12 +592,12 @@ where
 fn copy_decoded_into<P: DecodePixel>(
     decoded: DecodeOutput<'_>,
     mut output: imgref::ImgRefMut<'_, P>,
-) -> Result<(), PnmError>
+) -> Result<(), BitmapError>
 where
     [u8]: rgb::AsPixels<P>,
 {
     if !decoded.layout.is_memory_compatible(P::layout()) {
-        return Err(PnmError::LayoutMismatch {
+        return Err(BitmapError::LayoutMismatch {
             expected: P::layout(),
             actual: decoded.layout,
         });
@@ -593,7 +605,7 @@ where
     let out_w = output.width();
     let out_h = output.height();
     if decoded.width as usize != out_w || decoded.height as usize != out_h {
-        return Err(PnmError::InvalidData(alloc::format!(
+        return Err(BitmapError::InvalidData(alloc::format!(
             "dimension mismatch: decoded {}x{}, output buffer {}x{}",
             decoded.width,
             decoded.height,
@@ -615,7 +627,7 @@ where
 pub fn encode_ppm_img<P: EncodePixel>(
     img: imgref::ImgRef<'_, P>,
     stop: impl Stop,
-) -> Result<alloc::vec::Vec<u8>, PnmError>
+) -> Result<alloc::vec::Vec<u8>, BitmapError>
 where
     [P]: rgb::ComponentBytes<u8>,
 {
@@ -628,7 +640,7 @@ where
 pub fn encode_pgm_img<P: EncodePixel>(
     img: imgref::ImgRef<'_, P>,
     stop: impl Stop,
-) -> Result<alloc::vec::Vec<u8>, PnmError>
+) -> Result<alloc::vec::Vec<u8>, BitmapError>
 where
     [P]: rgb::ComponentBytes<u8>,
 {
@@ -641,7 +653,7 @@ where
 pub fn encode_pam_img<P: EncodePixel>(
     img: imgref::ImgRef<'_, P>,
     stop: impl Stop,
-) -> Result<alloc::vec::Vec<u8>, PnmError>
+) -> Result<alloc::vec::Vec<u8>, BitmapError>
 where
     [P]: rgb::ComponentBytes<u8>,
 {
@@ -654,7 +666,7 @@ where
 pub fn encode_pfm_img<P: EncodePixel>(
     img: imgref::ImgRef<'_, P>,
     stop: impl Stop,
-) -> Result<alloc::vec::Vec<u8>, PnmError>
+) -> Result<alloc::vec::Vec<u8>, BitmapError>
 where
     [P]: rgb::ComponentBytes<u8>,
 {
@@ -667,7 +679,7 @@ where
 pub fn encode_bmp_img<P: EncodePixel>(
     img: imgref::ImgRef<'_, P>,
     stop: impl Stop,
-) -> Result<alloc::vec::Vec<u8>, PnmError>
+) -> Result<alloc::vec::Vec<u8>, BitmapError>
 where
     [P]: rgb::ComponentBytes<u8>,
 {
@@ -680,7 +692,7 @@ where
 pub fn encode_bmp_rgba_img<P: EncodePixel>(
     img: imgref::ImgRef<'_, P>,
     stop: impl Stop,
-) -> Result<alloc::vec::Vec<u8>, PnmError>
+) -> Result<alloc::vec::Vec<u8>, BitmapError>
 where
     [P]: rgb::ComponentBytes<u8>,
 {

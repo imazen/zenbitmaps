@@ -1,4 +1,4 @@
-# zenpnm
+# zenbitmaps
 
 PNM/PAM/PFM image format decoder and encoder, with optional basic BMP support.
 
@@ -22,7 +22,7 @@ PNM/PAM/PFM image format decoder and encoder, with optional basic BMP support.
 PNM files with maxval=255 (the common case) decode to a borrowed slice into your input buffer. No allocation, no copy. Formats requiring transformation (16-bit, non-255 maxval, PFM, BMP) allocate.
 
 ```rust
-use zenpnm::*;
+use zenbitmaps::*;
 use enough::Unstoppable;
 
 let pixels = vec![255u8, 0, 0, 0, 255, 0]; // 2 RGB pixels
@@ -31,17 +31,17 @@ let encoded = encode_ppm(&pixels, 2, 1, PixelLayout::Rgb8, Unstoppable)?;
 let decoded = decode(&encoded, Unstoppable)?;
 assert!(decoded.is_borrowed()); // zero-copy
 assert_eq!(decoded.pixels(), &pixels[..]);
-# Ok::<(), PnmError>(())
+# Ok::<(), BitmapError>(())
 ```
 
 ## Cooperative cancellation
 
-Every function takes a `stop` parameter implementing `enough::Stop`. Pass `Unstoppable` when you don't need cancellation. For server use, pass a token that checks a shutdown flag — decode/encode will bail out promptly via `PnmError::Cancelled`.
+Every function takes a `stop` parameter implementing `enough::Stop`. Pass `Unstoppable` when you don't need cancellation. For server use, pass a token that checks a shutdown flag — decode/encode will bail out promptly via `BitmapError::Cancelled`.
 
 ## Resource limits
 
 ```rust
-use zenpnm::*;
+use zenbitmaps::*;
 use enough::Unstoppable;
 
 let limits = Limits {
@@ -53,7 +53,7 @@ let limits = Limits {
 };
 # let data = encode_ppm(&[0u8; 3], 1, 1, PixelLayout::Rgb8, Unstoppable).unwrap();
 let decoded = decode_with_limits(&data, &limits, Unstoppable)?;
-# Ok::<(), PnmError>(())
+# Ok::<(), BitmapError>(())
 ```
 
 ## API
@@ -78,17 +78,17 @@ All public functions are flat, one-shot calls at crate root.
 - `DecodeOutput<'a>` — decoded image with `.pixels()`, `.width`, `.height`, `.layout`, `.is_borrowed()`, `.into_owned()`
 - `PixelLayout` — pixel format enum (Gray8, Gray16, Rgb8, Rgba8, Bgr8, Bgra8, GrayF32, RgbF32)
 - `Limits` — resource limits (max width/height/pixels/memory)
-- `PnmError` — error type, `#[non_exhaustive]`
+- `BitmapError` — error type, `#[non_exhaustive]`
 
 ## Features
 
 ```toml
 [dependencies]
-zenpnm = "0.1"                    # PNM (always included)
-zenpnm = { version = "0.1", features = ["basic-bmp"] }  # + BMP
-zenpnm = { version = "0.1", features = ["rgb"] }         # + typed pixel API
-zenpnm = { version = "0.1", features = ["imgref"] }      # + ImgVec/ImgRef (implies rgb)
-zenpnm = { version = "0.1", features = ["all"] }          # everything
+zenbitmaps = "0.1"                    # PNM (always included)
+zenbitmaps = { version = "0.1", features = ["basic-bmp"] }  # + BMP
+zenbitmaps = { version = "0.1", features = ["rgb"] }         # + typed pixel API
+zenbitmaps = { version = "0.1", features = ["imgref"] }      # + ImgVec/ImgRef (implies rgb)
+zenbitmaps = { version = "0.1", features = ["all"] }          # everything
 ```
 
 ## Credits

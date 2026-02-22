@@ -13,17 +13,17 @@ pub struct Limits {
 
 impl Limits {
     /// Check dimensions against limits. Returns Ok(()) or LimitExceeded error.
-    pub(crate) fn check(&self, width: u32, height: u32) -> Result<(), crate::PnmError> {
+    pub(crate) fn check(&self, width: u32, height: u32) -> Result<(), crate::BitmapError> {
         if let Some(max_w) = self.max_width {
             if u64::from(width) > max_w {
-                return Err(crate::PnmError::LimitExceeded(alloc::format!(
+                return Err(crate::BitmapError::LimitExceeded(alloc::format!(
                     "width {width} exceeds limit {max_w}"
                 )));
             }
         }
         if let Some(max_h) = self.max_height {
             if u64::from(height) > max_h {
-                return Err(crate::PnmError::LimitExceeded(alloc::format!(
+                return Err(crate::BitmapError::LimitExceeded(alloc::format!(
                     "height {height} exceeds limit {max_h}"
                 )));
             }
@@ -31,7 +31,7 @@ impl Limits {
         if let Some(max_px) = self.max_pixels {
             let pixels = u64::from(width) * u64::from(height);
             if pixels > max_px {
-                return Err(crate::PnmError::LimitExceeded(alloc::format!(
+                return Err(crate::BitmapError::LimitExceeded(alloc::format!(
                     "pixel count {pixels} exceeds limit {max_px}"
                 )));
             }
@@ -40,10 +40,10 @@ impl Limits {
     }
 
     /// Check that an allocation size is within memory limits.
-    pub(crate) fn check_memory(&self, bytes: usize) -> Result<(), crate::PnmError> {
+    pub(crate) fn check_memory(&self, bytes: usize) -> Result<(), crate::BitmapError> {
         if let Some(max_mem) = self.max_memory_bytes {
             if bytes as u64 > max_mem {
-                return Err(crate::PnmError::LimitExceeded(alloc::format!(
+                return Err(crate::BitmapError::LimitExceeded(alloc::format!(
                     "allocation {bytes} bytes exceeds memory limit {max_mem}"
                 )));
             }

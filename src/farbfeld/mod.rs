@@ -10,7 +10,7 @@ pub(crate) mod decode;
 mod encode;
 
 use crate::decode::DecodeOutput;
-use crate::error::PnmError;
+use crate::error::BitmapError;
 use crate::limits::Limits;
 use crate::pixel::PixelLayout;
 use alloc::vec::Vec;
@@ -21,7 +21,7 @@ pub(crate) fn decode<'a>(
     data: &'a [u8],
     limits: Option<&Limits>,
     stop: &dyn Stop,
-) -> Result<DecodeOutput<'a>, PnmError> {
+) -> Result<DecodeOutput<'a>, BitmapError> {
     let (width, height) = decode::parse_header(data)?;
     if let Some(limits) = limits {
         limits.check(width, height)?;
@@ -47,6 +47,6 @@ pub(crate) fn encode(
     height: u32,
     layout: PixelLayout,
     stop: &dyn Stop,
-) -> Result<Vec<u8>, PnmError> {
+) -> Result<Vec<u8>, BitmapError> {
     encode::encode_farbfeld(pixels, width, height, layout, stop)
 }

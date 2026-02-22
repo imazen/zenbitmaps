@@ -4,7 +4,7 @@ use enough::StopReason;
 /// Errors from PNM/BMP decoding and encoding.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
-pub enum PnmError {
+pub enum BitmapError {
     #[error("unrecognized format magic bytes")]
     UnrecognizedFormat,
 
@@ -39,8 +39,8 @@ pub enum PnmError {
     Cancelled(StopReason),
 }
 
-impl From<StopReason> for PnmError {
+impl From<StopReason> for BitmapError {
     fn from(r: StopReason) -> Self {
-        PnmError::Cancelled(r)
+        BitmapError::Cancelled(r)
     }
 }

@@ -5,24 +5,24 @@
 use alloc::vec::Vec;
 use enough::Stop;
 
-use crate::error::PnmError;
+use crate::error::BitmapError;
 
 /// Parse farbfeld header, returning (width, height).
-pub(crate) fn parse_header(data: &[u8]) -> Result<(u32, u32), PnmError> {
+pub(crate) fn parse_header(data: &[u8]) -> Result<(u32, u32), BitmapError> {
     if data.len() < 16 {
-        return Err(PnmError::UnexpectedEof);
+        return Err(BitmapError::UnexpectedEof);
     }
     if &data[0..8] != b"farbfeld" {
-        return Err(PnmError::UnrecognizedFormat);
+        return Err(BitmapError::UnrecognizedFormat);
     }
     let width = u32::from_be_bytes([data[8], data[9], data[10], data[11]]);
     let height = u32::from_be_bytes([data[12], data[13], data[14], data[15]]);
 
     if width == 0 {
-        return Err(PnmError::InvalidHeader("farbfeld width is zero".into()));
+        return Err(BitmapError::InvalidHeader("farbfeld width is zero".into()));
     }
     if height == 0 {
-        return Err(PnmError::InvalidHeader("farbfeld height is zero".into()));
+        return Err(BitmapError::InvalidHeader("farbfeld height is zero".into()));
     }
     Ok((width, height))
 }
@@ -33,20 +33,20 @@ pub(crate) fn decode_pixels(
     width: u32,
     height: u32,
     stop: &dyn Stop,
-) -> Result<Vec<u8>, PnmError> {
+) -> Result<Vec<u8>, BitmapError> {
     let pixel_count = (width as usize)
         .checked_mul(height as usize)
-        .ok_or(PnmError::DimensionsTooLarge { width, height })?;
+        .ok_or(BitmapError::DimensionsTooLarge { width, height })?;
     let sample_count = pixel_count
         .checked_mul(4)
-        .ok_or(PnmError::DimensionsTooLarge { width, height })?;
+        .ok_or(BitmapError::DimensionsTooLarge { width, height })?;
     let input_bytes = sample_count
         .checked_mul(2)
-        .ok_or(PnmError::DimensionsTooLarge { width, height })?;
+        .ok_or(BitmapError::DimensionsTooLarge { width, height })?;
 
     let pixel_data = data
         .get(16..16 + input_bytes)
-        .ok_or(PnmError::UnexpectedEof)?;
+        .ok_or(BitmapError::UnexpectedEof)?;
 
     let mut out = Vec::with_capacity(input_bytes);
 
@@ -63,7 +63,7 @@ pub(crate) fn decode_pixels(
     }
 
     if out.len() != input_bytes {
-        return Err(PnmError::UnexpectedEof);
+        return Err(BitmapError::UnexpectedEof);
     }
 
     Ok(out)

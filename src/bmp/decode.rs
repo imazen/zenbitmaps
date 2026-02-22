@@ -2,7 +2,7 @@
 //!
 //! Forked from zune-bmp 0.5.2 by Caleb Etemesi (MIT/Apache-2.0/Zlib).
 //! Adapted: ZReader → &[u8] cursor, DecoderOptions → Option<&Limits>,
-//! BmpDecoderErrors → PnmError, log removed, stop.check() added.
+//! BmpDecoderErrors → BitmapError, log removed, stop.check() added.
 
 use alloc::vec;
 use alloc::vec::Vec;
@@ -10,7 +10,7 @@ use alloc::vec::Vec;
 use enough::Stop;
 
 use super::utils::{expand_bits_to_byte, shift_signed};
-use crate::error::PnmError;
+use crate::error::BitmapError;
 use crate::pixel::PixelLayout;
 
 // ── Permissiveness ──────────────────────────────────────────────────
@@ -115,26 +115,26 @@ impl<'a> Cursor<'a> {
         self.pos >= self.data.len()
     }
 
-    fn set_position(&mut self, pos: usize) -> Result<(), PnmError> {
+    fn set_position(&mut self, pos: usize) -> Result<(), BitmapError> {
         if pos > self.data.len() {
             if self.permissive {
                 self.pos = self.data.len();
                 return Ok(());
             }
-            return Err(PnmError::UnexpectedEof);
+            return Err(BitmapError::UnexpectedEof);
         }
         self.pos = pos;
         Ok(())
     }
 
-    fn skip(&mut self, n: usize) -> Result<(), PnmError> {
-        let new_pos = self.pos.checked_add(n).ok_or(PnmError::UnexpectedEof)?;
+    fn skip(&mut self, n: usize) -> Result<(), BitmapError> {
+        let new_pos = self.pos.checked_add(n).ok_or(BitmapError::UnexpectedEof)?;
         if new_pos > self.data.len() {
             if self.permissive {
                 self.pos = self.data.len();
                 return Ok(());
             }
-            return Err(PnmError::UnexpectedEof);
+            return Err(BitmapError::UnexpectedEof);
         }
         self.pos = new_pos;
         Ok(())
@@ -150,19 +150,19 @@ impl<'a> Cursor<'a> {
         }
     }
 
-    fn read_u8_err(&mut self) -> Result<u8, PnmError> {
+    fn read_u8_err(&mut self) -> Result<u8, BitmapError> {
         if self.pos < self.data.len() {
             let b = self.data[self.pos];
             self.pos += 1;
             Ok(b)
         } else {
-            Err(PnmError::UnexpectedEof)
+            Err(BitmapError::UnexpectedEof)
         }
     }
 
-    fn get_u16_le_err(&mut self) -> Result<u16, PnmError> {
+    fn get_u16_le_err(&mut self) -> Result<u16, BitmapError> {
         if self.pos + 2 > self.data.len() {
-            return Err(PnmError::UnexpectedEof);
+            return Err(BitmapError::UnexpectedEof);
         }
         let val = u16::from_le_bytes([self.data[self.pos], self.data[self.pos + 1]]);
         self.pos += 2;
@@ -178,9 +178,9 @@ impl<'a> Cursor<'a> {
         val
     }
 
-    fn get_u32_le_err(&mut self) -> Result<u32, PnmError> {
+    fn get_u32_le_err(&mut self) -> Result<u32, BitmapError> {
         if self.pos + 4 > self.data.len() {
-            return Err(PnmError::UnexpectedEof);
+            return Err(BitmapError::UnexpectedEof);
         }
         let val = u32::from_le_bytes([
             self.data[self.pos],
@@ -196,7 +196,7 @@ impl<'a> Cursor<'a> {
         self.get_u32_le_err().unwrap_or(0)
     }
 
-    fn read_fixed_bytes<const N: usize>(&mut self) -> Result<[u8; N], PnmError> {
+    fn read_fixed_bytes<const N: usize>(&mut self) -> Result<[u8; N], BitmapError> {
         if self.pos + N > self.data.len() {
             if self.permissive {
                 let mut buf = [0u8; N];
@@ -205,7 +205,7 @@ impl<'a> Cursor<'a> {
                 self.pos = self.data.len();
                 return Ok(buf);
             }
-            return Err(PnmError::UnexpectedEof);
+            return Err(BitmapError::UnexpectedEof);
         }
         let mut buf = [0u8; N];
         buf.copy_from_slice(&self.data[self.pos..self.pos + N]);
@@ -217,7 +217,7 @@ impl<'a> Cursor<'a> {
         self.read_fixed_bytes().unwrap_or([0u8; N])
     }
 
-    fn read_exact_bytes(&mut self, buf: &mut [u8]) -> Result<(), PnmError> {
+    fn read_exact_bytes(&mut self, buf: &mut [u8]) -> Result<(), BitmapError> {
         let n = buf.len();
         if self.pos + n > self.data.len() {
             if self.permissive {
@@ -227,7 +227,7 @@ impl<'a> Cursor<'a> {
                 self.pos = self.data.len();
                 return Ok(());
             }
-            return Err(PnmError::UnexpectedEof);
+            return Err(BitmapError::UnexpectedEof);
         }
         buf.copy_from_slice(&self.data[self.pos..self.pos + n]);
         self.pos += n;
@@ -247,7 +247,7 @@ pub(crate) struct BmpHeader {
 
 /// Parse a BMP header to extract dimensions and pixel format.
 /// This is the header-only fast path for probing.
-pub(crate) fn parse_bmp_header(data: &[u8]) -> Result<BmpHeader, PnmError> {
+pub(crate) fn parse_bmp_header(data: &[u8]) -> Result<BmpHeader, BitmapError> {
     // Header probing uses Permissive to avoid rejecting files before
     // the caller has chosen a permissiveness level.
     let mut dec = BmpDecoderState::new(data, BmpPermissiveness::Permissive);
@@ -258,7 +258,7 @@ pub(crate) fn parse_bmp_header(data: &[u8]) -> Result<BmpHeader, PnmError> {
         BmpPixelFormat::Rgb | BmpPixelFormat::Pal8 => PixelLayout::Rgb8,
         BmpPixelFormat::Gray8 => PixelLayout::Gray8,
         BmpPixelFormat::None => {
-            return Err(PnmError::UnsupportedVariant(
+            return Err(BitmapError::UnsupportedVariant(
                 "unsupported BMP pixel format".into(),
             ));
         }
@@ -278,7 +278,7 @@ pub(crate) fn decode_bmp_pixels(
     data: &[u8],
     permissiveness: BmpPermissiveness,
     stop: &dyn Stop,
-) -> Result<(Vec<u8>, PixelLayout), PnmError> {
+) -> Result<(Vec<u8>, PixelLayout), BitmapError> {
     let mut dec = BmpDecoderState::new(data, permissiveness);
     dec.decode_headers()?;
 
@@ -293,7 +293,7 @@ pub(crate) fn decode_bmp_pixels(
         BmpPixelFormat::Rgb | BmpPixelFormat::Pal8 => PixelLayout::Rgb8,
         BmpPixelFormat::Gray8 => PixelLayout::Gray8,
         BmpPixelFormat::None => {
-            return Err(PnmError::UnsupportedVariant(
+            return Err(BitmapError::UnsupportedVariant(
                 "unsupported BMP pixel format".into(),
             ));
         }
@@ -307,7 +307,7 @@ pub(crate) fn decode_bmp_pixels_native(
     data: &[u8],
     permissiveness: BmpPermissiveness,
     stop: &dyn Stop,
-) -> Result<(Vec<u8>, PixelLayout), PnmError> {
+) -> Result<(Vec<u8>, PixelLayout), BitmapError> {
     let mut dec = BmpDecoderState::new(data, permissiveness);
     dec.decode_headers()?;
 
@@ -322,7 +322,7 @@ pub(crate) fn decode_bmp_pixels_native(
         BmpPixelFormat::Rgb | BmpPixelFormat::Pal8 => PixelLayout::Bgr8,
         BmpPixelFormat::Gray8 => PixelLayout::Gray8,
         BmpPixelFormat::None => {
-            return Err(PnmError::UnsupportedVariant(
+            return Err(BitmapError::UnsupportedVariant(
                 "unsupported BMP pixel format".into(),
             ));
         }
@@ -382,7 +382,7 @@ impl<'a> BmpDecoderState<'a> {
     }
 
     #[allow(unused_assignments)]
-    fn decode_headers(&mut self) -> Result<(), PnmError> {
+    fn decode_headers(&mut self) -> Result<(), BitmapError> {
         if self.decoded_headers {
             return Ok(());
         }
@@ -392,7 +392,7 @@ impl<'a> BmpDecoderState<'a> {
         let data_len = self.bytes.data.len();
 
         if self.bytes.read_u8_err()? != b'B' || self.bytes.read_u8_err()? != b'M' {
-            return Err(PnmError::UnrecognizedFormat);
+            return Err(BitmapError::UnrecognizedFormat);
         }
 
         // File size field (offset 2)
@@ -402,7 +402,7 @@ impl<'a> BmpDecoderState<'a> {
 
         // Strict: validate file size field matches actual data length
         if is_strict && file_size_field != 0 && file_size_field as usize != data_len {
-            return Err(PnmError::InvalidHeader(alloc::format!(
+            return Err(BitmapError::InvalidHeader(alloc::format!(
                 "BMP file size field ({file_size_field}) doesn't match actual size ({data_len})"
             )));
         }
@@ -411,7 +411,7 @@ impl<'a> BmpDecoderState<'a> {
         let ihsize = self.bytes.get_u32_le_err()?;
 
         if ihsize.saturating_add(14) > hsize {
-            return Err(PnmError::InvalidHeader("invalid BMP header size".into()));
+            return Err(BitmapError::InvalidHeader("invalid BMP header size".into()));
         }
 
         let (width, height, planes, bpp, compression);
@@ -433,7 +433,7 @@ impl<'a> BmpDecoderState<'a> {
                     match BmpCompression::from_u32(self.bytes.get_u32_le_err()?, is_permissive) {
                         Some(c) => c,
                         None => {
-                            return Err(PnmError::UnsupportedVariant(
+                            return Err(BitmapError::UnsupportedVariant(
                                 "unsupported BMP compression scheme".into(),
                             ));
                         }
@@ -457,12 +457,12 @@ impl<'a> BmpDecoderState<'a> {
                         let x_signed = x_pixels as i32;
                         let y_signed = y_pixels as i32;
                         if x_signed < 0 || x_pixels > MAX_RESOLUTION {
-                            return Err(PnmError::InvalidHeader(alloc::format!(
+                            return Err(BitmapError::InvalidHeader(alloc::format!(
                                 "BMP horizontal resolution out of range ({x_signed})"
                             )));
                         }
                         if y_signed < 0 || y_pixels > MAX_RESOLUTION {
-                            return Err(PnmError::InvalidHeader(alloc::format!(
+                            return Err(BitmapError::InvalidHeader(alloc::format!(
                                 "BMP vertical resolution out of range ({y_signed})"
                             )));
                         }
@@ -472,7 +472,7 @@ impl<'a> BmpDecoderState<'a> {
                             let row_bytes = (width as usize * bpp as usize).div_ceil(32) * 4;
                             let expected_size = row_bytes * (height as i32).unsigned_abs() as usize;
                             if image_size_field as usize != expected_size {
-                                return Err(PnmError::InvalidHeader(alloc::format!(
+                                return Err(BitmapError::InvalidHeader(alloc::format!(
                                     "BMP image data size field ({image_size_field}) doesn't match expected ({expected_size})"
                                 )));
                             }
@@ -511,7 +511,7 @@ impl<'a> BmpDecoderState<'a> {
                 }
             }
             _ => {
-                return Err(PnmError::InvalidHeader(alloc::format!(
+                return Err(BitmapError::InvalidHeader(alloc::format!(
                     "unknown BMP info header size: {ihsize}"
                 )));
             }
@@ -519,7 +519,7 @@ impl<'a> BmpDecoderState<'a> {
 
         // Planes validation (Standard and Strict reject planes != 1)
         if !is_permissive && planes != 1 {
-            return Err(PnmError::InvalidHeader(alloc::format!(
+            return Err(BitmapError::InvalidHeader(alloc::format!(
                 "BMP planes field is {planes}, expected 1"
             )));
         }
@@ -529,10 +529,10 @@ impl<'a> BmpDecoderState<'a> {
         self.width = width as usize;
 
         if self.width == 0 {
-            return Err(PnmError::InvalidHeader("BMP width is zero".into()));
+            return Err(BitmapError::InvalidHeader("BMP width is zero".into()));
         }
         if self.height == 0 {
-            return Err(PnmError::InvalidHeader("BMP height is zero".into()));
+            return Err(BitmapError::InvalidHeader("BMP height is zero".into()));
         }
 
         // RLE + top-down is forbidden by spec (Standard and Strict reject)
@@ -540,13 +540,13 @@ impl<'a> BmpDecoderState<'a> {
             && !self.flip_vertically
             && matches!(compression, BmpCompression::Rle4 | BmpCompression::Rle8)
         {
-            return Err(PnmError::InvalidData(
+            return Err(BitmapError::InvalidData(
                 "RLE compression with top-down row order is forbidden by BMP spec".into(),
             ));
         }
 
         if bpp == 0 {
-            return Err(PnmError::InvalidHeader("BMP bit depth is zero".into()));
+            return Err(BitmapError::InvalidHeader("BMP bit depth is zero".into()));
         }
 
         match bpp {
@@ -577,21 +577,21 @@ impl<'a> BmpDecoderState<'a> {
                 if hsize.wrapping_sub(ihsize).wrapping_sub(14) > 0 {
                     self.pix_fmt = BmpPixelFormat::Pal8;
                 } else {
-                    return Err(PnmError::UnsupportedVariant(alloc::format!(
+                    return Err(BitmapError::UnsupportedVariant(alloc::format!(
                         "unknown palette for {}-color BMP",
                         1u32 << bpp
                     )));
                 }
             }
             _ => {
-                return Err(PnmError::UnsupportedVariant(alloc::format!(
+                return Err(BitmapError::UnsupportedVariant(alloc::format!(
                     "BMP bit depth {bpp} unsupported"
                 )));
             }
         }
 
         if self.pix_fmt == BmpPixelFormat::None {
-            return Err(PnmError::UnsupportedVariant(
+            return Err(BitmapError::UnsupportedVariant(
                 "unsupported BMP pixel format".into(),
             ));
         }
@@ -607,7 +607,7 @@ impl<'a> BmpDecoderState<'a> {
                 let t = self.bytes.get_u32_le_err()? as i32;
                 if t < 0 || t > (1 << bpp) {
                     if !is_permissive {
-                        return Err(PnmError::InvalidHeader(alloc::format!(
+                        return Err(BitmapError::InvalidHeader(alloc::format!(
                             "BMP palette count ({t}) exceeds max for {bpp}-bit depth ({})",
                             1u32 << bpp
                         )));
@@ -626,7 +626,9 @@ impl<'a> BmpDecoderState<'a> {
             // OS/2: 3 bytes per entry
             if ihsize == 12 {
                 if p < colors * 3 {
-                    return Err(PnmError::InvalidData("invalid BMP palette entries".into()));
+                    return Err(BitmapError::InvalidData(
+                        "invalid BMP palette entries".into(),
+                    ));
                 }
                 for i in 0..colors.min(256) as usize {
                     let [b, g, r] = self.bytes.read_fixed_bytes_or_zero::<3>();
@@ -661,12 +663,12 @@ impl<'a> BmpDecoderState<'a> {
         Ok(())
     }
 
-    fn output_buf_size(&self) -> Result<usize, PnmError> {
+    fn output_buf_size(&self) -> Result<usize, BitmapError> {
         self.width
             .checked_mul(self.height)
             .and_then(|wh| wh.checked_mul(self.pix_fmt.num_components()))
             .filter(|&size| size <= Self::MAX_OUTPUT_BYTES)
-            .ok_or(PnmError::DimensionsTooLarge {
+            .ok_or(BitmapError::DimensionsTooLarge {
                 width: self.width as u32,
                 height: self.height as u32,
             })
@@ -676,7 +678,7 @@ impl<'a> BmpDecoderState<'a> {
         &mut self,
         buf: &mut [u8],
         stop: &dyn Stop,
-    ) -> Result<(), PnmError> {
+    ) -> Result<(), BitmapError> {
         let output_size = self.output_buf_size()?;
         let buf = &mut buf[0..output_size];
 
@@ -815,7 +817,7 @@ impl<'a> BmpDecoderState<'a> {
                 }
                 1 | 2 | 4 => {
                     if self.pix_fmt != BmpPixelFormat::Pal8 {
-                        return Err(PnmError::UnsupportedVariant(
+                        return Err(BitmapError::UnsupportedVariant(
                             "bit depths < 8 must have a palette".into(),
                         ));
                     }
@@ -842,7 +844,7 @@ impl<'a> BmpDecoderState<'a> {
                     self.flip_vertically ^= true;
                 }
                 d => {
-                    return Err(PnmError::UnsupportedVariant(alloc::format!(
+                    return Err(BitmapError::UnsupportedVariant(alloc::format!(
                         "unhandled BMP bit depth: {d}"
                     )));
                 }
@@ -886,7 +888,12 @@ impl<'a> BmpDecoderState<'a> {
         Ok(())
     }
 
-    fn expand_palette(&self, in_bytes: &[u8], buf: &mut [u8], unpad: bool) -> Result<(), PnmError> {
+    fn expand_palette(
+        &self,
+        in_bytes: &[u8],
+        buf: &mut [u8],
+        unpad: bool,
+    ) -> Result<(), BitmapError> {
         let palette = &self.palette;
         let pad = usize::from(unpad) * (((-(self.width as i32)) as u32) & 3) as usize;
         let validate = self.permissiveness != BmpPermissiveness::Permissive;
@@ -900,7 +907,7 @@ impl<'a> BmpDecoderState<'a> {
                 for (pal_byte, chunks) in in_stride.iter().zip(out_stride.chunks_exact_mut(4)) {
                     let idx = usize::from(*pal_byte);
                     if validate && idx >= self.palette_numbers {
-                        return Err(PnmError::InvalidData(alloc::format!(
+                        return Err(BitmapError::InvalidData(alloc::format!(
                             "palette index {idx} out of range (palette has {} entries)",
                             self.palette_numbers
                         )));
@@ -921,7 +928,7 @@ impl<'a> BmpDecoderState<'a> {
                 for (pal_byte, chunks) in in_stride.iter().zip(out_stride.chunks_exact_mut(3)) {
                     let idx = usize::from(*pal_byte);
                     if validate && idx >= self.palette_numbers {
-                        return Err(PnmError::InvalidData(alloc::format!(
+                        return Err(BitmapError::InvalidData(alloc::format!(
                             "palette index {idx} out of range (palette has {} entries)",
                             self.palette_numbers
                         )));
@@ -940,7 +947,7 @@ impl<'a> BmpDecoderState<'a> {
         &mut self,
         buf: &mut [u8],
         unpad: bool,
-    ) -> Result<(), PnmError> {
+    ) -> Result<(), BitmapError> {
         let pad = usize::from(unpad) * (((-(self.width as i32)) as u32) & 3) as usize;
         let validate = self.permissiveness != BmpPermissiveness::Permissive;
 
@@ -950,7 +957,7 @@ impl<'a> BmpDecoderState<'a> {
                     let byte = self.bytes.read_u8();
                     let idx = usize::from(byte);
                     if validate && idx >= self.palette_numbers {
-                        return Err(PnmError::InvalidData(alloc::format!(
+                        return Err(BitmapError::InvalidData(alloc::format!(
                             "palette index {idx} out of range (palette has {} entries)",
                             self.palette_numbers
                         )));
@@ -969,7 +976,7 @@ impl<'a> BmpDecoderState<'a> {
                     let byte = self.bytes.read_u8();
                     let idx = usize::from(byte);
                     if validate && idx >= self.palette_numbers {
-                        return Err(PnmError::InvalidData(alloc::format!(
+                        return Err(BitmapError::InvalidData(alloc::format!(
                             "palette index {idx} out of range (palette has {} entries)",
                             self.palette_numbers
                         )));
@@ -985,28 +992,28 @@ impl<'a> BmpDecoderState<'a> {
         Ok(())
     }
 
-    fn decode_rle(&mut self, stop: &dyn Stop) -> Result<Vec<u8>, PnmError> {
+    fn decode_rle(&mut self, stop: &dyn Stop) -> Result<Vec<u8>, BitmapError> {
         let depth = if self.depth < 8 { 8 } else { self.depth };
 
         let pixel_bits = self
             .width
             .checked_mul(self.height)
             .and_then(|v| v.checked_mul(usize::from(depth)))
-            .ok_or(PnmError::DimensionsTooLarge {
+            .ok_or(BitmapError::DimensionsTooLarge {
                 width: self.width as u32,
                 height: self.height as u32,
             })?;
 
         let alloc_size = pixel_bits
             .checked_add(7)
-            .ok_or(PnmError::DimensionsTooLarge {
+            .ok_or(BitmapError::DimensionsTooLarge {
                 width: self.width as u32,
                 height: self.height as u32,
             })?
             >> 3;
 
         if alloc_size > Self::MAX_OUTPUT_BYTES {
-            return Err(PnmError::DimensionsTooLarge {
+            return Err(BitmapError::DimensionsTooLarge {
                 width: self.width as u32,
                 height: self.height as u32,
             });
@@ -1017,7 +1024,7 @@ impl<'a> BmpDecoderState<'a> {
         let mut pos = 0usize;
 
         if !(self.depth == 4 || self.depth == 8 || self.depth == 16 || self.depth == 32) {
-            return Err(PnmError::UnsupportedVariant(alloc::format!(
+            return Err(BitmapError::UnsupportedVariant(alloc::format!(
                 "unknown depth + RLE combination: depth {}",
                 self.depth
             )));
@@ -1039,7 +1046,7 @@ impl<'a> BmpDecoderState<'a> {
         pixels: &mut [u8],
         line: &mut i32,
         pos: &mut usize,
-    ) -> Result<(), PnmError> {
+    ) -> Result<(), BitmapError> {
         let mut rle_code: u16;
         let mut stream_byte: u8;
 
@@ -1055,7 +1062,7 @@ impl<'a> BmpDecoderState<'a> {
                         if self.permissiveness == BmpPermissiveness::Permissive {
                             return Ok(());
                         }
-                        return Err(PnmError::InvalidData("RLE4 line underflow".into()));
+                        return Err(BitmapError::InvalidData("RLE4 line underflow".into()));
                     }
                     *pos = 0;
                     continue;
@@ -1070,7 +1077,7 @@ impl<'a> BmpDecoderState<'a> {
                         if self.permissiveness == BmpPermissiveness::Permissive {
                             return Ok(());
                         }
-                        return Err(PnmError::InvalidData("RLE4 line underflow".into()));
+                        return Err(BitmapError::InvalidData("RLE4 line underflow".into()));
                     }
                 } else {
                     let odd_pixel = usize::from(stream_byte & 1);
@@ -1108,7 +1115,7 @@ impl<'a> BmpDecoderState<'a> {
                         let _ = self.bytes.read_u8();
                         continue;
                     }
-                    return Err(PnmError::InvalidData(
+                    return Err(BitmapError::InvalidData(
                         "RLE4 frame pointer out of bounds".into(),
                     ));
                 }
@@ -1140,7 +1147,7 @@ impl<'a> BmpDecoderState<'a> {
         line: &mut i32,
         pos: &mut usize,
         stop: &dyn Stop,
-    ) -> Result<(), PnmError> {
+    ) -> Result<(), BitmapError> {
         let mut check_counter = 0u32;
 
         while !self.bytes.eof() {
@@ -1161,7 +1168,7 @@ impl<'a> BmpDecoderState<'a> {
                         {
                             return Ok(());
                         }
-                        return Err(PnmError::InvalidData(
+                        return Err(BitmapError::InvalidData(
                             "RLE line beyond picture bounds".into(),
                         ));
                     }
@@ -1178,7 +1185,7 @@ impl<'a> BmpDecoderState<'a> {
                         if self.permissiveness == BmpPermissiveness::Permissive {
                             return Ok(());
                         }
-                        return Err(PnmError::InvalidData("RLE delta line underflow".into()));
+                        return Err(BitmapError::InvalidData("RLE delta line underflow".into()));
                     }
                     continue;
                 }
@@ -1262,7 +1269,7 @@ impl<'a> BmpDecoderState<'a> {
                         }
                         continue;
                     }
-                    return Err(PnmError::InvalidData("RLE position overrun".into()));
+                    return Err(BitmapError::InvalidData("RLE position overrun".into()));
                 }
 
                 let output_start = row_start + *pos;

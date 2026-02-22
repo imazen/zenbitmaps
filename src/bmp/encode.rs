@@ -1,6 +1,6 @@
 //! BMP encoder: uncompressed 24-bit and 32-bit BMP.
 
-use crate::error::PnmError;
+use crate::error::BitmapError;
 use crate::pixel::PixelLayout;
 use alloc::vec::Vec;
 use enough::Stop;
@@ -13,15 +13,15 @@ pub(crate) fn encode_bmp(
     layout: PixelLayout,
     alpha: bool,
     stop: &dyn Stop,
-) -> Result<Vec<u8>, PnmError> {
+) -> Result<Vec<u8>, BitmapError> {
     let w = width as usize;
     let h = height as usize;
     let expected = w
         .checked_mul(h)
         .and_then(|wh| wh.checked_mul(layout.bytes_per_pixel()))
-        .ok_or(PnmError::DimensionsTooLarge { width, height })?;
+        .ok_or(BitmapError::DimensionsTooLarge { width, height })?;
     if pixels.len() < expected {
-        return Err(PnmError::BufferTooSmall {
+        return Err(BitmapError::BufferTooSmall {
             needed: expected,
             actual: pixels.len(),
         });
@@ -44,18 +44,18 @@ fn encode_24bit(
     h: usize,
     layout: PixelLayout,
     stop: &dyn Stop,
-) -> Result<Vec<u8>, PnmError> {
+) -> Result<Vec<u8>, BitmapError> {
     let row_stride = w
         .checked_mul(3)
         .and_then(|r| r.checked_add(3))
         .map(|r| r & !3)
-        .ok_or(PnmError::DimensionsTooLarge { width, height })?;
+        .ok_or(BitmapError::DimensionsTooLarge { width, height })?;
     let pixel_data_size = row_stride
         .checked_mul(h)
-        .ok_or(PnmError::DimensionsTooLarge { width, height })?;
+        .ok_or(BitmapError::DimensionsTooLarge { width, height })?;
     let file_size = pixel_data_size
         .checked_add(54)
-        .ok_or(PnmError::DimensionsTooLarge { width, height })?;
+        .ok_or(BitmapError::DimensionsTooLarge { width, height })?;
 
     let mut out = Vec::with_capacity(file_size);
     write_bmp_header(&mut out, file_size, pixel_data_size, width, height, 24);
@@ -93,16 +93,16 @@ fn encode_32bit(
     h: usize,
     layout: PixelLayout,
     stop: &dyn Stop,
-) -> Result<Vec<u8>, PnmError> {
+) -> Result<Vec<u8>, BitmapError> {
     let row_stride = w
         .checked_mul(4)
-        .ok_or(PnmError::DimensionsTooLarge { width, height })?;
+        .ok_or(BitmapError::DimensionsTooLarge { width, height })?;
     let pixel_data_size = row_stride
         .checked_mul(h)
-        .ok_or(PnmError::DimensionsTooLarge { width, height })?;
+        .ok_or(BitmapError::DimensionsTooLarge { width, height })?;
     let file_size = pixel_data_size
         .checked_add(54)
-        .ok_or(PnmError::DimensionsTooLarge { width, height })?;
+        .ok_or(BitmapError::DimensionsTooLarge { width, height })?;
 
     let mut out = Vec::with_capacity(file_size);
     write_bmp_header(&mut out, file_size, pixel_data_size, width, height, 32);
@@ -160,7 +160,7 @@ fn write_bmp_header(
     out.extend_from_slice(&0u32.to_le_bytes()); // important colors
 }
 
-fn get_rgb(pixels: &[u8], idx: usize, layout: PixelLayout) -> Result<(u8, u8, u8), PnmError> {
+fn get_rgb(pixels: &[u8], idx: usize, layout: PixelLayout) -> Result<(u8, u8, u8), BitmapError> {
     Ok(match layout {
         PixelLayout::Rgb8 => {
             let off = idx * 3;
@@ -183,7 +183,7 @@ fn get_rgb(pixels: &[u8], idx: usize, layout: PixelLayout) -> Result<(u8, u8, u8
             (g, g, g)
         }
         _ => {
-            return Err(PnmError::UnsupportedVariant(alloc::format!(
+            return Err(BitmapError::UnsupportedVariant(alloc::format!(
                 "cannot get RGB from {:?}",
                 layout
             )));
@@ -191,7 +191,11 @@ fn get_rgb(pixels: &[u8], idx: usize, layout: PixelLayout) -> Result<(u8, u8, u8
     })
 }
 
-fn get_rgba(pixels: &[u8], idx: usize, layout: PixelLayout) -> Result<(u8, u8, u8, u8), PnmError> {
+fn get_rgba(
+    pixels: &[u8],
+    idx: usize,
+    layout: PixelLayout,
+) -> Result<(u8, u8, u8, u8), BitmapError> {
     Ok(match layout {
         PixelLayout::Rgba8 => {
             let off = idx * 4;
@@ -228,7 +232,7 @@ fn get_rgba(pixels: &[u8], idx: usize, layout: PixelLayout) -> Result<(u8, u8, u
             (g, g, g, 255)
         }
         _ => {
-            return Err(PnmError::UnsupportedVariant(alloc::format!(
+            return Err(BitmapError::UnsupportedVariant(alloc::format!(
                 "cannot get RGBA from {:?}",
                 layout
             )));

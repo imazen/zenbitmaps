@@ -1,7 +1,7 @@
 //! Test corpus: roundtrip tests with various patterns, sizes, and formats.
 
 use enough::Unstoppable;
-use zenpnm::*;
+use zenbitmaps::*;
 
 fn checkerboard(w: usize, h: usize, bpp: usize) -> Vec<u8> {
     let mut pixels = vec![0u8; w * h * bpp];
@@ -525,7 +525,7 @@ fn bmp_auto_detect_rgba() {
 #[cfg(feature = "bmp")]
 mod bmp_fixtures {
     use enough::Unstoppable;
-    use zenpnm::*;
+    use zenbitmaps::*;
 
     fn fixture(name: &str) -> Vec<u8> {
         let path = format!("{}/tests/bmp-fixtures/{name}", env!("CARGO_MANIFEST_DIR"));
@@ -678,7 +678,7 @@ fn decode_external_bmp_if_available() {
 
 #[cfg(all(feature = "bmp", not(target_arch = "wasm32")))]
 mod bmp_corpus {
-    use zenpnm::*;
+    use zenbitmaps::*;
 
     fn get_corpus(subdir: &str) -> Option<std::path::PathBuf> {
         let corpus = codec_corpus::Corpus::new().ok()?;

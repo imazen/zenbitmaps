@@ -1,5 +1,5 @@
 use enough::Unstoppable;
-use zenpnm::*;
+use zenbitmaps::*;
 
 #[test]
 fn ppm_roundtrip_rgb8() {
@@ -95,7 +95,7 @@ fn limits_reject_large() {
     let result = decode_with_limits(&encoded, &limits, Unstoppable);
     assert!(result.is_err());
     match result.unwrap_err() {
-        PnmError::LimitExceeded(_) => {}
+        BitmapError::LimitExceeded(_) => {}
         other => panic!("expected LimitExceeded, got {other:?}"),
     }
 }

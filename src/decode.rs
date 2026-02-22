@@ -56,14 +56,14 @@ impl<'a> DecodeOutput<'a> {
 
     /// Reinterpret pixel data as typed pixel slice.
     ///
-    /// Returns [`crate::PnmError::LayoutMismatch`] if the pixel layout doesn't match `P`.
+    /// Returns [`crate::BitmapError::LayoutMismatch`] if the pixel layout doesn't match `P`.
     #[cfg(feature = "rgb")]
-    pub fn as_pixels<P: crate::DecodePixel>(&self) -> Result<&[P], crate::PnmError>
+    pub fn as_pixels<P: crate::DecodePixel>(&self) -> Result<&[P], crate::BitmapError>
     where
         [u8]: rgb::AsPixels<P>,
     {
         if !self.layout.is_memory_compatible(P::layout()) {
-            return Err(crate::PnmError::LayoutMismatch {
+            return Err(crate::BitmapError::LayoutMismatch {
                 expected: P::layout(),
                 actual: self.layout,
             });
@@ -73,9 +73,9 @@ impl<'a> DecodeOutput<'a> {
 
     /// Convert to an [`imgref::ImgVec`] of typed pixels.
     ///
-    /// Returns [`crate::PnmError::LayoutMismatch`] if the pixel layout doesn't match `P`.
+    /// Returns [`crate::BitmapError::LayoutMismatch`] if the pixel layout doesn't match `P`.
     #[cfg(feature = "imgref")]
-    pub fn to_imgvec<P: crate::DecodePixel>(&self) -> Result<imgref::ImgVec<P>, crate::PnmError>
+    pub fn to_imgvec<P: crate::DecodePixel>(&self) -> Result<imgref::ImgVec<P>, crate::BitmapError>
     where
         [u8]: rgb::AsPixels<P>,
     {

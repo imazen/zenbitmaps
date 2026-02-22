@@ -7,7 +7,7 @@ mod encode;
 mod utils;
 
 use crate::decode::DecodeOutput;
-use crate::error::PnmError;
+use crate::error::BitmapError;
 use crate::limits::Limits;
 use crate::pixel::PixelLayout;
 use alloc::vec::Vec;
@@ -19,7 +19,7 @@ pub(crate) fn decode<'a>(
     data: &'a [u8],
     limits: Option<&Limits>,
     stop: &dyn Stop,
-) -> Result<DecodeOutput<'a>, PnmError> {
+) -> Result<DecodeOutput<'a>, BitmapError> {
     decode_with_permissiveness(data, limits, BmpPermissiveness::Standard, stop)
 }
 
@@ -29,7 +29,7 @@ pub(crate) fn decode_with_permissiveness<'a>(
     limits: Option<&Limits>,
     permissiveness: BmpPermissiveness,
     stop: &dyn Stop,
-) -> Result<DecodeOutput<'a>, PnmError> {
+) -> Result<DecodeOutput<'a>, BitmapError> {
     let header = decode::parse_bmp_header(data)?;
     check_limits(limits, header.width, header.height, &header.layout)?;
     stop.check()?;
@@ -47,7 +47,7 @@ pub(crate) fn decode_native<'a>(
     data: &'a [u8],
     limits: Option<&Limits>,
     stop: &dyn Stop,
-) -> Result<DecodeOutput<'a>, PnmError> {
+) -> Result<DecodeOutput<'a>, BitmapError> {
     let header = decode::parse_bmp_header(data)?;
     check_limits(limits, header.width, header.height, &header.layout)?;
     stop.check()?;
@@ -66,7 +66,7 @@ fn check_limits(
     width: u32,
     height: u32,
     layout: &PixelLayout,
-) -> Result<(), PnmError> {
+) -> Result<(), BitmapError> {
     if let Some(limits) = limits {
         limits.check(width, height)?;
     }
@@ -85,6 +85,6 @@ pub(crate) fn encode(
     layout: PixelLayout,
     alpha: bool,
     stop: &dyn Stop,
-) -> Result<Vec<u8>, PnmError> {
+) -> Result<Vec<u8>, BitmapError> {
     encode::encode_bmp(pixels, width, height, layout, alpha, stop)
 }

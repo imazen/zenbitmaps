@@ -1,5 +1,5 @@
 [package]
-name = "zenpnm"
+name = "zenbitmaps"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
@@ -7,8 +7,8 @@ license = "MIT OR Apache-2.0"
 description = "PNM/PAM/PFM, BMP, and farbfeld image format decoder and encoder"
 categories = ["multimedia::images"]
 keywords = ["image", "pnm", "bmp", "farbfeld", "pam"]
-repository = "https://github.com/imazen/zenpnm"
-documentation = "https://docs.rs/zenpnm"
+repository = "https://github.com/imazen/zenbitmaps"
+documentation = "https://docs.rs/zenbitmaps"
 readme = "README.md"
 exclude = ["tests/bmp-fixtures/"]
 

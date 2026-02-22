@@ -1,4 +1,4 @@
-# zenpnm
+# zenbitmaps
 
 PNM/PAM/PFM, BMP, and farbfeld image format decoder and encoder.
 

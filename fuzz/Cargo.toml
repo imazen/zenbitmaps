@@ -1,5 +1,5 @@
 [package]
-name = "zenpnm-fuzz"
+name = "zenbitmaps-fuzz"
 version = "0.0.0"
 publish = false
 edition = "2024"
@@ -11,7 +11,7 @@ cargo-fuzz = true
 libfuzzer-sys = "0.4"
 enough = "0.4"
 
-[dependencies.zenpnm]
+[dependencies.zenbitmaps]
 path = ".."
 features = ["bmp"]
 

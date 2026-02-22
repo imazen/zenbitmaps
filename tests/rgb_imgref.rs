@@ -1,7 +1,7 @@
 #![cfg(feature = "imgref")]
 
 use enough::Unstoppable;
-use zenpnm::*;
+use zenbitmaps::*;
 
 #[test]
 fn ppm_pixels_roundtrip() {
