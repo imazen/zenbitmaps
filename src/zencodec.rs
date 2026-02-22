@@ -219,7 +219,7 @@ impl zencodec_types::Encoder for PnmEncoder<'_> {
 
         match (desc.channel_type, desc.layout) {
             (zencodec_types::ChannelType::U8, zencodec_types::ChannelLayout::Rgb) => {
-                let bytes = collect_contiguous_bytes(&pixels);
+                let bytes = pixels.contiguous_bytes();
                 let encoded = pnm::encode(
                     &bytes,
                     w,
@@ -231,7 +231,7 @@ impl zencodec_types::Encoder for PnmEncoder<'_> {
                 Ok(EncodeOutput::new(encoded, ImageFormat::Pnm))
             }
             (zencodec_types::ChannelType::U8, zencodec_types::ChannelLayout::Rgba) => {
-                let bytes = collect_contiguous_bytes(&pixels);
+                let bytes = pixels.contiguous_bytes();
                 let encoded = pnm::encode(
                     &bytes,
                     w,
@@ -243,7 +243,7 @@ impl zencodec_types::Encoder for PnmEncoder<'_> {
                 Ok(EncodeOutput::new(encoded, ImageFormat::Pnm))
             }
             (zencodec_types::ChannelType::U8, zencodec_types::ChannelLayout::Gray) => {
-                let bytes = collect_contiguous_bytes(&pixels);
+                let bytes = pixels.contiguous_bytes();
                 let encoded = pnm::encode(
                     &bytes,
                     w,
@@ -255,7 +255,7 @@ impl zencodec_types::Encoder for PnmEncoder<'_> {
                 Ok(EncodeOutput::new(encoded, ImageFormat::Pnm))
             }
             (zencodec_types::ChannelType::U8, zencodec_types::ChannelLayout::Bgra) => {
-                let bytes = collect_contiguous_bytes(&pixels);
+                let bytes = pixels.contiguous_bytes();
                 let encoded = pnm::encode(
                     &bytes,
                     w,
@@ -267,7 +267,7 @@ impl zencodec_types::Encoder for PnmEncoder<'_> {
                 Ok(EncodeOutput::new(encoded, ImageFormat::Pnm))
             }
             (zencodec_types::ChannelType::F32, zencodec_types::ChannelLayout::Rgb) => {
-                let bytes = collect_contiguous_bytes(&pixels);
+                let bytes = pixels.contiguous_bytes();
                 let encoded = pnm::encode(
                     &bytes,
                     w,
@@ -299,7 +299,7 @@ impl zencodec_types::Encoder for PnmEncoder<'_> {
                 Ok(EncodeOutput::new(encoded, ImageFormat::Pnm))
             }
             (zencodec_types::ChannelType::F32, zencodec_types::ChannelLayout::Gray) => {
-                let bytes = collect_contiguous_bytes(&pixels);
+                let bytes = pixels.contiguous_bytes();
                 let encoded = pnm::encode(
                     &bytes,
                     w,
@@ -680,7 +680,7 @@ mod bmp_codec {
                 limits.check(w, h)?;
             }
 
-            let bytes = collect_contiguous_bytes(&pixels);
+            let bytes = pixels.contiguous_bytes();
             let (layout, alpha) = match (desc.channel_type, desc.layout) {
                 (zencodec_types::ChannelType::U8, zencodec_types::ChannelLayout::Rgb) => {
                     (crate::PixelLayout::Rgb8, false)
@@ -1073,7 +1073,7 @@ impl zencodec_types::Encoder for FarbfeldEncoder<'_> {
             limits.check(w, h)?;
         }
 
-        let bytes = collect_contiguous_bytes(&pixels);
+        let bytes = pixels.contiguous_bytes();
         let layout = match (desc.channel_type, desc.layout) {
             (zencodec_types::ChannelType::U16, zencodec_types::ChannelLayout::Rgba) => {
                 crate::PixelLayout::Rgba16
@@ -1508,20 +1508,6 @@ fn decode_into_dispatch(
     }
 
     Ok(info)
-}
-
-/// Collect contiguous bytes from a PixelSlice (handles stride).
-fn collect_contiguous_bytes(pixels: &PixelSlice<'_>) -> Vec<u8> {
-    let h = pixels.rows();
-    let w = pixels.width();
-    let bpp = pixels.descriptor().bytes_per_pixel();
-    let row_bytes = w as usize * bpp;
-
-    let mut out = Vec::with_capacity(row_bytes * h as usize);
-    for y in 0..h {
-        out.extend_from_slice(&pixels.row(y)[..row_bytes]);
-    }
-    out
 }
 
 /// Copy rows from a typed ImgVec into a PixelSliceMut via byte reinterpretation.
