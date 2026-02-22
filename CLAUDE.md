@@ -27,6 +27,8 @@ These are lossless, simple formats used as ground truth for encode/decode pipeli
 - Compression: uncompressed, RLE4, RLE8, BITFIELDS
 - Color palettes, bottom-up/top-down, grayscale detection
 - Encode: uncompressed 24-bit (RGB) and 32-bit (RGBA)
+- `BmpPermissiveness` enum: `Strict` / `Standard` (default) / `Permissive`
+- 1 GiB hard output cap prevents OOM from pathological headers
 
 ## Credits
 
