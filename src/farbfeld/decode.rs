@@ -19,14 +19,10 @@ pub(crate) fn parse_header(data: &[u8]) -> Result<(u32, u32), PnmError> {
     let height = u32::from_be_bytes([data[12], data[13], data[14], data[15]]);
 
     if width == 0 {
-        return Err(PnmError::InvalidHeader(
-            "farbfeld width is zero".into(),
-        ));
+        return Err(PnmError::InvalidHeader("farbfeld width is zero".into()));
     }
     if height == 0 {
-        return Err(PnmError::InvalidHeader(
-            "farbfeld height is zero".into(),
-        ));
+        return Err(PnmError::InvalidHeader("farbfeld height is zero".into()));
     }
     Ok((width, height))
 }
@@ -48,7 +44,9 @@ pub(crate) fn decode_pixels(
         .checked_mul(2)
         .ok_or(PnmError::DimensionsTooLarge { width, height })?;
 
-    let pixel_data = data.get(16..16 + input_bytes).ok_or(PnmError::UnexpectedEof)?;
+    let pixel_data = data
+        .get(16..16 + input_bytes)
+        .ok_or(PnmError::UnexpectedEof)?;
 
     let mut out = Vec::with_capacity(input_bytes);
 

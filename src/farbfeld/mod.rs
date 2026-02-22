@@ -32,7 +32,12 @@ pub(crate) fn decode<'a>(
     }
     stop.check()?;
     let pixels = decode::decode_pixels(data, width, height, stop)?;
-    Ok(DecodeOutput::owned(pixels, width, height, PixelLayout::Rgba16))
+    Ok(DecodeOutput::owned(
+        pixels,
+        width,
+        height,
+        PixelLayout::Rgba16,
+    ))
 }
 
 /// Encode pixels as farbfeld.

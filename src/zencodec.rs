@@ -718,13 +718,11 @@ fn layout_to_pixel_data(decoded: &crate::decode::DecodeOutput<'_>) -> Result<Pix
         PixelLayout::Rgba16 => {
             let pixels: Vec<rgb::Rgba<u16>> = bytes
                 .chunks_exact(8)
-                .map(|c| {
-                    rgb::Rgba {
-                        r: u16::from_ne_bytes([c[0], c[1]]),
-                        g: u16::from_ne_bytes([c[2], c[3]]),
-                        b: u16::from_ne_bytes([c[4], c[5]]),
-                        a: u16::from_ne_bytes([c[6], c[7]]),
-                    }
+                .map(|c| rgb::Rgba {
+                    r: u16::from_ne_bytes([c[0], c[1]]),
+                    g: u16::from_ne_bytes([c[2], c[3]]),
+                    b: u16::from_ne_bytes([c[4], c[5]]),
+                    a: u16::from_ne_bytes([c[6], c[7]]),
                 })
                 .collect();
             Ok(PixelData::Rgba16(imgref::ImgVec::new(pixels, w, h)))

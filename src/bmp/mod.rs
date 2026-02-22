@@ -23,7 +23,12 @@ pub(crate) fn decode<'a>(
     check_limits(limits, header.width, header.height, &header.layout)?;
     stop.check()?;
     let (pixels, layout) = decode::decode_bmp_pixels(data, stop)?;
-    Ok(DecodeOutput::owned(pixels, header.width, header.height, layout))
+    Ok(DecodeOutput::owned(
+        pixels,
+        header.width,
+        header.height,
+        layout,
+    ))
 }
 
 /// Decode BMP data in native byte order (BGR/BGRA — no channel swizzle).
@@ -36,7 +41,12 @@ pub(crate) fn decode_native<'a>(
     check_limits(limits, header.width, header.height, &header.layout)?;
     stop.check()?;
     let (pixels, native_layout) = decode::decode_bmp_pixels_native(data, stop)?;
-    Ok(DecodeOutput::owned(pixels, header.width, header.height, native_layout))
+    Ok(DecodeOutput::owned(
+        pixels,
+        header.width,
+        header.height,
+        native_layout,
+    ))
 }
 
 fn check_limits(
