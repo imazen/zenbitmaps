@@ -13,6 +13,29 @@ use super::utils::{expand_bits_to_byte, shift_signed};
 use crate::error::PnmError;
 use crate::pixel::PixelLayout;
 
+// ── Permissiveness ──────────────────────────────────────────────────
+
+/// Controls how strictly the BMP decoder validates input.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum BmpPermissiveness {
+    /// Reject files that violate the BMP spec even in non-critical ways.
+    /// Validates: planes == 1, file size matches, palette count, DPI
+    /// values, image data size field, no RLE + top-down.
+    Strict,
+
+    /// Default behavior. Accept common spec deviations that don't
+    /// affect correct pixel decoding (bad file size, bad DPI,
+    /// bad image data size field). Reject: planes != 1,
+    /// RLE + top-down, oversized palette, out-of-range palette indices.
+    #[default]
+    Standard,
+
+    /// Accept as much as possible. Zero-pad truncated files,
+    /// clamp RLE row overflows, accept unknown compression
+    /// (zero-fill output), ignore planes/palette/topdown checks.
+    Permissive,
+}
+
 // ── Compression enum ────────────────────────────────────────────────
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
@@ -21,15 +44,18 @@ enum BmpCompression {
     Rle8,
     Rle4,
     Bitfields,
+    /// Unknown compression type (only used in Permissive mode).
+    Unknown(u32),
 }
 
 impl BmpCompression {
-    fn from_u32(num: u32) -> Option<Self> {
+    fn from_u32(num: u32, permissive: bool) -> Option<Self> {
         match num {
             0 => Some(Self::Rgb),
             1 => Some(Self::Rle8),
             2 => Some(Self::Rle4),
             3 | 6 => Some(Self::Bitfields), // 6 = BI_ALPHABITFIELDS
+            other if permissive => Some(Self::Unknown(other)),
             _ => None,
         }
     }
@@ -72,11 +98,17 @@ struct PaletteEntry {
 struct Cursor<'a> {
     data: &'a [u8],
     pos: usize,
+    /// When true, reads beyond EOF return zeros instead of errors.
+    permissive: bool,
 }
 
 impl<'a> Cursor<'a> {
     fn new(data: &'a [u8]) -> Self {
-        Self { data, pos: 0 }
+        Self {
+            data,
+            pos: 0,
+            permissive: false,
+        }
     }
 
     fn eof(&self) -> bool {
@@ -85,6 +117,10 @@ impl<'a> Cursor<'a> {
 
     fn set_position(&mut self, pos: usize) -> Result<(), PnmError> {
         if pos > self.data.len() {
+            if self.permissive {
+                self.pos = self.data.len();
+                return Ok(());
+            }
             return Err(PnmError::UnexpectedEof);
         }
         self.pos = pos;
@@ -94,6 +130,10 @@ impl<'a> Cursor<'a> {
     fn skip(&mut self, n: usize) -> Result<(), PnmError> {
         let new_pos = self.pos.checked_add(n).ok_or(PnmError::UnexpectedEof)?;
         if new_pos > self.data.len() {
+            if self.permissive {
+                self.pos = self.data.len();
+                return Ok(());
+            }
             return Err(PnmError::UnexpectedEof);
         }
         self.pos = new_pos;
@@ -158,6 +198,13 @@ impl<'a> Cursor<'a> {
 
     fn read_fixed_bytes<const N: usize>(&mut self) -> Result<[u8; N], PnmError> {
         if self.pos + N > self.data.len() {
+            if self.permissive {
+                let mut buf = [0u8; N];
+                let available = self.data.len().saturating_sub(self.pos);
+                buf[..available].copy_from_slice(&self.data[self.pos..self.pos + available]);
+                self.pos = self.data.len();
+                return Ok(buf);
+            }
             return Err(PnmError::UnexpectedEof);
         }
         let mut buf = [0u8; N];
@@ -173,6 +220,13 @@ impl<'a> Cursor<'a> {
     fn read_exact_bytes(&mut self, buf: &mut [u8]) -> Result<(), PnmError> {
         let n = buf.len();
         if self.pos + n > self.data.len() {
+            if self.permissive {
+                let available = self.data.len().saturating_sub(self.pos);
+                buf[..available].copy_from_slice(&self.data[self.pos..self.pos + available]);
+                buf[available..].fill(0);
+                self.pos = self.data.len();
+                return Ok(());
+            }
             return Err(PnmError::UnexpectedEof);
         }
         buf.copy_from_slice(&self.data[self.pos..self.pos + n]);
@@ -194,7 +248,9 @@ pub(crate) struct BmpHeader {
 /// Parse a BMP header to extract dimensions and pixel format.
 /// This is the header-only fast path for probing.
 pub(crate) fn parse_bmp_header(data: &[u8]) -> Result<BmpHeader, PnmError> {
-    let mut dec = BmpDecoderState::new(data);
+    // Header probing uses Permissive to avoid rejecting files before
+    // the caller has chosen a permissiveness level.
+    let mut dec = BmpDecoderState::new(data, BmpPermissiveness::Permissive);
     dec.decode_headers()?;
 
     let layout = match dec.pix_fmt {
@@ -220,9 +276,10 @@ pub(crate) fn parse_bmp_header(data: &[u8]) -> Result<BmpHeader, PnmError> {
 /// Decode BMP pixel data (RGB/RGBA output).
 pub(crate) fn decode_bmp_pixels(
     data: &[u8],
+    permissiveness: BmpPermissiveness,
     stop: &dyn Stop,
 ) -> Result<(Vec<u8>, PixelLayout), PnmError> {
-    let mut dec = BmpDecoderState::new(data);
+    let mut dec = BmpDecoderState::new(data, permissiveness);
     dec.decode_headers()?;
 
     let output_size = dec.output_buf_size()?;
@@ -248,9 +305,10 @@ pub(crate) fn decode_bmp_pixels(
 /// Decode BMP pixel data in native byte order (BGR/BGRA).
 pub(crate) fn decode_bmp_pixels_native(
     data: &[u8],
+    permissiveness: BmpPermissiveness,
     stop: &dyn Stop,
 ) -> Result<(Vec<u8>, PixelLayout), PnmError> {
-    let mut dec = BmpDecoderState::new(data);
+    let mut dec = BmpDecoderState::new(data, permissiveness);
     dec.decode_headers()?;
 
     let output_size = dec.output_buf_size()?;
@@ -291,12 +349,15 @@ struct BmpDecoderState<'a> {
     is_alpha: bool,
     palette_numbers: usize,
     image_in_bgra: bool,
+    permissiveness: BmpPermissiveness,
 }
 
 impl<'a> BmpDecoderState<'a> {
-    fn new(data: &'a [u8]) -> Self {
+    fn new(data: &'a [u8], permissiveness: BmpPermissiveness) -> Self {
+        let mut cursor = Cursor::new(data);
+        cursor.permissive = permissiveness == BmpPermissiveness::Permissive;
         Self {
-            bytes: Cursor::new(data),
+            bytes: cursor,
             width: 0,
             height: 0,
             flip_vertically: false,
@@ -311,6 +372,7 @@ impl<'a> BmpDecoderState<'a> {
             is_alpha: false,
             palette_numbers: 0,
             image_in_bgra: false,
+            permissiveness,
         }
     }
 
@@ -320,12 +382,25 @@ impl<'a> BmpDecoderState<'a> {
             return Ok(());
         }
 
+        let is_strict = self.permissiveness == BmpPermissiveness::Strict;
+        let is_permissive = self.permissiveness == BmpPermissiveness::Permissive;
+        let data_len = self.bytes.data.len();
+
         if self.bytes.read_u8_err()? != b'B' || self.bytes.read_u8_err()? != b'M' {
             return Err(PnmError::UnrecognizedFormat);
         }
 
-        // Skip file size (4) + reserved (4)
-        self.bytes.skip(8)?;
+        // File size field (offset 2)
+        let file_size_field = self.bytes.get_u32_le_err()?;
+        // Reserved (4 bytes)
+        self.bytes.skip(4)?;
+
+        // Strict: validate file size field matches actual data length
+        if is_strict && file_size_field != 0 && file_size_field as usize != data_len {
+            return Err(PnmError::InvalidHeader(alloc::format!(
+                "BMP file size field ({file_size_field}) doesn't match actual size ({data_len})"
+            )));
+        }
 
         let hsize = self.bytes.get_u32_le_err()?;
         let ihsize = self.bytes.get_u32_le_err()?;
@@ -334,23 +409,23 @@ impl<'a> BmpDecoderState<'a> {
             return Err(PnmError::InvalidHeader("invalid BMP header size".into()));
         }
 
-        let (width, height, _planes, bpp, compression);
+        let (width, height, planes, bpp, compression);
         match ihsize {
             12 => {
                 // OS/2 BMPv1
                 width = self.bytes.get_u16_le_err()? as u32;
                 height = self.bytes.get_u16_le_err()? as u32;
-                _planes = self.bytes.get_u16_le_err()?;
+                planes = self.bytes.get_u16_le_err()?;
                 bpp = self.bytes.get_u16_le_err()?;
                 compression = BmpCompression::Rgb;
             }
             16 | 40 | 52 | 56 | 64 | 108 | 124 => {
                 width = self.bytes.get_u32_le_err()?;
                 height = self.bytes.get_u32_le_err()?;
-                _planes = self.bytes.get_u16_le_err()?;
+                planes = self.bytes.get_u16_le_err()?;
                 bpp = self.bytes.get_u16_le_err()?;
                 compression = if ihsize >= 40 {
-                    match BmpCompression::from_u32(self.bytes.get_u32_le_err()?) {
+                    match BmpCompression::from_u32(self.bytes.get_u32_le_err()?, is_permissive) {
                         Some(c) => c,
                         None => {
                             return Err(PnmError::UnsupportedVariant(
@@ -363,11 +438,39 @@ impl<'a> BmpDecoderState<'a> {
                 };
 
                 if ihsize > 16 {
-                    let _size = self.bytes.get_u32_le_err()?;
-                    let _x_pixels = self.bytes.get_u32_le_err()?;
-                    let _y_pixels = self.bytes.get_u32_le_err()?;
+                    let image_size_field = self.bytes.get_u32_le_err()?;
+                    let x_pixels = self.bytes.get_u32_le_err()?;
+                    let y_pixels = self.bytes.get_u32_le_err()?;
                     let _color_used = self.bytes.get_u32_le_err()?;
                     let _important_colors = self.bytes.get_u32_le_err()?;
+
+                    // Strict: validate DPI and image data size fields
+                    if is_strict {
+                        // DPI values interpreted as i32 should be non-negative
+                        if (x_pixels as i32) < 0 {
+                            return Err(PnmError::InvalidHeader(alloc::format!(
+                                "BMP horizontal resolution is negative ({})",
+                                x_pixels as i32
+                            )));
+                        }
+                        if (y_pixels as i32) < 0 {
+                            return Err(PnmError::InvalidHeader(alloc::format!(
+                                "BMP vertical resolution is negative ({})",
+                                y_pixels as i32
+                            )));
+                        }
+                        // Image data size should be 0 or match expected (for uncompressed)
+                        if image_size_field != 0 && compression == BmpCompression::Rgb && width > 0
+                        {
+                            let row_bytes = (width as usize * bpp as usize).div_ceil(32) * 4;
+                            let expected_size = row_bytes * (height as i32).unsigned_abs() as usize;
+                            if image_size_field as usize != expected_size {
+                                return Err(PnmError::InvalidHeader(alloc::format!(
+                                    "BMP image data size field ({image_size_field}) doesn't match expected ({expected_size})"
+                                )));
+                            }
+                        }
+                    }
 
                     // Bitfield masks: embedded in header for ihsize >= 52
                     // (BITMAPV2INFOHEADER+), or external (after 40-byte header)
@@ -407,6 +510,13 @@ impl<'a> BmpDecoderState<'a> {
             }
         }
 
+        // Planes validation (Standard and Strict reject planes != 1)
+        if !is_permissive && planes != 1 {
+            return Err(PnmError::InvalidHeader(alloc::format!(
+                "BMP planes field is {planes}, expected 1"
+            )));
+        }
+
         self.flip_vertically = (height as i32) > 0;
         self.height = (height as i32).unsigned_abs() as usize;
         self.width = width as usize;
@@ -416,6 +526,16 @@ impl<'a> BmpDecoderState<'a> {
         }
         if self.height == 0 {
             return Err(PnmError::InvalidHeader("BMP height is zero".into()));
+        }
+
+        // RLE + top-down is forbidden by spec (Standard and Strict reject)
+        if !is_permissive
+            && !self.flip_vertically
+            && matches!(compression, BmpCompression::Rle4 | BmpCompression::Rle8)
+        {
+            return Err(PnmError::InvalidData(
+                "RLE compression with top-down row order is forbidden by BMP spec".into(),
+            ));
         }
 
         if bpp == 0 {
@@ -435,6 +555,8 @@ impl<'a> BmpDecoderState<'a> {
                     } else {
                         self.pix_fmt = BmpPixelFormat::Rgb;
                     }
+                } else if matches!(compression, BmpCompression::Unknown(_)) {
+                    self.pix_fmt = BmpPixelFormat::Rgb;
                 }
             }
             8 => {
@@ -470,13 +592,20 @@ impl<'a> BmpDecoderState<'a> {
         let p = self.hsize.wrapping_sub(self.ihsize).wrapping_sub(14);
 
         if self.pix_fmt == BmpPixelFormat::Pal8 {
-            let mut colors = 1u32 << bpp;
+            let max_colors = 1u32 << bpp;
+            let mut colors = max_colors;
 
             if ihsize >= 36 {
                 self.bytes.set_position(46)?;
                 let t = self.bytes.get_u32_le_err()? as i32;
                 if t < 0 || t > (1 << bpp) {
-                    // Lenient: ignore bad color count
+                    if !is_permissive {
+                        return Err(PnmError::InvalidHeader(alloc::format!(
+                            "BMP palette count ({t}) exceeds max for {bpp}-bit depth ({})",
+                            1u32 << bpp
+                        )));
+                    }
+                    // Permissive: clamp to max
                 } else if t != 0 {
                     colors = t as u32;
                 }
@@ -543,10 +672,16 @@ impl<'a> BmpDecoderState<'a> {
         let output_size = self.output_buf_size()?;
         let buf = &mut buf[0..output_size];
 
+        // Unknown compression (Permissive only): zero-fill output
+        if let BmpCompression::Unknown(_) = self.comp {
+            buf.fill(0);
+            return Ok(());
+        }
+
         if self.comp == BmpCompression::Rle4 || self.comp == BmpCompression::Rle8 {
             let scanline_data = self.decode_rle(stop)?;
             if self.pix_fmt == BmpPixelFormat::Pal8 {
-                self.expand_palette(&scanline_data, buf, false);
+                self.expand_palette(&scanline_data, buf, false)?;
                 self.flip_vertically = true;
             }
         } else {
@@ -694,7 +829,7 @@ impl<'a> BmpDecoderState<'a> {
                             &in_width_buf,
                             &mut scanline_bytes,
                         );
-                        self.expand_palette(&scanline_bytes, out_bytes, true);
+                        self.expand_palette(&scanline_bytes, out_bytes, true)?;
                     }
                     self.flip_vertically ^= true;
                 }
@@ -743,9 +878,10 @@ impl<'a> BmpDecoderState<'a> {
         Ok(())
     }
 
-    fn expand_palette(&self, in_bytes: &[u8], buf: &mut [u8], unpad: bool) {
+    fn expand_palette(&self, in_bytes: &[u8], buf: &mut [u8], unpad: bool) -> Result<(), PnmError> {
         let palette = &self.palette;
         let pad = usize::from(unpad) * (((-(self.width as i32)) as u32) & 3) as usize;
+        let validate = self.permissiveness != BmpPermissiveness::Permissive;
 
         if self.is_alpha {
             for (out_stride, in_stride) in buf
@@ -754,7 +890,14 @@ impl<'a> BmpDecoderState<'a> {
                 .zip(in_bytes.chunks_exact(self.width + pad))
             {
                 for (pal_byte, chunks) in in_stride.iter().zip(out_stride.chunks_exact_mut(4)) {
-                    let entry = palette[usize::from(*pal_byte)];
+                    let idx = usize::from(*pal_byte);
+                    if validate && idx >= self.palette_numbers {
+                        return Err(PnmError::InvalidData(alloc::format!(
+                            "palette index {idx} out of range (palette has {} entries)",
+                            self.palette_numbers
+                        )));
+                    }
+                    let entry = palette[idx];
                     chunks[0] = entry.red;
                     chunks[1] = entry.green;
                     chunks[2] = entry.blue;
@@ -768,13 +911,21 @@ impl<'a> BmpDecoderState<'a> {
                 .zip(in_bytes.chunks_exact(self.width + pad))
             {
                 for (pal_byte, chunks) in in_stride.iter().zip(out_stride.chunks_exact_mut(3)) {
-                    let entry = palette[usize::from(*pal_byte)];
+                    let idx = usize::from(*pal_byte);
+                    if validate && idx >= self.palette_numbers {
+                        return Err(PnmError::InvalidData(alloc::format!(
+                            "palette index {idx} out of range (palette has {} entries)",
+                            self.palette_numbers
+                        )));
+                    }
+                    let entry = palette[idx];
                     chunks[0] = entry.red;
                     chunks[1] = entry.green;
                     chunks[2] = entry.blue;
                 }
             }
         }
+        Ok(())
     }
 
     fn expand_palette_from_remaining_bytes(
@@ -783,12 +934,20 @@ impl<'a> BmpDecoderState<'a> {
         unpad: bool,
     ) -> Result<(), PnmError> {
         let pad = usize::from(unpad) * (((-(self.width as i32)) as u32) & 3) as usize;
+        let validate = self.permissiveness != BmpPermissiveness::Permissive;
 
         if self.is_alpha {
             for out_stride in buf.rchunks_exact_mut(self.width * 4).take(self.height) {
                 for chunks in out_stride.chunks_exact_mut(4) {
                     let byte = self.bytes.read_u8();
-                    let entry = self.palette[usize::from(byte)];
+                    let idx = usize::from(byte);
+                    if validate && idx >= self.palette_numbers {
+                        return Err(PnmError::InvalidData(alloc::format!(
+                            "palette index {idx} out of range (palette has {} entries)",
+                            self.palette_numbers
+                        )));
+                    }
+                    let entry = self.palette[idx];
                     chunks[0] = entry.red;
                     chunks[1] = entry.green;
                     chunks[2] = entry.blue;
@@ -800,7 +959,14 @@ impl<'a> BmpDecoderState<'a> {
             for out_stride in buf.rchunks_exact_mut(self.width * 3).take(self.height) {
                 for chunks in out_stride.chunks_exact_mut(3) {
                     let byte = self.bytes.read_u8();
-                    let entry = self.palette[usize::from(byte)];
+                    let idx = usize::from(byte);
+                    if validate && idx >= self.palette_numbers {
+                        return Err(PnmError::InvalidData(alloc::format!(
+                            "palette index {idx} out of range (palette has {} entries)",
+                            self.palette_numbers
+                        )));
+                    }
+                    let entry = self.palette[idx];
                     chunks[0] = entry.red;
                     chunks[1] = entry.green;
                     chunks[2] = entry.blue;
@@ -871,6 +1037,9 @@ impl<'a> BmpDecoderState<'a> {
                 if stream_byte == 0 {
                     *line -= 1;
                     if *line < 0 {
+                        if self.permissiveness == BmpPermissiveness::Permissive {
+                            return Ok(());
+                        }
                         return Err(PnmError::InvalidData("RLE4 line underflow".into()));
                     }
                     *pos = 0;
@@ -883,6 +1052,9 @@ impl<'a> BmpDecoderState<'a> {
                     stream_byte = self.bytes.read_u8();
                     *line -= i32::from(stream_byte);
                     if *line < 0 {
+                        if self.permissiveness == BmpPermissiveness::Permissive {
+                            return Ok(());
+                        }
                         return Err(PnmError::InvalidData("RLE4 line underflow".into()));
                     }
                 } else {
@@ -916,6 +1088,11 @@ impl<'a> BmpDecoderState<'a> {
                 }
             } else {
                 if *pos + usize::from(rle_code) > self.width + 1 {
+                    if self.permissiveness == BmpPermissiveness::Permissive {
+                        // Consume stream byte, skip this run
+                        let _ = self.bytes.read_u8();
+                        continue;
+                    }
                     return Err(PnmError::InvalidData(
                         "RLE4 frame pointer out of bounds".into(),
                     ));
@@ -964,13 +1141,14 @@ impl<'a> BmpDecoderState<'a> {
                     // End of line
                     *line -= 1;
                     if *line < 0 {
-                        if self.bytes.get_u16_be() == 1 {
+                        if self.bytes.get_u16_be() == 1
+                            || self.permissiveness == BmpPermissiveness::Permissive
+                        {
                             return Ok(());
-                        } else {
-                            return Err(PnmError::InvalidData(
-                                "RLE line beyond picture bounds".into(),
-                            ));
                         }
+                        return Err(PnmError::InvalidData(
+                            "RLE line beyond picture bounds".into(),
+                        ));
                     }
                     *pos = 0;
                     continue;
@@ -982,6 +1160,9 @@ impl<'a> BmpDecoderState<'a> {
                     *pos += usize::from(dx);
                     *line -= i32::from(dy);
                     if *line < 0 {
+                        if self.permissiveness == BmpPermissiveness::Permissive {
+                            return Ok(());
+                        }
                         return Err(PnmError::InvalidData("RLE delta line underflow".into()));
                     }
                     continue;
@@ -1042,6 +1223,30 @@ impl<'a> BmpDecoderState<'a> {
                 let byte_depth = usize::from(self.depth >> 3);
 
                 if *pos + (usize::from(p1) * byte_depth) > pixels.len().saturating_sub(row_start) {
+                    if self.permissiveness == BmpPermissiveness::Permissive {
+                        // Clamp: skip this run, consume the pixel data from stream
+                        match self.depth {
+                            8 => {
+                                let _ = self.bytes.read_u8();
+                            }
+                            16 => {
+                                let _ = self.bytes.read_u8();
+                                let _ = self.bytes.read_u8();
+                            }
+                            24 => {
+                                for _ in 0..3 {
+                                    let _ = self.bytes.read_u8();
+                                }
+                            }
+                            32 => {
+                                for _ in 0..4 {
+                                    let _ = self.bytes.read_u8();
+                                }
+                            }
+                            _ => {}
+                        }
+                        continue;
+                    }
                     return Err(PnmError::InvalidData("RLE position overrun".into()));
                 }
 

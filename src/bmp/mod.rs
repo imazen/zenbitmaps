@@ -11,6 +11,7 @@ use crate::error::PnmError;
 use crate::limits::Limits;
 use crate::pixel::PixelLayout;
 use alloc::vec::Vec;
+pub use decode::BmpPermissiveness;
 use enough::Stop;
 
 /// Decode BMP data (output in RGB/RGBA byte order).
@@ -19,10 +20,20 @@ pub(crate) fn decode<'a>(
     limits: Option<&Limits>,
     stop: &dyn Stop,
 ) -> Result<DecodeOutput<'a>, PnmError> {
+    decode_with_permissiveness(data, limits, BmpPermissiveness::Standard, stop)
+}
+
+/// Decode BMP data with a specific permissiveness level.
+pub(crate) fn decode_with_permissiveness<'a>(
+    data: &'a [u8],
+    limits: Option<&Limits>,
+    permissiveness: BmpPermissiveness,
+    stop: &dyn Stop,
+) -> Result<DecodeOutput<'a>, PnmError> {
     let header = decode::parse_bmp_header(data)?;
     check_limits(limits, header.width, header.height, &header.layout)?;
     stop.check()?;
-    let (pixels, layout) = decode::decode_bmp_pixels(data, stop)?;
+    let (pixels, layout) = decode::decode_bmp_pixels(data, permissiveness, stop)?;
     Ok(DecodeOutput::owned(
         pixels,
         header.width,
@@ -40,7 +51,8 @@ pub(crate) fn decode_native<'a>(
     let header = decode::parse_bmp_header(data)?;
     check_limits(limits, header.width, header.height, &header.layout)?;
     stop.check()?;
-    let (pixels, native_layout) = decode::decode_bmp_pixels_native(data, stop)?;
+    let (pixels, native_layout) =
+        decode::decode_bmp_pixels_native(data, BmpPermissiveness::Standard, stop)?;
     Ok(DecodeOutput::owned(
         pixels,
         header.width,

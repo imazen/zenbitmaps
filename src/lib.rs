@@ -86,6 +86,9 @@ pub use error::PnmError;
 pub use limits::Limits;
 pub use pixel::PixelLayout;
 
+#[cfg(feature = "bmp")]
+pub use bmp::BmpPermissiveness;
+
 #[cfg(feature = "rgb")]
 pub use pixel_traits::{DecodePixel, EncodePixel};
 
@@ -274,6 +277,33 @@ pub fn decode_bmp_native_with_limits<'a>(
     stop: impl Stop,
 ) -> Result<DecodeOutput<'a>, PnmError> {
     bmp::decode_native(data, Some(limits), &stop)
+}
+
+/// Decode BMP with a specific permissiveness level.
+///
+/// - [`BmpPermissiveness::Strict`]: reject any spec violation
+/// - [`BmpPermissiveness::Standard`]: default, reject corrupted files but
+///   accept benign metadata errors (bad DPI, wrong file size field)
+/// - [`BmpPermissiveness::Permissive`]: best-effort recovery (zero-pad
+///   truncated files, clamp RLE overflows, accept unknown compression)
+#[cfg(feature = "bmp")]
+pub fn decode_bmp_permissive(
+    data: &[u8],
+    permissiveness: BmpPermissiveness,
+    stop: impl Stop,
+) -> Result<DecodeOutput<'_>, PnmError> {
+    bmp::decode_with_permissiveness(data, None, permissiveness, &stop)
+}
+
+/// Decode BMP with a specific permissiveness level and resource limits.
+#[cfg(feature = "bmp")]
+pub fn decode_bmp_permissive_with_limits<'a>(
+    data: &'a [u8],
+    permissiveness: BmpPermissiveness,
+    limits: &'a Limits,
+    stop: impl Stop,
+) -> Result<DecodeOutput<'a>, PnmError> {
+    bmp::decode_with_permissiveness(data, Some(limits), permissiveness, &stop)
 }
 
 /// Encode pixels as 24-bit BMP (RGB, no alpha).
