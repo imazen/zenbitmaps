@@ -519,7 +519,6 @@ impl zencodec_types::Decoder for PnmDecoder<'_> {
         let output = self.decode(data)?;
         decode_into_dispatch(output, dst)
     }
-
 }
 // ── PnmFrameDecoder (stub) ──────────────────────────────────────────
 
