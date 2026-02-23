@@ -8,7 +8,7 @@
 use alloc::vec::Vec;
 use zencodec_types::{
     CodecCapabilities, DecodeFrame, DecodeOutput, EncodeOutput, ImageFormat, ImageInfo,
-    ImageMetadata, OutputInfo, PixelData, PixelDescriptor, PixelSlice, PixelSliceMut,
+    MetadataView, OutputInfo, PixelData, PixelDescriptor, PixelSlice, PixelSliceMut,
     ResourceLimits, Stop,
 };
 
@@ -157,7 +157,7 @@ impl<'a> zencodec_types::EncodeJob<'a> for PnmEncodeJob<'a> {
         self
     }
 
-    fn with_metadata(self, _meta: &'a ImageMetadata<'a>) -> Self {
+    fn with_metadata(self, _meta: &'a MetadataView<'a>) -> Self {
         self
     }
 
@@ -619,7 +619,7 @@ mod bmp_codec {
             self
         }
 
-        fn with_metadata(self, _meta: &'a ImageMetadata<'a>) -> Self {
+        fn with_metadata(self, _meta: &'a MetadataView<'a>) -> Self {
             self
         }
 
@@ -1012,7 +1012,7 @@ impl<'a> zencodec_types::EncodeJob<'a> for FarbfeldEncodeJob<'a> {
         self
     }
 
-    fn with_metadata(self, _meta: &'a ImageMetadata<'a>) -> Self {
+    fn with_metadata(self, _meta: &'a MetadataView<'a>) -> Self {
         self
     }
 
