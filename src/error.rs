@@ -37,6 +37,11 @@ pub enum BitmapError {
 
     #[error("operation cancelled")]
     Cancelled(StopReason),
+
+    /// Unsupported codec operation.
+    #[cfg(feature = "zencodec")]
+    #[error(transparent)]
+    UnsupportedOperation(#[from] zencodec_types::UnsupportedOperation),
 }
 
 impl From<StopReason> for BitmapError {
