@@ -4,39 +4,19 @@ version = 4
 
 [[package]]
 name = "archmage"
-version = "0.7.0"
+version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "61bd463aee29794a0318115ab857c2486842b28956c3f75365b304f1047b4758"
+checksum = "c0fb818f2e02ca08cc6416725044fadc84bcf5a96e2eb7ab103c966123667d86"
 dependencies = [
- "archmage-macros 0.7.0",
-]
-
-[[package]]
-name = "archmage"
-version = "0.8.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fba21e64cb000b4890dc6348042557208486e5ea4e9f574b7f75f7a45e99e19d"
-dependencies = [
- "archmage-macros 0.8.4",
+ "archmage-macros",
  "safe_unaligned_simd",
 ]
 
 [[package]]
 name = "archmage-macros"
-version = "0.7.0"
+version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "02b01e2d131ffadba47bdff5d5e1d5d8a3b9743dc6b3d6ce4847ae2d6d306058"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
-name = "archmage-macros"
-version = "0.8.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "35c9306deb9d68bc48cd4fa5ab2281b31c82ff2831360419ffbaf2f701b19a5a"
+checksum = "1886761e37995842cfbaf8c24d483e62d9b8c174254d29146f596d4d87efff2d"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -60,6 +40,20 @@ name = "bytemuck"
 version = "1.25.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c8efb64bd706a16a1bdde310ae86b351e4d21550d98d056f22f8a7f7a2183fec"
+dependencies = [
+ "bytemuck_derive",
+]
+
+[[package]]
+name = "bytemuck_derive"
+version = "1.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f9abbd1bc6865053c427f7198e6af43bfdedc55ab791faed4fbd361d789575ff"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
 
 [[package]]
 name = "cfg-if"
@@ -156,21 +150,31 @@ checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 
 [[package]]
 name = "libredox"
-version = "0.1.12"
+version = "0.1.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3d0b95e02c851351f877147b7deea7b1afb1df71b63aa5f8270716e0c5720616"
+checksum = "1744e39d1d6a9948f4f388969627434e31128196de472883b39f148769bfe30a"
 dependencies = [
- "bitflags",
  "libc",
 ]
 
 [[package]]
 name = "linear-srgb"
-version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "46acebace6b3e1f5c69d2ea97e89f37e389c2e7ae8e7bbaaaeafadf633d88f9e"
+version = "0.5.5"
 dependencies = [
- "archmage 0.7.0",
+ "archmage",
+ "bytemuck",
+ "magetypes",
+ "num-traits",
+ "wide",
+]
+
+[[package]]
+name = "linear-srgb"
+version = "0.5.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7687eee4c424bdb5f360d5d975a52baa0f56c1ce15e3c5cbef4af7d39e148092"
+dependencies = [
+ "archmage",
  "bytemuck",
  "magetypes",
  "num-traits",
@@ -179,17 +183,17 @@ dependencies = [
 
 [[package]]
 name = "linux-raw-sys"
-version = "0.11.0"
+version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df1d3c3b53da64cf5760482273a98e575c651a67eec7f77df96b5b642de8f039"
+checksum = "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
 
 [[package]]
 name = "magetypes"
-version = "0.7.0"
+version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d55dd4e83507ff9fe129b01669adca1e302ef346dac252ef59139c78def312a"
+checksum = "9233ec8c05f4844b1b4d92b5fd55ae179e8f7d1c09415ec45ceeda294237c42c"
 dependencies = [
- "archmage 0.7.0",
+ "archmage",
 ]
 
 [[package]]
@@ -219,9 +223,9 @@ dependencies = [
 
 [[package]]
 name = "quote"
-version = "1.0.44"
+version = "1.0.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "21b2ebcf727b7760c461f091f9f0f539b77b8e87f2fd88131e7f1b433b3cece4"
+checksum = "41f2619966050689382d2b44f664f4bc593e129785a36d6ee376ddf37259b924"
 dependencies = [
  "proc-macro2",
 ]
@@ -239,18 +243,18 @@ dependencies = [
 
 [[package]]
 name = "rgb"
-version = "0.8.52"
+version = "0.8.53"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0c6a884d2998352bb4daf0183589aec883f16a6da1f4dde84d8e2e9a5409a1ce"
+checksum = "47b34b781b31e5d73e9fbc8689c70551fd1ade9a19e3e28cfec8580a79290cc4"
 dependencies = [
  "bytemuck",
 ]
 
 [[package]]
 name = "rustix"
-version = "1.1.3"
+version = "1.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "146c9e247ccc180c1f61615433868c99f3de3ae256a30a43b49f67c2d9171f34"
+checksum = "b6fe4565b9518b83ef4f91bb47ce29620ca828bd32cb7e408f0062e9930ba190"
 dependencies = [
  "bitflags",
  "errno",
@@ -270,15 +274,15 @@ dependencies = [
 
 [[package]]
 name = "safe_unaligned_simd"
-version = "0.2.4"
+version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c1d612ce01a584cfab72164fb3f689112249fafeab7b4181c14601d19b34cb0a"
+checksum = "f9c874fb993656d484725d58fbfddb39dfcf98ebcadc1a1d09568aa6b39bafba"
 
 [[package]]
 name = "syn"
-version = "2.0.116"
+version = "2.0.117"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3df424c70518695237746f84cede799c9c58fcb37450d7b23716568cc8bc69cb"
+checksum = "e665b8803e7b1d2a727f4023456bbbbe74da67099c585258af0ad9c5013b9b99"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -307,9 +311,9 @@ dependencies = [
 
 [[package]]
 name = "unicode-ident"
-version = "1.0.23"
+version = "1.0.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "537dd038a89878be9b64dd4bd1b260315c1bb94f4d784956b81e27a088d9a09e"
+checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
 
 [[package]]
 name = "wasi"
@@ -425,22 +429,45 @@ checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
 name = "zenbitmaps"
 version = "0.1.0"
 dependencies = [
- "archmage 0.8.4",
+ "archmage",
  "codec-corpus",
  "enough",
  "imgref",
- "linear-srgb",
+ "linear-srgb 0.5.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "rgb",
  "thiserror",
  "zencodec-types",
+ "zenpixels",
 ]
 
 [[package]]
 name = "zencodec-types"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "enough",
  "imgref",
  "rgb",
  "whereat",
+ "zenpixels",
+ "zenpixels-convert",
+]
+
+[[package]]
+name = "zenpixels"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "imgref",
+ "rgb",
+]
+
+[[package]]
+name = "zenpixels-convert"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "linear-srgb 0.5.5",
+ "rgb",
+ "zenpixels",
 ]
