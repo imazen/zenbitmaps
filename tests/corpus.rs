@@ -637,7 +637,11 @@ mod bmp_fixtures {
 
 #[test]
 fn decode_external_ppm_if_available() {
-    let path = "/home/lilith/work/libwebp/examples/test_ref.ppm";
+    let path_buf = std::path::PathBuf::from(
+        std::env::var("LIBWEBP_DIR").unwrap_or_else(|_| "/home/lilith/work/libwebp".into()),
+    )
+    .join("examples/test_ref.ppm");
+    let path = path_buf.to_str().unwrap();
     if let Ok(data) = std::fs::read(path) {
         let decoded = decode(&data, Unstoppable).unwrap();
         assert!(decoded.width > 0);
@@ -657,7 +661,11 @@ fn decode_external_ppm_if_available() {
 #[cfg(feature = "bmp")]
 #[test]
 fn decode_external_bmp_if_available() {
-    let path = "/home/lilith/work/salzweg/test-assets/sunflower.bmp";
+    let path_buf = std::path::PathBuf::from(
+        std::env::var("SALZWEG_DIR").unwrap_or_else(|_| "/home/lilith/work/salzweg".into()),
+    )
+    .join("test-assets/sunflower.bmp");
+    let path = path_buf.to_str().unwrap();
     if let Ok(data) = std::fs::read(path) {
         let decoded = decode_bmp(&data, Unstoppable).unwrap();
         assert!(decoded.width > 0);
