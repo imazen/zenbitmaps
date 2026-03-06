@@ -19,7 +19,7 @@ imgref = { version = "1.12", default-features = false, optional = true }
 rgb = { version = "0.8", default-features = false, features = ["as-bytes"], optional = true }
 thiserror = { version = "2.0", default-features = false }
 zencodec-types = { path = "../zencodec-types", optional = true }
-zenpixels = { path = "../zenpixels/zenpixels", default-features = false, features = ["buffer"], optional = true }
+zenpixels = { version = "0.1", default-features = false, features = ["buffer"], optional = true }
 linear-srgb = { version = "0.6", optional = true }
 
 [dev-dependencies]
