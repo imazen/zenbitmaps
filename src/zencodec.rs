@@ -190,7 +190,7 @@ pub struct PnmEncodeJob<'a> {
 impl<'a> zc::encode::EncodeJob<'a> for PnmEncodeJob<'a> {
     type Error = BitmapError;
     type Enc = PnmEncoder<'a>;
-    type FrameEnc = ();
+    type FullFrameEnc = ();
 
     fn with_stop(mut self, stop: &'a dyn Stop) -> Self {
         self.stop = stop;
@@ -214,7 +214,7 @@ impl<'a> zc::encode::EncodeJob<'a> for PnmEncodeJob<'a> {
         })
     }
 
-    fn frame_encoder(self) -> Result<(), BitmapError> {
+    fn full_frame_encoder(self) -> Result<(), BitmapError> {
         Err(BitmapError::from(zc::UnsupportedOperation::AnimationEncode))
     }
 }
@@ -425,7 +425,7 @@ impl<'a> zc::decode::DecodeJob<'a> for PnmDecodeJob<'a> {
     type Error = BitmapError;
     type Dec = PnmDecoder<'a>;
     type StreamDec = zc::Unsupported<BitmapError>;
-    type FrameDec = zc::Unsupported<BitmapError>;
+    type FullFrameDec = zc::Unsupported<BitmapError>;
 
     fn with_stop(mut self, stop: &'a dyn Stop) -> Self {
         self.stop = stop;
@@ -485,7 +485,7 @@ impl<'a> zc::decode::DecodeJob<'a> for PnmDecodeJob<'a> {
         Err(BitmapError::from(zc::UnsupportedOperation::RowLevelDecode))
     }
 
-    fn frame_decoder(
+    fn full_frame_decoder(
         self,
         _data: Cow<'a, [u8]>,
         _preferred: &[PixelDescriptor],
@@ -594,7 +594,7 @@ mod bmp_codec {
     impl<'a> zc::encode::EncodeJob<'a> for BmpEncodeJob<'a> {
         type Error = BitmapError;
         type Enc = BmpEncoder<'a>;
-        type FrameEnc = ();
+        type FullFrameEnc = ();
 
         fn with_stop(mut self, stop: &'a dyn Stop) -> Self {
             self.stop = stop;
@@ -618,7 +618,7 @@ mod bmp_codec {
             })
         }
 
-        fn frame_encoder(self) -> Result<(), BitmapError> {
+        fn full_frame_encoder(self) -> Result<(), BitmapError> {
             Err(BitmapError::from(zc::UnsupportedOperation::AnimationEncode))
         }
     }
@@ -744,7 +744,7 @@ mod bmp_codec {
         type Error = BitmapError;
         type Dec = BmpDecoder<'a>;
         type StreamDec = zc::Unsupported<BitmapError>;
-        type FrameDec = zc::Unsupported<BitmapError>;
+        type FullFrameDec = zc::Unsupported<BitmapError>;
 
         fn with_stop(mut self, stop: &'a dyn Stop) -> Self {
             self.stop = stop;
@@ -808,7 +808,7 @@ mod bmp_codec {
             Err(BitmapError::from(zc::UnsupportedOperation::RowLevelDecode))
         }
 
-        fn frame_decoder(
+        fn full_frame_decoder(
             self,
             _data: Cow<'a, [u8]>,
             _preferred: &[PixelDescriptor],
@@ -917,7 +917,7 @@ pub struct FarbfeldEncodeJob<'a> {
 impl<'a> zc::encode::EncodeJob<'a> for FarbfeldEncodeJob<'a> {
     type Error = BitmapError;
     type Enc = FarbfeldEncoder<'a>;
-    type FrameEnc = ();
+    type FullFrameEnc = ();
 
     fn with_stop(mut self, stop: &'a dyn Stop) -> Self {
         self.stop = stop;
@@ -941,7 +941,7 @@ impl<'a> zc::encode::EncodeJob<'a> for FarbfeldEncodeJob<'a> {
         })
     }
 
-    fn frame_encoder(self) -> Result<(), BitmapError> {
+    fn full_frame_encoder(self) -> Result<(), BitmapError> {
         Err(BitmapError::from(zc::UnsupportedOperation::AnimationEncode))
     }
 }
@@ -1068,7 +1068,7 @@ impl<'a> zc::decode::DecodeJob<'a> for FarbfeldDecodeJob<'a> {
     type Error = BitmapError;
     type Dec = FarbfeldDecoder<'a>;
     type StreamDec = zc::Unsupported<BitmapError>;
-    type FrameDec = zc::Unsupported<BitmapError>;
+    type FullFrameDec = zc::Unsupported<BitmapError>;
 
     fn with_stop(mut self, stop: &'a dyn Stop) -> Self {
         self.stop = stop;
@@ -1120,7 +1120,7 @@ impl<'a> zc::decode::DecodeJob<'a> for FarbfeldDecodeJob<'a> {
         Err(BitmapError::from(zc::UnsupportedOperation::RowLevelDecode))
     }
 
-    fn frame_decoder(
+    fn full_frame_decoder(
         self,
         _data: Cow<'a, [u8]>,
         _preferred: &[PixelDescriptor],
