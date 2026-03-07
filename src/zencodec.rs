@@ -398,8 +398,8 @@ impl zc::decode::DecoderConfig for PnmDecoderConfig {
     type Error = At<BitmapError>;
     type Job<'a> = PnmDecodeJob<'a>;
 
-    fn format() -> ImageFormat {
-        ImageFormat::Pnm
+    fn formats() -> &'static [ImageFormat] {
+        &[ImageFormat::Pnm]
     }
 
     fn supported_descriptors() -> &'static [PixelDescriptor] {
@@ -723,8 +723,8 @@ mod bmp_codec {
         type Error = At<BitmapError>;
         type Job<'a> = BmpDecodeJob<'a>;
 
-        fn format() -> ImageFormat {
-            ImageFormat::Bmp
+        fn formats() -> &'static [ImageFormat] {
+            &[ImageFormat::Bmp]
         }
 
         fn supported_descriptors() -> &'static [PixelDescriptor] {
@@ -1053,8 +1053,8 @@ impl zc::decode::DecoderConfig for FarbfeldDecoderConfig {
     type Error = At<BitmapError>;
     type Job<'a> = FarbfeldDecodeJob<'a>;
 
-    fn format() -> ImageFormat {
-        ImageFormat::Farbfeld
+    fn formats() -> &'static [ImageFormat] {
+        &[ImageFormat::Farbfeld]
     }
 
     fn supported_descriptors() -> &'static [PixelDescriptor] {
