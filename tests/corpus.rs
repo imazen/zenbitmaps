@@ -637,12 +637,12 @@ mod bmp_fixtures {
 
 #[test]
 fn decode_external_ppm_if_available() {
-    let path_buf = std::path::PathBuf::from(
-        std::env::var("LIBWEBP_DIR").unwrap_or_else(|_| {
-            let parent = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
-            parent.join("libwebp").to_string_lossy().into_owned()
-        }),
-    )
+    let path_buf = std::path::PathBuf::from(std::env::var("LIBWEBP_DIR").unwrap_or_else(|_| {
+        let parent = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap();
+        parent.join("libwebp").to_string_lossy().into_owned()
+    }))
     .join("examples/test_ref.ppm");
     let path = path_buf.to_str().unwrap();
     if let Ok(data) = std::fs::read(path) {
@@ -664,12 +664,12 @@ fn decode_external_ppm_if_available() {
 #[cfg(feature = "bmp")]
 #[test]
 fn decode_external_bmp_if_available() {
-    let path_buf = std::path::PathBuf::from(
-        std::env::var("SALZWEG_DIR").unwrap_or_else(|_| {
-            let parent = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
-            parent.join("salzweg").to_string_lossy().into_owned()
-        }),
-    )
+    let path_buf = std::path::PathBuf::from(std::env::var("SALZWEG_DIR").unwrap_or_else(|_| {
+        let parent = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap();
+        parent.join("salzweg").to_string_lossy().into_owned()
+    }))
     .join("test-assets/sunflower.bmp");
     let path = path_buf.to_str().unwrap();
     if let Ok(data) = std::fs::read(path) {

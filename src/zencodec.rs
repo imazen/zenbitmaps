@@ -8,7 +8,7 @@
 use alloc::borrow::Cow;
 use alloc::vec::Vec;
 use enough::Stop;
-use zc::decode::{DecodeCapabilities, DecodeOutput, OutputInfo};
+use zc::decode::{DecodeCapabilities, DecodeOutput, OutputInfo, push_decoder_via_full_decode};
 use zc::encode::{EncodeCapabilities, EncodeOutput};
 use zc::{ImageFormat, ImageInfo, MetadataView, ResourceLimits};
 use zenpixels::{ChannelLayout, ChannelType, PixelBuffer, PixelDescriptor, PixelSlice};
@@ -477,6 +477,17 @@ impl<'a> zc::decode::DecodeJob<'a> for PnmDecodeJob<'a> {
         })
     }
 
+    fn push_decoder(
+        self,
+        data: Cow<'a, [u8]>,
+        sink: &mut dyn zc::decode::DecodeRowSink,
+        preferred: &[PixelDescriptor],
+    ) -> Result<OutputInfo, Self::Error> {
+        push_decoder_via_full_decode(self, data, sink, preferred, |e| {
+            BitmapError::InvalidData(e.to_string())
+        })
+    }
+
     fn streaming_decoder(
         self,
         _data: Cow<'a, [u8]>,
@@ -800,6 +811,17 @@ mod bmp_codec {
             })
         }
 
+        fn push_decoder(
+            self,
+            data: Cow<'a, [u8]>,
+            sink: &mut dyn zc::decode::DecodeRowSink,
+            preferred: &[PixelDescriptor],
+        ) -> Result<OutputInfo, Self::Error> {
+            push_decoder_via_full_decode(self, data, sink, preferred, |e| {
+                BitmapError::InvalidData(e.to_string())
+            })
+        }
+
         fn streaming_decoder(
             self,
             _data: Cow<'a, [u8]>,
@@ -1109,6 +1131,17 @@ impl<'a> zc::decode::DecodeJob<'a> for FarbfeldDecodeJob<'a> {
             limits: self.limits,
             data,
             stop: self.stop,
+        })
+    }
+
+    fn push_decoder(
+        self,
+        data: Cow<'a, [u8]>,
+        sink: &mut dyn zc::decode::DecodeRowSink,
+        preferred: &[PixelDescriptor],
+    ) -> Result<OutputInfo, Self::Error> {
+        push_decoder_via_full_decode(self, data, sink, preferred, |e| {
+            BitmapError::InvalidData(e.to_string())
         })
     }
 
