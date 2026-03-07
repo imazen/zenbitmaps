@@ -178,19 +178,17 @@ pub use pixel_traits::{DecodePixel, EncodePixel};
 #[cfg(feature = "zencodec")]
 pub use zencodec::{
     PnmDecodeJob, PnmDecoder, PnmDecoderConfig, PnmEncodeJob, PnmEncoder, PnmEncoderConfig,
-    PnmFrameDecoder, PnmFrameEncoder,
 };
 
 #[cfg(all(feature = "zencodec", feature = "bmp"))]
 pub use zencodec::{
     BmpDecodeJob, BmpDecoder, BmpDecoderConfig, BmpEncodeJob, BmpEncoder, BmpEncoderConfig,
-    BmpFrameDecoder, BmpFrameEncoder,
 };
 
 #[cfg(feature = "zencodec")]
 pub use zencodec::{
     FarbfeldDecodeJob, FarbfeldDecoder, FarbfeldDecoderConfig, FarbfeldEncodeJob, FarbfeldEncoder,
-    FarbfeldEncoderConfig, FarbfeldFrameDecoder, FarbfeldFrameEncoder,
+    FarbfeldEncoderConfig,
 };
 
 // Re-export rgb pixel types for convenience

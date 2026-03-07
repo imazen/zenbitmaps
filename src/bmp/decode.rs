@@ -1152,7 +1152,7 @@ impl<'a> BmpDecoderState<'a> {
 
         while !self.bytes.eof() {
             check_counter += 1;
-            if check_counter % 1024 == 0 {
+            if check_counter.is_multiple_of(1024) {
                 stop.check()?;
             }
 

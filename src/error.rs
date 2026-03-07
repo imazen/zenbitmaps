@@ -49,4 +49,3 @@ impl From<StopReason> for BitmapError {
         BitmapError::Cancelled(r)
     }
 }
-
