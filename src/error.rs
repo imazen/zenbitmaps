@@ -50,12 +50,3 @@ impl From<StopReason> for BitmapError {
     }
 }
 
-#[cfg(feature = "zencodec")]
-impl zc::HasUnsupportedOperation for BitmapError {
-    fn unsupported_operation(&self) -> Option<zc::UnsupportedOperation> {
-        match self {
-            BitmapError::UnsupportedOperation(op) => Some(*op),
-            _ => None,
-        }
-    }
-}
