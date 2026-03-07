@@ -6,10 +6,11 @@
 //! - Farbfeld: FarbfeldEncoderConfig / FarbfeldDecoderConfig (always available)
 
 use alloc::vec::Vec;
-use zencodec_types::{
-    CodecCapabilities, DecodeFrame, DecodeOutput, EncodeOutput, ImageFormat, ImageInfo,
-    MetadataView, OutputInfo, ResourceLimits, Stop,
-};
+use enough::Stop;
+use whereat::{At, at};
+use zc::decode::{DecodeCapabilities, DecodeFrame, DecodeOutput, OutputInfo};
+use zc::encode::{EncodeCapabilities, EncodeOutput};
+use zc::{ImageFormat, ImageInfo, MetadataView, ResourceLimits};
 use zenpixels::{ChannelLayout, ChannelType, PixelBuffer, PixelDescriptor, PixelSlice};
 
 use crate::error::BitmapError;
@@ -20,16 +21,29 @@ use crate::pnm;
 // Shared capabilities and descriptors
 // ══════════════════════════════════════════════════════════════════════
 
-static PNM_ENCODE_CAPS: CodecCapabilities = CodecCapabilities::new().with_native_gray(true);
-
-static PNM_DECODE_CAPS: CodecCapabilities = CodecCapabilities::new()
+static PNM_ENCODE_CAPS: EncodeCapabilities = EncodeCapabilities::new()
+    .with_lossless(true)
     .with_native_gray(true)
-    .with_cheap_probe(true);
+    .with_native_alpha(true)
+    .with_native_f32(true)
+    .with_hdr(true)
+    .with_cancel(true)
+    .with_enforces_max_pixels(true);
 
+static PNM_DECODE_CAPS: DecodeCapabilities = DecodeCapabilities::new()
+    .with_cheap_probe(true)
+    .with_native_gray(true)
+    .with_native_alpha(true)
+    .with_native_16bit(true)
+    .with_native_f32(true)
+    .with_hdr(true)
+    .with_cancel(true)
+    .with_enforces_max_pixels(true);
+
+// Note: U16 encode is not implemented — RGBA16_SRGB intentionally absent.
 static PNM_ENCODE_DESCRIPTORS: &[PixelDescriptor] = &[
     PixelDescriptor::RGB8_SRGB,
     PixelDescriptor::RGBA8_SRGB,
-    PixelDescriptor::RGBA16_SRGB,
     PixelDescriptor::GRAY8_SRGB,
     PixelDescriptor::BGRA8_SRGB,
     PixelDescriptor::RGBF32_LINEAR,
@@ -37,22 +51,31 @@ static PNM_ENCODE_DESCRIPTORS: &[PixelDescriptor] = &[
     PixelDescriptor::GRAYF32_LINEAR,
 ];
 
+// Note: RgbF32 is promoted to RgbaF32 in decode, so RGBF32_LINEAR is absent.
 static PNM_DECODE_DESCRIPTORS: &[PixelDescriptor] = &[
     PixelDescriptor::RGB8_SRGB,
     PixelDescriptor::RGBA8_SRGB,
     PixelDescriptor::RGBA16_SRGB,
     PixelDescriptor::GRAY8_SRGB,
+    PixelDescriptor::GRAY16_SRGB,
     PixelDescriptor::BGRA8_SRGB,
-    PixelDescriptor::RGBF32_LINEAR,
     PixelDescriptor::RGBAF32_LINEAR,
     PixelDescriptor::GRAYF32_LINEAR,
 ];
 
 #[cfg(feature = "bmp")]
-static BMP_ENCODE_CAPS: CodecCapabilities = CodecCapabilities::new();
+static BMP_ENCODE_CAPS: EncodeCapabilities = EncodeCapabilities::new()
+    .with_lossless(true)
+    .with_native_alpha(true)
+    .with_cancel(true)
+    .with_enforces_max_pixels(true);
 
 #[cfg(feature = "bmp")]
-static BMP_DECODE_CAPS: CodecCapabilities = CodecCapabilities::new().with_cheap_probe(true);
+static BMP_DECODE_CAPS: DecodeCapabilities = DecodeCapabilities::new()
+    .with_cheap_probe(true)
+    .with_native_alpha(true)
+    .with_cancel(true)
+    .with_enforces_max_pixels(true);
 
 #[cfg(feature = "bmp")]
 static BMP_ENCODE_DESCRIPTORS: &[PixelDescriptor] = &[
@@ -68,9 +91,19 @@ static BMP_DECODE_DESCRIPTORS: &[PixelDescriptor] = &[
     PixelDescriptor::BGRA8_SRGB,
 ];
 
-static FF_ENCODE_CAPS: CodecCapabilities = CodecCapabilities::new();
+static FF_ENCODE_CAPS: EncodeCapabilities = EncodeCapabilities::new()
+    .with_lossless(true)
+    .with_native_alpha(true)
+    .with_native_16bit(true)
+    .with_cancel(true)
+    .with_enforces_max_pixels(true);
 
-static FF_DECODE_CAPS: CodecCapabilities = CodecCapabilities::new().with_cheap_probe(true);
+static FF_DECODE_CAPS: DecodeCapabilities = DecodeCapabilities::new()
+    .with_cheap_probe(true)
+    .with_native_alpha(true)
+    .with_native_16bit(true)
+    .with_cancel(true)
+    .with_enforces_max_pixels(true);
 
 static FF_ENCODE_DESCRIPTORS: &[PixelDescriptor] = &[
     PixelDescriptor::RGBA16_SRGB,
@@ -94,7 +127,7 @@ static FF_DECODE_DESCRIPTORS: &[PixelDescriptor] = &[
 
 /// Encoding configuration for PNM formats.
 ///
-/// Implements [`zencodec_types::EncoderConfig`] for the PNM family.
+/// Implements [`zc::encode::EncoderConfig`] for the PNM family.
 /// Default output: PPM for RGB, PGM for Gray, PAM for RGBA, PFM for float.
 #[derive(Clone, Debug)]
 pub struct PnmEncoderConfig {
@@ -116,8 +149,8 @@ impl PnmEncoderConfig {
     }
 }
 
-impl zencodec_types::EncoderConfig for PnmEncoderConfig {
-    type Error = BitmapError;
+impl zc::encode::EncoderConfig for PnmEncoderConfig {
+    type Error = At<BitmapError>;
     type Job<'a> = PnmEncodeJob<'a>;
 
     fn format() -> ImageFormat {
@@ -128,14 +161,19 @@ impl zencodec_types::EncoderConfig for PnmEncoderConfig {
         PNM_ENCODE_DESCRIPTORS
     }
 
-    fn capabilities() -> &'static CodecCapabilities {
+    fn capabilities() -> &'static EncodeCapabilities {
         &PNM_ENCODE_CAPS
+    }
+
+    fn is_lossless(&self) -> Option<bool> {
+        Some(true)
     }
 
     fn job(&self) -> PnmEncodeJob<'_> {
         PnmEncodeJob {
             config: self,
             limits: None,
+            stop: &enough::Unstoppable,
         }
     }
 }
@@ -146,14 +184,16 @@ impl zencodec_types::EncoderConfig for PnmEncoderConfig {
 pub struct PnmEncodeJob<'a> {
     config: &'a PnmEncoderConfig,
     limits: Option<ResourceLimits>,
+    stop: &'a dyn Stop,
 }
 
-impl<'a> zencodec_types::EncodeJob<'a> for PnmEncodeJob<'a> {
-    type Error = BitmapError;
+impl<'a> zc::encode::EncodeJob<'a> for PnmEncodeJob<'a> {
+    type Error = At<BitmapError>;
     type Enc = PnmEncoder<'a>;
-    type FrameEnc = PnmFrameEncoder;
+    type FrameEnc = ();
 
-    fn with_stop(self, _stop: &'a dyn Stop) -> Self {
+    fn with_stop(mut self, stop: &'a dyn Stop) -> Self {
+        self.stop = stop;
         self
     }
 
@@ -166,17 +206,18 @@ impl<'a> zencodec_types::EncodeJob<'a> for PnmEncodeJob<'a> {
         self
     }
 
-    fn encoder(self) -> Result<PnmEncoder<'a>, BitmapError> {
+    fn encoder(self) -> Result<PnmEncoder<'a>, At<BitmapError>> {
         Ok(PnmEncoder {
             config: self.config,
             limits: self.limits,
+            stop: self.stop,
         })
     }
 
-    fn frame_encoder(self) -> Result<PnmFrameEncoder, BitmapError> {
-        Err(BitmapError::UnsupportedVariant(
-            "PNM does not support animation".into(),
-        ))
+    fn frame_encoder(self) -> Result<(), At<BitmapError>> {
+        Err(at(BitmapError::from(
+            zc::UnsupportedOperation::AnimationEncode,
+        )))
     }
 }
 
@@ -186,6 +227,7 @@ impl<'a> zencodec_types::EncodeJob<'a> for PnmEncodeJob<'a> {
 pub struct PnmEncoder<'a> {
     config: &'a PnmEncoderConfig,
     limits: Option<ResourceLimits>,
+    stop: &'a dyn Stop,
 }
 
 impl PnmEncoder<'_> {
@@ -205,16 +247,20 @@ impl PnmEncoder<'_> {
     }
 }
 
-impl zencodec_types::Encoder for PnmEncoder<'_> {
-    type Error = BitmapError;
+impl zc::encode::Encoder for PnmEncoder<'_> {
+    type Error = At<BitmapError>;
 
-    fn encode(self, pixels: PixelSlice<'_>) -> Result<EncodeOutput, BitmapError> {
+    fn reject(op: zc::UnsupportedOperation) -> At<BitmapError> {
+        at(BitmapError::from(op))
+    }
+
+    fn encode(self, pixels: PixelSlice<'_>) -> Result<EncodeOutput, At<BitmapError>> {
         let desc = pixels.descriptor();
         let w = pixels.width();
         let h = pixels.rows();
 
         if let Some(limits) = self.effective_limits() {
-            limits.check(w, h)?;
+            limits.check(w, h).map_err(at)?;
         }
 
         match (desc.channel_type(), desc.layout()) {
@@ -226,8 +272,9 @@ impl zencodec_types::Encoder for PnmEncoder<'_> {
                     h,
                     crate::PixelLayout::Rgb8,
                     pnm::PnmFormat::Ppm,
-                    &enough::Unstoppable,
-                )?;
+                    self.stop,
+                )
+                .map_err(at)?;
                 Ok(EncodeOutput::new(encoded, ImageFormat::Pnm))
             }
             (ChannelType::U8, ChannelLayout::Rgba) => {
@@ -238,8 +285,9 @@ impl zencodec_types::Encoder for PnmEncoder<'_> {
                     h,
                     crate::PixelLayout::Rgba8,
                     pnm::PnmFormat::Pam,
-                    &enough::Unstoppable,
-                )?;
+                    self.stop,
+                )
+                .map_err(at)?;
                 Ok(EncodeOutput::new(encoded, ImageFormat::Pnm))
             }
             (ChannelType::U8, ChannelLayout::Gray) => {
@@ -250,8 +298,9 @@ impl zencodec_types::Encoder for PnmEncoder<'_> {
                     h,
                     crate::PixelLayout::Gray8,
                     pnm::PnmFormat::Pgm,
-                    &enough::Unstoppable,
-                )?;
+                    self.stop,
+                )
+                .map_err(at)?;
                 Ok(EncodeOutput::new(encoded, ImageFormat::Pnm))
             }
             (ChannelType::U8, ChannelLayout::Bgra) => {
@@ -262,8 +311,9 @@ impl zencodec_types::Encoder for PnmEncoder<'_> {
                     h,
                     crate::PixelLayout::Bgra8,
                     pnm::PnmFormat::Ppm,
-                    &enough::Unstoppable,
-                )?;
+                    self.stop,
+                )
+                .map_err(at)?;
                 Ok(EncodeOutput::new(encoded, ImageFormat::Pnm))
             }
             (ChannelType::F32, ChannelLayout::Rgb) => {
@@ -274,8 +324,9 @@ impl zencodec_types::Encoder for PnmEncoder<'_> {
                     h,
                     crate::PixelLayout::RgbF32,
                     pnm::PnmFormat::Pfm,
-                    &enough::Unstoppable,
-                )?;
+                    self.stop,
+                )
+                .map_err(at)?;
                 Ok(EncodeOutput::new(encoded, ImageFormat::Pnm))
             }
             (ChannelType::F32, ChannelLayout::Rgba) => {
@@ -294,8 +345,9 @@ impl zencodec_types::Encoder for PnmEncoder<'_> {
                     h,
                     crate::PixelLayout::RgbF32,
                     pnm::PnmFormat::Pfm,
-                    &enough::Unstoppable,
-                )?;
+                    self.stop,
+                )
+                .map_err(at)?;
                 Ok(EncodeOutput::new(encoded, ImageFormat::Pnm))
             }
             (ChannelType::F32, ChannelLayout::Gray) => {
@@ -306,40 +358,16 @@ impl zencodec_types::Encoder for PnmEncoder<'_> {
                     h,
                     crate::PixelLayout::GrayF32,
                     pnm::PnmFormat::Pfm,
-                    &enough::Unstoppable,
-                )?;
+                    self.stop,
+                )
+                .map_err(at)?;
                 Ok(EncodeOutput::new(encoded, ImageFormat::Pnm))
             }
-            _ => Err(BitmapError::UnsupportedVariant(alloc::format!(
+            _ => Err(at(BitmapError::UnsupportedVariant(alloc::format!(
                 "unsupported pixel format: {:?}",
                 desc
-            ))),
+            )))),
         }
-    }
-}
-
-// ── PnmFrameEncoder (stub) ──────────────────────────────────────────
-
-/// Stub frame encoder — PNM does not support animation.
-pub struct PnmFrameEncoder;
-
-impl zencodec_types::FrameEncoder for PnmFrameEncoder {
-    type Error = BitmapError;
-
-    fn push_frame(
-        &mut self,
-        _pixels: PixelSlice<'_>,
-        _duration_ms: u32,
-    ) -> Result<(), BitmapError> {
-        Err(BitmapError::UnsupportedVariant(
-            "PNM does not support animation".into(),
-        ))
-    }
-
-    fn finish(self) -> Result<EncodeOutput, BitmapError> {
-        Err(BitmapError::UnsupportedVariant(
-            "PNM does not support animation".into(),
-        ))
     }
 }
 
@@ -347,7 +375,7 @@ impl zencodec_types::FrameEncoder for PnmFrameEncoder {
 
 /// Decoding configuration for PNM formats.
 ///
-/// Implements [`zencodec_types::DecoderConfig`] for the PNM family.
+/// Implements [`zc::decode::DecoderConfig`] for the PNM family.
 #[derive(Clone, Debug)]
 pub struct PnmDecoderConfig {
     limits: Option<Limits>,
@@ -366,8 +394,8 @@ impl PnmDecoderConfig {
     }
 }
 
-impl zencodec_types::DecoderConfig for PnmDecoderConfig {
-    type Error = BitmapError;
+impl zc::decode::DecoderConfig for PnmDecoderConfig {
+    type Error = At<BitmapError>;
     type Job<'a> = PnmDecodeJob<'a>;
 
     fn format() -> ImageFormat {
@@ -378,7 +406,7 @@ impl zencodec_types::DecoderConfig for PnmDecoderConfig {
         PNM_DECODE_DESCRIPTORS
     }
 
-    fn capabilities() -> &'static CodecCapabilities {
+    fn capabilities() -> &'static DecodeCapabilities {
         &PNM_DECODE_CAPS
     }
 
@@ -386,6 +414,8 @@ impl zencodec_types::DecoderConfig for PnmDecoderConfig {
         PnmDecodeJob {
             config: self,
             limits: None,
+            stop: &enough::Unstoppable,
+            max_input_bytes: None,
         }
     }
 }
@@ -396,30 +426,34 @@ impl zencodec_types::DecoderConfig for PnmDecoderConfig {
 pub struct PnmDecodeJob<'a> {
     config: &'a PnmDecoderConfig,
     limits: Option<Limits>,
+    stop: &'a dyn Stop,
+    max_input_bytes: Option<u64>,
 }
 
-impl<'a> zencodec_types::DecodeJob<'a> for PnmDecodeJob<'a> {
-    type Error = BitmapError;
+impl<'a> zc::decode::DecodeJob<'a> for PnmDecodeJob<'a> {
+    type Error = At<BitmapError>;
     type Dec = PnmDecoder<'a>;
     type StreamDec = NoStreamingDecode;
-    type FrameDec = PnmFrameDecoder;
+    type FrameDec = NoFrameDecode;
 
-    fn with_stop(self, _stop: &'a dyn Stop) -> Self {
+    fn with_stop(mut self, stop: &'a dyn Stop) -> Self {
+        self.stop = stop;
         self
     }
 
     fn with_limits(mut self, limits: ResourceLimits) -> Self {
+        self.max_input_bytes = limits.max_input_bytes;
         self.limits = Some(convert_limits(&limits));
         self
     }
 
-    fn probe(&self, data: &[u8]) -> Result<ImageInfo, BitmapError> {
-        let header = pnm::decode::parse_header(data)?;
+    fn probe(&self, data: &[u8]) -> Result<ImageInfo, At<BitmapError>> {
+        let header = pnm::decode::parse_header(data).map_err(at)?;
         Ok(header_to_image_info(&header))
     }
 
-    fn output_info(&self, data: &[u8]) -> Result<OutputInfo, BitmapError> {
-        let header = pnm::decode::parse_header(data)?;
+    fn output_info(&self, data: &[u8]) -> Result<OutputInfo, At<BitmapError>> {
+        let header = pnm::decode::parse_header(data).map_err(at)?;
         let has_alpha = matches!(
             header.layout,
             crate::PixelLayout::Rgba8 | crate::PixelLayout::Bgra8
@@ -435,11 +469,20 @@ impl<'a> zencodec_types::DecodeJob<'a> for PnmDecodeJob<'a> {
         self,
         data: &'a [u8],
         _preferred: &[PixelDescriptor],
-    ) -> Result<PnmDecoder<'a>, BitmapError> {
+    ) -> Result<PnmDecoder<'a>, At<BitmapError>> {
+        if let Some(max) = self.max_input_bytes
+            && data.len() as u64 > max
+        {
+            return Err(at(BitmapError::LimitExceeded(alloc::format!(
+                "input size {} exceeds limit {max}",
+                data.len()
+            ))));
+        }
         Ok(PnmDecoder {
             config: self.config,
             limits: self.limits,
             data,
+            stop: self.stop,
         })
     }
 
@@ -447,20 +490,20 @@ impl<'a> zencodec_types::DecodeJob<'a> for PnmDecodeJob<'a> {
         self,
         _data: &'a [u8],
         _preferred: &[PixelDescriptor],
-    ) -> Result<NoStreamingDecode, BitmapError> {
-        Err(BitmapError::UnsupportedVariant(
-            "PNM does not support streaming decode".into(),
-        ))
+    ) -> Result<NoStreamingDecode, At<BitmapError>> {
+        Err(at(BitmapError::from(
+            zc::UnsupportedOperation::RowLevelDecode,
+        )))
     }
 
     fn frame_decoder(
         self,
         _data: &'a [u8],
         _preferred: &[PixelDescriptor],
-    ) -> Result<PnmFrameDecoder, BitmapError> {
-        Err(BitmapError::UnsupportedVariant(
-            "PNM does not support animation".into(),
-        ))
+    ) -> Result<NoFrameDecode, At<BitmapError>> {
+        Err(at(BitmapError::from(
+            zc::UnsupportedOperation::AnimationDecode,
+        )))
     }
 }
 
@@ -471,6 +514,7 @@ pub struct PnmDecoder<'a> {
     config: &'a PnmDecoderConfig,
     limits: Option<Limits>,
     data: &'a [u8],
+    stop: &'a dyn Stop,
 }
 
 impl PnmDecoder<'_> {
@@ -479,27 +523,13 @@ impl PnmDecoder<'_> {
     }
 }
 
-impl zencodec_types::Decode for PnmDecoder<'_> {
-    type Error = BitmapError;
+impl zc::decode::Decode for PnmDecoder<'_> {
+    type Error = At<BitmapError>;
 
-    fn decode(self) -> Result<DecodeOutput, BitmapError> {
+    fn decode(self) -> Result<DecodeOutput, At<BitmapError>> {
         let limits = self.effective_limits();
-        let decoded = crate::pnm::decode(self.data, limits, &enough::Unstoppable)?;
-        decode_output_from_internal(&decoded, ImageFormat::Pnm)
-    }
-}
-// ── PnmFrameDecoder (stub) ──────────────────────────────────────────
-
-/// Stub frame decoder — PNM does not support animation.
-pub struct PnmFrameDecoder;
-
-impl zencodec_types::FrameDecode for PnmFrameDecoder {
-    type Error = BitmapError;
-
-    fn next_frame(&mut self) -> Result<Option<DecodeFrame>, BitmapError> {
-        Err(BitmapError::UnsupportedVariant(
-            "PNM does not support animation".into(),
-        ))
+        let decoded = crate::pnm::decode(self.data, limits, self.stop).map_err(at)?;
+        decode_output_from_internal(&decoded, ImageFormat::Pnm).map_err(at)
     }
 }
 
@@ -536,8 +566,8 @@ mod bmp_codec {
         }
     }
 
-    impl zencodec_types::EncoderConfig for BmpEncoderConfig {
-        type Error = BitmapError;
+    impl zc::encode::EncoderConfig for BmpEncoderConfig {
+        type Error = At<BitmapError>;
         type Job<'a> = BmpEncodeJob<'a>;
 
         fn format() -> ImageFormat {
@@ -548,14 +578,19 @@ mod bmp_codec {
             BMP_ENCODE_DESCRIPTORS
         }
 
-        fn capabilities() -> &'static CodecCapabilities {
+        fn capabilities() -> &'static EncodeCapabilities {
             &BMP_ENCODE_CAPS
+        }
+
+        fn is_lossless(&self) -> Option<bool> {
+            Some(true)
         }
 
         fn job(&self) -> BmpEncodeJob<'_> {
             BmpEncodeJob {
                 config: self,
                 limits: None,
+                stop: &enough::Unstoppable,
             }
         }
     }
@@ -566,14 +601,16 @@ mod bmp_codec {
     pub struct BmpEncodeJob<'a> {
         config: &'a BmpEncoderConfig,
         limits: Option<ResourceLimits>,
+        stop: &'a dyn Stop,
     }
 
-    impl<'a> zencodec_types::EncodeJob<'a> for BmpEncodeJob<'a> {
-        type Error = BitmapError;
+    impl<'a> zc::encode::EncodeJob<'a> for BmpEncodeJob<'a> {
+        type Error = At<BitmapError>;
         type Enc = BmpEncoder<'a>;
-        type FrameEnc = BmpFrameEncoder;
+        type FrameEnc = ();
 
-        fn with_stop(self, _stop: &'a dyn Stop) -> Self {
+        fn with_stop(mut self, stop: &'a dyn Stop) -> Self {
+            self.stop = stop;
             self
         }
 
@@ -586,17 +623,18 @@ mod bmp_codec {
             self
         }
 
-        fn encoder(self) -> Result<BmpEncoder<'a>, BitmapError> {
+        fn encoder(self) -> Result<BmpEncoder<'a>, At<BitmapError>> {
             Ok(BmpEncoder {
                 config: self.config,
                 limits: self.limits,
+                stop: self.stop,
             })
         }
 
-        fn frame_encoder(self) -> Result<BmpFrameEncoder, BitmapError> {
-            Err(BitmapError::UnsupportedVariant(
-                "BMP does not support animation".into(),
-            ))
+        fn frame_encoder(self) -> Result<(), At<BitmapError>> {
+            Err(at(BitmapError::from(
+                zc::UnsupportedOperation::AnimationEncode,
+            )))
         }
     }
 
@@ -606,6 +644,7 @@ mod bmp_codec {
     pub struct BmpEncoder<'a> {
         config: &'a BmpEncoderConfig,
         limits: Option<ResourceLimits>,
+        stop: &'a dyn Stop,
     }
 
     impl BmpEncoder<'_> {
@@ -625,64 +664,37 @@ mod bmp_codec {
         }
     }
 
-    impl zencodec_types::Encoder for BmpEncoder<'_> {
-        type Error = BitmapError;
+    impl zc::encode::Encoder for BmpEncoder<'_> {
+        type Error = At<BitmapError>;
 
-        fn encode(self, pixels: PixelSlice<'_>) -> Result<EncodeOutput, BitmapError> {
+        fn reject(op: zc::UnsupportedOperation) -> At<BitmapError> {
+            at(BitmapError::from(op))
+        }
+
+        fn encode(self, pixels: PixelSlice<'_>) -> Result<EncodeOutput, At<BitmapError>> {
             let desc = pixels.descriptor();
             let w = pixels.width();
             let h = pixels.rows();
 
             if let Some(limits) = self.effective_limits() {
-                limits.check(w, h)?;
+                limits.check(w, h).map_err(at)?;
             }
 
             let bytes = pixels.contiguous_bytes();
             let (layout, alpha) = match (desc.channel_type(), desc.layout()) {
-                (ChannelType::U8, ChannelLayout::Rgb) => {
-                    (crate::PixelLayout::Rgb8, false)
-                }
-                (ChannelType::U8, ChannelLayout::Rgba) => {
-                    (crate::PixelLayout::Rgba8, true)
-                }
-                (ChannelType::U8, ChannelLayout::Bgra) => {
-                    (crate::PixelLayout::Bgra8, true)
-                }
+                (ChannelType::U8, ChannelLayout::Rgb) => (crate::PixelLayout::Rgb8, false),
+                (ChannelType::U8, ChannelLayout::Rgba) => (crate::PixelLayout::Rgba8, true),
+                (ChannelType::U8, ChannelLayout::Bgra) => (crate::PixelLayout::Bgra8, true),
                 _ => {
-                    return Err(BitmapError::UnsupportedVariant(alloc::format!(
+                    return Err(at(BitmapError::UnsupportedVariant(alloc::format!(
                         "BMP encode: unsupported pixel format: {:?}",
                         desc
-                    )));
+                    ))));
                 }
             };
 
-            let encoded = crate::bmp::encode(&bytes, w, h, layout, alpha, &enough::Unstoppable)?;
+            let encoded = crate::bmp::encode(&bytes, w, h, layout, alpha, self.stop).map_err(at)?;
             Ok(EncodeOutput::new(encoded, ImageFormat::Bmp))
-        }
-    }
-
-    // ── BmpFrameEncoder (stub) ───────────────────────────────────────
-
-    /// Stub frame encoder — BMP does not support animation.
-    pub struct BmpFrameEncoder;
-
-    impl zencodec_types::FrameEncoder for BmpFrameEncoder {
-        type Error = BitmapError;
-
-        fn push_frame(
-            &mut self,
-            _pixels: PixelSlice<'_>,
-            _duration_ms: u32,
-        ) -> Result<(), BitmapError> {
-            Err(BitmapError::UnsupportedVariant(
-                "BMP does not support animation".into(),
-            ))
-        }
-
-        fn finish(self) -> Result<EncodeOutput, BitmapError> {
-            Err(BitmapError::UnsupportedVariant(
-                "BMP does not support animation".into(),
-            ))
         }
     }
 
@@ -707,8 +719,8 @@ mod bmp_codec {
         }
     }
 
-    impl zencodec_types::DecoderConfig for BmpDecoderConfig {
-        type Error = BitmapError;
+    impl zc::decode::DecoderConfig for BmpDecoderConfig {
+        type Error = At<BitmapError>;
         type Job<'a> = BmpDecodeJob<'a>;
 
         fn format() -> ImageFormat {
@@ -719,7 +731,7 @@ mod bmp_codec {
             BMP_DECODE_DESCRIPTORS
         }
 
-        fn capabilities() -> &'static CodecCapabilities {
+        fn capabilities() -> &'static DecodeCapabilities {
             &BMP_DECODE_CAPS
         }
 
@@ -727,6 +739,8 @@ mod bmp_codec {
             BmpDecodeJob {
                 config: self,
                 limits: None,
+                stop: &enough::Unstoppable,
+                max_input_bytes: None,
             }
         }
     }
@@ -737,25 +751,29 @@ mod bmp_codec {
     pub struct BmpDecodeJob<'a> {
         config: &'a BmpDecoderConfig,
         limits: Option<Limits>,
+        stop: &'a dyn Stop,
+        max_input_bytes: Option<u64>,
     }
 
-    impl<'a> zencodec_types::DecodeJob<'a> for BmpDecodeJob<'a> {
-        type Error = BitmapError;
+    impl<'a> zc::decode::DecodeJob<'a> for BmpDecodeJob<'a> {
+        type Error = At<BitmapError>;
         type Dec = BmpDecoder<'a>;
         type StreamDec = NoStreamingDecode;
-        type FrameDec = BmpFrameDecoder;
+        type FrameDec = NoFrameDecode;
 
-        fn with_stop(self, _stop: &'a dyn Stop) -> Self {
+        fn with_stop(mut self, stop: &'a dyn Stop) -> Self {
+            self.stop = stop;
             self
         }
 
         fn with_limits(mut self, limits: ResourceLimits) -> Self {
+            self.max_input_bytes = limits.max_input_bytes;
             self.limits = Some(convert_limits(&limits));
             self
         }
 
-        fn probe(&self, data: &[u8]) -> Result<ImageInfo, BitmapError> {
-            let header = crate::bmp::decode::parse_bmp_header(data)?;
+        fn probe(&self, data: &[u8]) -> Result<ImageInfo, At<BitmapError>> {
+            let header = crate::bmp::decode::parse_bmp_header(data).map_err(at)?;
             let has_alpha = matches!(
                 header.layout,
                 crate::PixelLayout::Rgba8 | crate::PixelLayout::Bgra8
@@ -763,8 +781,8 @@ mod bmp_codec {
             Ok(ImageInfo::new(header.width, header.height, ImageFormat::Bmp).with_alpha(has_alpha))
         }
 
-        fn output_info(&self, data: &[u8]) -> Result<OutputInfo, BitmapError> {
-            let header = crate::bmp::decode::parse_bmp_header(data)?;
+        fn output_info(&self, data: &[u8]) -> Result<OutputInfo, At<BitmapError>> {
+            let header = crate::bmp::decode::parse_bmp_header(data).map_err(at)?;
             let has_alpha = matches!(
                 header.layout,
                 crate::PixelLayout::Rgba8 | crate::PixelLayout::Bgra8
@@ -780,11 +798,20 @@ mod bmp_codec {
             self,
             data: &'a [u8],
             _preferred: &[PixelDescriptor],
-        ) -> Result<BmpDecoder<'a>, BitmapError> {
+        ) -> Result<BmpDecoder<'a>, At<BitmapError>> {
+            if let Some(max) = self.max_input_bytes
+                && data.len() as u64 > max
+            {
+                return Err(at(BitmapError::LimitExceeded(alloc::format!(
+                    "input size {} exceeds limit {max}",
+                    data.len()
+                ))));
+            }
             Ok(BmpDecoder {
                 config: self.config,
                 limits: self.limits,
                 data,
+                stop: self.stop,
             })
         }
 
@@ -792,20 +819,20 @@ mod bmp_codec {
             self,
             _data: &'a [u8],
             _preferred: &[PixelDescriptor],
-        ) -> Result<NoStreamingDecode, BitmapError> {
-            Err(BitmapError::UnsupportedVariant(
-                "BMP does not support streaming decode".into(),
-            ))
+        ) -> Result<NoStreamingDecode, At<BitmapError>> {
+            Err(at(BitmapError::from(
+                zc::UnsupportedOperation::RowLevelDecode,
+            )))
         }
 
         fn frame_decoder(
             self,
             _data: &'a [u8],
             _preferred: &[PixelDescriptor],
-        ) -> Result<BmpFrameDecoder, BitmapError> {
-            Err(BitmapError::UnsupportedVariant(
-                "BMP does not support animation".into(),
-            ))
+        ) -> Result<NoFrameDecode, At<BitmapError>> {
+            Err(at(BitmapError::from(
+                zc::UnsupportedOperation::AnimationDecode,
+            )))
         }
     }
 
@@ -816,6 +843,7 @@ mod bmp_codec {
         config: &'a BmpDecoderConfig,
         limits: Option<Limits>,
         data: &'a [u8],
+        stop: &'a dyn Stop,
     }
 
     impl BmpDecoder<'_> {
@@ -824,28 +852,13 @@ mod bmp_codec {
         }
     }
 
-    impl zencodec_types::Decode for BmpDecoder<'_> {
-        type Error = BitmapError;
+    impl zc::decode::Decode for BmpDecoder<'_> {
+        type Error = At<BitmapError>;
 
-        fn decode(self) -> Result<DecodeOutput, BitmapError> {
+        fn decode(self) -> Result<DecodeOutput, At<BitmapError>> {
             let limits = self.effective_limits();
-            let decoded = crate::bmp::decode(self.data, limits, &enough::Unstoppable)?;
-            decode_output_from_internal(&decoded, ImageFormat::Bmp)
-        }
-    }
-
-    // ── BmpFrameDecoder (stub) ───────────────────────────────────────
-
-    /// Stub frame decoder — BMP does not support animation.
-    pub struct BmpFrameDecoder;
-
-    impl zencodec_types::FrameDecode for BmpFrameDecoder {
-        type Error = BitmapError;
-
-        fn next_frame(&mut self) -> Result<Option<DecodeFrame>, BitmapError> {
-            Err(BitmapError::UnsupportedVariant(
-                "BMP does not support animation".into(),
-            ))
+            let decoded = crate::bmp::decode(self.data, limits, self.stop).map_err(at)?;
+            decode_output_from_internal(&decoded, ImageFormat::Bmp).map_err(at)
         }
     }
 }
@@ -882,8 +895,8 @@ impl FarbfeldEncoderConfig {
     }
 }
 
-impl zencodec_types::EncoderConfig for FarbfeldEncoderConfig {
-    type Error = BitmapError;
+impl zc::encode::EncoderConfig for FarbfeldEncoderConfig {
+    type Error = At<BitmapError>;
     type Job<'a> = FarbfeldEncodeJob<'a>;
 
     fn format() -> ImageFormat {
@@ -894,14 +907,19 @@ impl zencodec_types::EncoderConfig for FarbfeldEncoderConfig {
         FF_ENCODE_DESCRIPTORS
     }
 
-    fn capabilities() -> &'static CodecCapabilities {
+    fn capabilities() -> &'static EncodeCapabilities {
         &FF_ENCODE_CAPS
+    }
+
+    fn is_lossless(&self) -> Option<bool> {
+        Some(true)
     }
 
     fn job(&self) -> FarbfeldEncodeJob<'_> {
         FarbfeldEncodeJob {
             config: self,
             limits: None,
+            stop: &enough::Unstoppable,
         }
     }
 }
@@ -912,14 +930,16 @@ impl zencodec_types::EncoderConfig for FarbfeldEncoderConfig {
 pub struct FarbfeldEncodeJob<'a> {
     config: &'a FarbfeldEncoderConfig,
     limits: Option<ResourceLimits>,
+    stop: &'a dyn Stop,
 }
 
-impl<'a> zencodec_types::EncodeJob<'a> for FarbfeldEncodeJob<'a> {
-    type Error = BitmapError;
+impl<'a> zc::encode::EncodeJob<'a> for FarbfeldEncodeJob<'a> {
+    type Error = At<BitmapError>;
     type Enc = FarbfeldEncoder<'a>;
-    type FrameEnc = FarbfeldFrameEncoder;
+    type FrameEnc = ();
 
-    fn with_stop(self, _stop: &'a dyn Stop) -> Self {
+    fn with_stop(mut self, stop: &'a dyn Stop) -> Self {
+        self.stop = stop;
         self
     }
 
@@ -932,17 +952,18 @@ impl<'a> zencodec_types::EncodeJob<'a> for FarbfeldEncodeJob<'a> {
         self
     }
 
-    fn encoder(self) -> Result<FarbfeldEncoder<'a>, BitmapError> {
+    fn encoder(self) -> Result<FarbfeldEncoder<'a>, At<BitmapError>> {
         Ok(FarbfeldEncoder {
             config: self.config,
             limits: self.limits,
+            stop: self.stop,
         })
     }
 
-    fn frame_encoder(self) -> Result<FarbfeldFrameEncoder, BitmapError> {
-        Err(BitmapError::UnsupportedVariant(
-            "farbfeld does not support animation".into(),
-        ))
+    fn frame_encoder(self) -> Result<(), At<BitmapError>> {
+        Err(at(BitmapError::from(
+            zc::UnsupportedOperation::AnimationEncode,
+        )))
     }
 }
 
@@ -952,6 +973,7 @@ impl<'a> zencodec_types::EncodeJob<'a> for FarbfeldEncodeJob<'a> {
 pub struct FarbfeldEncoder<'a> {
     config: &'a FarbfeldEncoderConfig,
     limits: Option<ResourceLimits>,
+    stop: &'a dyn Stop,
 }
 
 impl FarbfeldEncoder<'_> {
@@ -971,67 +993,38 @@ impl FarbfeldEncoder<'_> {
     }
 }
 
-impl zencodec_types::Encoder for FarbfeldEncoder<'_> {
-    type Error = BitmapError;
+impl zc::encode::Encoder for FarbfeldEncoder<'_> {
+    type Error = At<BitmapError>;
 
-    fn encode(self, pixels: PixelSlice<'_>) -> Result<EncodeOutput, BitmapError> {
+    fn reject(op: zc::UnsupportedOperation) -> At<BitmapError> {
+        at(BitmapError::from(op))
+    }
+
+    fn encode(self, pixels: PixelSlice<'_>) -> Result<EncodeOutput, At<BitmapError>> {
         let desc = pixels.descriptor();
         let w = pixels.width();
         let h = pixels.rows();
 
         if let Some(limits) = self.effective_limits() {
-            limits.check(w, h)?;
+            limits.check(w, h).map_err(at)?;
         }
 
         let bytes = pixels.contiguous_bytes();
         let layout = match (desc.channel_type(), desc.layout()) {
-            (ChannelType::U16, ChannelLayout::Rgba) => {
-                crate::PixelLayout::Rgba16
-            }
-            (ChannelType::U8, ChannelLayout::Rgba) => {
-                crate::PixelLayout::Rgba8
-            }
-            (ChannelType::U8, ChannelLayout::Rgb) => {
-                crate::PixelLayout::Rgb8
-            }
-            (ChannelType::U8, ChannelLayout::Gray) => {
-                crate::PixelLayout::Gray8
-            }
+            (ChannelType::U16, ChannelLayout::Rgba) => crate::PixelLayout::Rgba16,
+            (ChannelType::U8, ChannelLayout::Rgba) => crate::PixelLayout::Rgba8,
+            (ChannelType::U8, ChannelLayout::Rgb) => crate::PixelLayout::Rgb8,
+            (ChannelType::U8, ChannelLayout::Gray) => crate::PixelLayout::Gray8,
             _ => {
-                return Err(BitmapError::UnsupportedVariant(alloc::format!(
+                return Err(at(BitmapError::UnsupportedVariant(alloc::format!(
                     "farbfeld encode: unsupported pixel format: {:?}",
                     desc
-                )));
+                ))));
             }
         };
 
-        let encoded = crate::farbfeld::encode(&bytes, w, h, layout, &enough::Unstoppable)?;
+        let encoded = crate::farbfeld::encode(&bytes, w, h, layout, self.stop).map_err(at)?;
         Ok(EncodeOutput::new(encoded, ImageFormat::Farbfeld))
-    }
-}
-
-// ── FarbfeldFrameEncoder (stub) ──────────────────────────────────────
-
-/// Stub frame encoder — farbfeld does not support animation.
-pub struct FarbfeldFrameEncoder;
-
-impl zencodec_types::FrameEncoder for FarbfeldFrameEncoder {
-    type Error = BitmapError;
-
-    fn push_frame(
-        &mut self,
-        _pixels: PixelSlice<'_>,
-        _duration_ms: u32,
-    ) -> Result<(), BitmapError> {
-        Err(BitmapError::UnsupportedVariant(
-            "farbfeld does not support animation".into(),
-        ))
-    }
-
-    fn finish(self) -> Result<EncodeOutput, BitmapError> {
-        Err(BitmapError::UnsupportedVariant(
-            "farbfeld does not support animation".into(),
-        ))
     }
 }
 
@@ -1056,8 +1049,8 @@ impl FarbfeldDecoderConfig {
     }
 }
 
-impl zencodec_types::DecoderConfig for FarbfeldDecoderConfig {
-    type Error = BitmapError;
+impl zc::decode::DecoderConfig for FarbfeldDecoderConfig {
+    type Error = At<BitmapError>;
     type Job<'a> = FarbfeldDecodeJob<'a>;
 
     fn format() -> ImageFormat {
@@ -1068,7 +1061,7 @@ impl zencodec_types::DecoderConfig for FarbfeldDecoderConfig {
         FF_DECODE_DESCRIPTORS
     }
 
-    fn capabilities() -> &'static CodecCapabilities {
+    fn capabilities() -> &'static DecodeCapabilities {
         &FF_DECODE_CAPS
     }
 
@@ -1076,6 +1069,8 @@ impl zencodec_types::DecoderConfig for FarbfeldDecoderConfig {
         FarbfeldDecodeJob {
             config: self,
             limits: None,
+            stop: &enough::Unstoppable,
+            max_input_bytes: None,
         }
     }
 }
@@ -1086,30 +1081,34 @@ impl zencodec_types::DecoderConfig for FarbfeldDecoderConfig {
 pub struct FarbfeldDecodeJob<'a> {
     config: &'a FarbfeldDecoderConfig,
     limits: Option<Limits>,
+    stop: &'a dyn Stop,
+    max_input_bytes: Option<u64>,
 }
 
-impl<'a> zencodec_types::DecodeJob<'a> for FarbfeldDecodeJob<'a> {
-    type Error = BitmapError;
+impl<'a> zc::decode::DecodeJob<'a> for FarbfeldDecodeJob<'a> {
+    type Error = At<BitmapError>;
     type Dec = FarbfeldDecoder<'a>;
     type StreamDec = NoStreamingDecode;
-    type FrameDec = FarbfeldFrameDecoder;
+    type FrameDec = NoFrameDecode;
 
-    fn with_stop(self, _stop: &'a dyn Stop) -> Self {
+    fn with_stop(mut self, stop: &'a dyn Stop) -> Self {
+        self.stop = stop;
         self
     }
 
     fn with_limits(mut self, limits: ResourceLimits) -> Self {
+        self.max_input_bytes = limits.max_input_bytes;
         self.limits = Some(convert_limits(&limits));
         self
     }
 
-    fn probe(&self, data: &[u8]) -> Result<ImageInfo, BitmapError> {
-        let (width, height) = crate::farbfeld::decode::parse_header(data)?;
+    fn probe(&self, data: &[u8]) -> Result<ImageInfo, At<BitmapError>> {
+        let (width, height) = crate::farbfeld::decode::parse_header(data).map_err(at)?;
         Ok(ImageInfo::new(width, height, ImageFormat::Farbfeld).with_alpha(true))
     }
 
-    fn output_info(&self, data: &[u8]) -> Result<OutputInfo, BitmapError> {
-        let (width, height) = crate::farbfeld::decode::parse_header(data)?;
+    fn output_info(&self, data: &[u8]) -> Result<OutputInfo, At<BitmapError>> {
+        let (width, height) = crate::farbfeld::decode::parse_header(data).map_err(at)?;
         Ok(OutputInfo::full_decode(width, height, PixelDescriptor::RGBA16_SRGB).with_alpha(true))
     }
 
@@ -1117,11 +1116,20 @@ impl<'a> zencodec_types::DecodeJob<'a> for FarbfeldDecodeJob<'a> {
         self,
         data: &'a [u8],
         _preferred: &[PixelDescriptor],
-    ) -> Result<FarbfeldDecoder<'a>, BitmapError> {
+    ) -> Result<FarbfeldDecoder<'a>, At<BitmapError>> {
+        if let Some(max) = self.max_input_bytes
+            && data.len() as u64 > max
+        {
+            return Err(at(BitmapError::LimitExceeded(alloc::format!(
+                "input size {} exceeds limit {max}",
+                data.len()
+            ))));
+        }
         Ok(FarbfeldDecoder {
             config: self.config,
             limits: self.limits,
             data,
+            stop: self.stop,
         })
     }
 
@@ -1129,20 +1137,20 @@ impl<'a> zencodec_types::DecodeJob<'a> for FarbfeldDecodeJob<'a> {
         self,
         _data: &'a [u8],
         _preferred: &[PixelDescriptor],
-    ) -> Result<NoStreamingDecode, BitmapError> {
-        Err(BitmapError::UnsupportedVariant(
-            "farbfeld does not support streaming decode".into(),
-        ))
+    ) -> Result<NoStreamingDecode, At<BitmapError>> {
+        Err(at(BitmapError::from(
+            zc::UnsupportedOperation::RowLevelDecode,
+        )))
     }
 
     fn frame_decoder(
         self,
         _data: &'a [u8],
         _preferred: &[PixelDescriptor],
-    ) -> Result<FarbfeldFrameDecoder, BitmapError> {
-        Err(BitmapError::UnsupportedVariant(
-            "farbfeld does not support animation".into(),
-        ))
+    ) -> Result<NoFrameDecode, At<BitmapError>> {
+        Err(at(BitmapError::from(
+            zc::UnsupportedOperation::AnimationDecode,
+        )))
     }
 }
 
@@ -1153,6 +1161,7 @@ pub struct FarbfeldDecoder<'a> {
     config: &'a FarbfeldDecoderConfig,
     limits: Option<Limits>,
     data: &'a [u8],
+    stop: &'a dyn Stop,
 }
 
 impl FarbfeldDecoder<'_> {
@@ -1161,33 +1170,18 @@ impl FarbfeldDecoder<'_> {
     }
 }
 
-impl zencodec_types::Decode for FarbfeldDecoder<'_> {
-    type Error = BitmapError;
+impl zc::decode::Decode for FarbfeldDecoder<'_> {
+    type Error = At<BitmapError>;
 
-    fn decode(self) -> Result<DecodeOutput, BitmapError> {
+    fn decode(self) -> Result<DecodeOutput, At<BitmapError>> {
         let limits = self.effective_limits();
-        let decoded = crate::farbfeld::decode(self.data, limits, &enough::Unstoppable)?;
-        decode_output_from_internal(&decoded, ImageFormat::Farbfeld)
-    }
-}
-
-// ── FarbfeldFrameDecoder (stub) ──────────────────────────────────────
-
-/// Stub frame decoder — farbfeld does not support animation.
-pub struct FarbfeldFrameDecoder;
-
-impl zencodec_types::FrameDecode for FarbfeldFrameDecoder {
-    type Error = BitmapError;
-
-    fn next_frame(&mut self) -> Result<Option<DecodeFrame>, BitmapError> {
-        Err(BitmapError::UnsupportedVariant(
-            "farbfeld does not support animation".into(),
-        ))
+        let decoded = crate::farbfeld::decode(self.data, limits, self.stop).map_err(at)?;
+        decode_output_from_internal(&decoded, ImageFormat::Farbfeld).map_err(at)
     }
 }
 
 // ══════════════════════════════════════════════════════════════════════
-// Streaming decode stub
+// Shared stubs for unsupported operations
 // ══════════════════════════════════════════════════════════════════════
 
 /// Unit struct for codecs that do not support streaming decode.
@@ -1196,17 +1190,33 @@ impl zencodec_types::FrameDecode for FarbfeldFrameDecoder {
 /// unreachable in practice.
 pub struct NoStreamingDecode;
 
-impl zencodec_types::StreamingDecode for NoStreamingDecode {
-    type Error = BitmapError;
+impl zc::decode::StreamingDecode for NoStreamingDecode {
+    type Error = At<BitmapError>;
 
-    fn next_batch(&mut self) -> Result<Option<(u32, PixelSlice<'_>)>, BitmapError> {
-        Err(BitmapError::UnsupportedVariant(
-            "streaming decode not supported".into(),
-        ))
+    fn next_batch(&mut self) -> Result<Option<(u32, PixelSlice<'_>)>, At<BitmapError>> {
+        Err(at(BitmapError::from(
+            zc::UnsupportedOperation::RowLevelDecode,
+        )))
     }
 
     fn info(&self) -> &ImageInfo {
         panic!("streaming decode not supported — streaming_decoder() returns Err")
+    }
+}
+
+/// Unit struct for codecs that do not support animation decode.
+///
+/// `frame_decoder()` always returns `Err`, so these methods are
+/// unreachable in practice.
+pub struct NoFrameDecode;
+
+impl zc::decode::FrameDecode for NoFrameDecode {
+    type Error = At<BitmapError>;
+
+    fn next_frame(&mut self) -> Result<Option<DecodeFrame>, At<BitmapError>> {
+        Err(at(BitmapError::from(
+            zc::UnsupportedOperation::AnimationDecode,
+        )))
     }
 }
 
@@ -1237,7 +1247,7 @@ fn layout_to_descriptor(layout: crate::PixelLayout) -> PixelDescriptor {
         PixelLayout::Rgb8 => PixelDescriptor::RGB8_SRGB,
         PixelLayout::Rgba8 => PixelDescriptor::RGBA8_SRGB,
         PixelLayout::GrayF32 => PixelDescriptor::GRAYF32_LINEAR,
-        PixelLayout::RgbF32 => PixelDescriptor::RGBF32_LINEAR,
+        PixelLayout::RgbF32 => PixelDescriptor::RGBAF32_LINEAR,
         PixelLayout::Bgr8 | PixelLayout::Bgrx8 => PixelDescriptor::RGB8_SRGB,
         PixelLayout::Bgra8 => PixelDescriptor::BGRA8_SRGB,
         PixelLayout::Rgba16 => PixelDescriptor::RGBA16_SRGB,
@@ -1311,8 +1321,16 @@ fn layout_to_pixel_buffer(
             Ok(PixelBuffer::from_imgvec(imgref::ImgVec::new(pixels.to_vec(), w, h)).into())
         }
         PixelLayout::Bgrx8 => {
-            let pixels: &[rgb::alt::BGRA<u8>] = bytes.as_pixels();
-            Ok(PixelBuffer::from_imgvec(imgref::ImgVec::new(pixels.to_vec(), w, h)).into())
+            // BGRX → convert to RGB (strip padding byte, swizzle BGR→RGB)
+            let pixels: Vec<rgb::Rgb<u8>> = bytes
+                .chunks_exact(4)
+                .map(|c| rgb::Rgb {
+                    r: c[2],
+                    g: c[1],
+                    b: c[0],
+                })
+                .collect();
+            Ok(PixelBuffer::from_imgvec(imgref::ImgVec::new(pixels, w, h)).into())
         }
         PixelLayout::Rgba16 => {
             let pixels: Vec<rgb::Rgba<u16>> = bytes
@@ -1348,7 +1366,8 @@ mod tests {
     use alloc::vec;
 
     use super::*;
-    use zencodec_types::{Decode, DecodeJob, DecoderConfig, EncodeJob, Encoder, EncoderConfig};
+    use zc::decode::{Decode, DecodeJob, DecoderConfig};
+    use zc::encode::{EncodeJob, Encoder, EncoderConfig};
 
     /// Helper: encode via the four-layer flow (type-erased).
     fn encode_pixels(slice: PixelSlice<'_>) -> EncodeOutput {
@@ -1359,12 +1378,7 @@ mod tests {
     /// Helper: decode via the four-layer flow.
     fn decode_bytes(data: &[u8]) -> DecodeOutput {
         let config = PnmDecoderConfig::new();
-        config
-            .job()
-            .decoder(data, &[])
-            .unwrap()
-            .decode()
-            .unwrap()
+        config.job().decoder(data, &[]).unwrap().decode().unwrap()
     }
 
     #[test]
@@ -1386,8 +1400,9 @@ mod tests {
         let decoded = decode_bytes(output.data());
         assert_eq!(decoded.width(), 2);
         assert_eq!(decoded.height(), 2);
-        let rgb_img = decoded.into_rgb8();
-        assert_eq!(rgb_img.as_imgref().buf(), &pixels);
+        let buf = decoded.into_buffer();
+        let rgb_img = buf.try_as_imgref::<rgb::Rgb<u8>>().unwrap();
+        assert_eq!(rgb_img.buf(), &pixels);
     }
 
     #[test]
@@ -1402,8 +1417,9 @@ mod tests {
         let output = encode_pixels(PixelSlice::from(img.as_ref()).erase());
 
         let decoded = decode_bytes(output.data());
-        let gray_img = decoded.into_gray8();
-        assert_eq!(gray_img.as_imgref().buf(), &pixels);
+        let buf = decoded.into_buffer();
+        let gray_img = buf.try_as_imgref::<rgb::Gray<u8>>().unwrap();
+        assert_eq!(gray_img.buf(), &pixels);
     }
 
     #[test]
@@ -1439,8 +1455,9 @@ mod tests {
 
         let decoded = decode_bytes(output.data());
         assert!(decoded.has_alpha());
-        let rgba_img = decoded.into_rgba8();
-        assert_eq!(rgba_img.as_imgref().buf(), &pixels);
+        let buf = decoded.into_buffer();
+        let rgba_img = buf.try_as_imgref::<rgb::Rgba<u8>>().unwrap();
+        assert_eq!(rgba_img.buf(), &pixels);
     }
 
     #[test]
@@ -1477,14 +1494,14 @@ mod tests {
         let output = encode_pixels(PixelSlice::from(img.as_ref()).erase());
 
         let decoded = decode_bytes(output.data());
-        let rgb_img = decoded.into_rgb8();
-        let rgb_ref = rgb_img.as_imgref();
-        let buf = rgb_ref.buf();
-        assert_eq!(buf[0], rgb::Rgb { r: 255, g: 0, b: 0 });
-        assert_eq!(buf[1], rgb::Rgb { r: 0, g: 255, b: 0 });
-        assert_eq!(buf[2], rgb::Rgb { r: 0, g: 0, b: 255 });
+        let buf = decoded.into_buffer();
+        let rgb_img = buf.try_as_imgref::<rgb::Rgb<u8>>().unwrap();
+        let rgb_buf = rgb_img.buf();
+        assert_eq!(rgb_buf[0], rgb::Rgb { r: 255, g: 0, b: 0 });
+        assert_eq!(rgb_buf[1], rgb::Rgb { r: 0, g: 255, b: 0 });
+        assert_eq!(rgb_buf[2], rgb::Rgb { r: 0, g: 0, b: 255 });
         assert_eq!(
-            buf[3],
+            rgb_buf[3],
             rgb::Rgb {
                 r: 128,
                 g: 128,
@@ -1511,14 +1528,25 @@ mod tests {
     fn capabilities_are_correct() {
         let enc_caps = PnmEncoderConfig::capabilities();
         assert!(enc_caps.native_gray());
-        assert!(!enc_caps.cheap_probe());
-        assert!(!enc_caps.encode_icc());
-        assert!(!enc_caps.encode_cancel());
+        assert!(enc_caps.native_alpha());
+        assert!(enc_caps.native_f32());
+        assert!(enc_caps.hdr());
+        assert!(enc_caps.lossless());
+        assert!(enc_caps.cancel());
+        assert!(enc_caps.enforces_max_pixels());
+        assert!(!enc_caps.icc());
+        assert!(!enc_caps.lossy());
 
         let dec_caps = PnmDecoderConfig::capabilities();
         assert!(dec_caps.native_gray());
+        assert!(dec_caps.native_alpha());
+        assert!(dec_caps.native_16bit());
+        assert!(dec_caps.native_f32());
+        assert!(dec_caps.hdr());
         assert!(dec_caps.cheap_probe());
-        assert!(!dec_caps.decode_cancel());
+        assert!(dec_caps.cancel());
+        assert!(dec_caps.enforces_max_pixels());
+        assert!(!dec_caps.icc());
     }
 
     #[test]
@@ -1542,7 +1570,7 @@ mod tests {
     }
 
     #[test]
-    fn decode_to_bgra8_from_rgb() {
+    fn decode_rgb_pixel_data() {
         let pixels = vec![
             rgb::Rgb::<u8> { r: 255, g: 0, b: 0 },
             rgb::Rgb { r: 0, g: 255, b: 0 },
@@ -1557,45 +1585,15 @@ mod tests {
         let output = encode_pixels(PixelSlice::from(img.as_ref()).erase());
 
         let decoded = decode_bytes(output.data());
-        let bgra_img = decoded.to_bgra8();
-        let bgra_ref = bgra_img.as_imgref();
-        let buf = bgra_ref.buf();
-        assert_eq!(
-            buf[0],
-            rgb::alt::BGRA {
-                b: 0,
-                g: 0,
-                r: 255,
-                a: 255
-            }
-        );
-        assert_eq!(
-            buf[1],
-            rgb::alt::BGRA {
-                b: 0,
-                g: 255,
-                r: 0,
-                a: 255
-            }
-        );
-        assert_eq!(
-            buf[2],
-            rgb::alt::BGRA {
-                b: 255,
-                g: 0,
-                r: 0,
-                a: 255
-            }
-        );
-        assert_eq!(
-            buf[3],
-            rgb::alt::BGRA {
-                b: 128,
-                g: 128,
-                r: 128,
-                a: 255
-            }
-        );
+        // Verify pixel data through PixelSlice
+        let ps = decoded.pixels();
+        assert_eq!(ps.width(), 2);
+        assert_eq!(ps.rows(), 2);
+        // First pixel should be red (255, 0, 0)
+        let row0 = ps.row(0);
+        assert_eq!(row0[0], 255); // R
+        assert_eq!(row0[1], 0); // G
+        assert_eq!(row0[2], 0); // B
     }
 
     #[test]
@@ -1622,18 +1620,14 @@ mod tests {
                 b: 0.5,
             },
         ];
-        let img = imgref::ImgVec::new(pixels.clone(), 2, 2);
+        let img = imgref::ImgVec::new(pixels, 2, 2);
         let output = encode_pixels(PixelSlice::from(img.as_ref()).erase());
         assert_eq!(output.format(), ImageFormat::Pnm);
 
         let decoded = decode_bytes(output.data());
         // RgbF32 gets promoted to RgbaF32 in the decode path
-        let rgba_img = decoded.into_rgba8();
-        // The data was f32 -> stored as PFM -> decoded as RgbaF32.
-        // We just check it decoded without error; pixel values
-        // already verified by the underlying pnm roundtrip.
-        assert_eq!(rgba_img.width(), 2);
-        assert_eq!(rgba_img.height(), 2);
+        assert_eq!(decoded.width(), 2);
+        assert_eq!(decoded.height(), 2);
     }
 
     #[test]
@@ -1644,11 +1638,10 @@ mod tests {
             rgb::Gray::new(0.5),
             rgb::Gray::new(1.0),
         ];
-        let img = imgref::ImgVec::new(pixels.clone(), 2, 2);
+        let img = imgref::ImgVec::new(pixels, 2, 2);
         let output = encode_pixels(PixelSlice::from(img.as_ref()).erase());
 
         let decoded = decode_bytes(output.data());
-        // GrayF32 decoded as PixelBuffer -- verify dimensions
         assert_eq!(decoded.width(), 2);
         assert_eq!(decoded.height(), 2);
     }
@@ -1693,7 +1686,7 @@ mod tests {
                 b: 128,
             },
         ];
-        let img = imgref::ImgVec::new(pixels.clone(), 2, 2);
+        let img = imgref::ImgVec::new(pixels, 2, 2);
         let config = PnmEncoderConfig::new();
 
         let slice = PixelSlice::from(img.as_ref()).erase();
