@@ -6,6 +6,7 @@
 //! - Farbfeld: FarbfeldEncoderConfig / FarbfeldDecoderConfig (always available)
 
 use alloc::borrow::Cow;
+use alloc::string::ToString as _;
 use alloc::vec::Vec;
 use enough::Stop;
 use zc::decode::{DecodeCapabilities, DecodeOutput, OutputInfo, push_decoder_via_full_decode};
