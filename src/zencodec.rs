@@ -53,10 +53,11 @@ static PNM_ENCODE_DESCRIPTORS: &[PixelDescriptor] = &[
 ];
 
 // Note: RgbF32 is promoted to RgbaF32 in decode, so RGBF32_LINEAR is absent.
+// Note: RGBA16_SRGB is absent because the PNM decoder downscales non-gray
+// 16-bit to 8-bit (only Gray16 is preserved at 16-bit).
 static PNM_DECODE_DESCRIPTORS: &[PixelDescriptor] = &[
     PixelDescriptor::RGB8_SRGB,
     PixelDescriptor::RGBA8_SRGB,
-    PixelDescriptor::RGBA16_SRGB,
     PixelDescriptor::GRAY8_SRGB,
     PixelDescriptor::GRAY16_SRGB,
     PixelDescriptor::BGRA8_SRGB,
@@ -74,6 +75,7 @@ static BMP_ENCODE_CAPS: EncodeCapabilities = EncodeCapabilities::new()
 #[cfg(feature = "bmp")]
 static BMP_DECODE_CAPS: DecodeCapabilities = DecodeCapabilities::new()
     .with_cheap_probe(true)
+    .with_native_gray(true)
     .with_native_alpha(true)
     .with_cancel(true)
     .with_enforces_max_pixels(true);
@@ -89,6 +91,7 @@ static BMP_ENCODE_DESCRIPTORS: &[PixelDescriptor] = &[
 static BMP_DECODE_DESCRIPTORS: &[PixelDescriptor] = &[
     PixelDescriptor::RGB8_SRGB,
     PixelDescriptor::RGBA8_SRGB,
+    PixelDescriptor::GRAY8_SRGB,
     PixelDescriptor::BGRA8_SRGB,
 ];
 
@@ -448,7 +451,7 @@ impl<'a> zc::decode::DecodeJob<'a> for PnmDecodeJob<'a> {
         let header = pnm::decode::parse_header(data)?;
         let has_alpha = matches!(
             header.layout,
-            crate::PixelLayout::Rgba8 | crate::PixelLayout::Bgra8
+            crate::PixelLayout::Rgba8 | crate::PixelLayout::Bgra8 | crate::PixelLayout::Rgba16
         );
         let native_format = layout_to_descriptor(header.layout);
         Ok(
@@ -1204,7 +1207,10 @@ fn convert_limits(limits: &ResourceLimits) -> Limits {
 
 fn header_to_image_info(header: &pnm::PnmHeader) -> ImageInfo {
     use crate::PixelLayout;
-    let has_alpha = matches!(header.layout, PixelLayout::Rgba8 | PixelLayout::Bgra8);
+    let has_alpha = matches!(
+        header.layout,
+        PixelLayout::Rgba8 | PixelLayout::Bgra8 | PixelLayout::Rgba16
+    );
     ImageInfo::new(header.width, header.height, ImageFormat::Pnm).with_alpha(has_alpha)
 }
 
@@ -1323,7 +1329,7 @@ fn decode_output_from_internal(
 ) -> Result<DecodeOutput, BitmapError> {
     let has_alpha = matches!(
         decoded.layout,
-        crate::PixelLayout::Rgba8 | crate::PixelLayout::Bgra8
+        crate::PixelLayout::Rgba8 | crate::PixelLayout::Bgra8 | crate::PixelLayout::Rgba16
     );
     let info = ImageInfo::new(decoded.width, decoded.height, format).with_alpha(has_alpha);
     let pixels = layout_to_pixel_buffer(decoded)?;
@@ -1691,5 +1697,122 @@ mod tests {
             .unwrap();
         assert_eq!(decoded.width(), 2);
         assert_eq!(decoded.height(), 2);
+    }
+
+    #[test]
+    fn farbfeld_decode_has_alpha() {
+        // Farbfeld is always RGBA16 — decoded output must report has_alpha: true.
+        let pixels = vec![
+            rgb::Rgba::<u8> {
+                r: 255,
+                g: 0,
+                b: 0,
+                a: 128,
+            },
+            rgb::Rgba {
+                r: 0,
+                g: 255,
+                b: 0,
+                a: 255,
+            },
+            rgb::Rgba {
+                r: 0,
+                g: 0,
+                b: 255,
+                a: 0,
+            },
+            rgb::Rgba {
+                r: 128,
+                g: 128,
+                b: 128,
+                a: 255,
+            },
+        ];
+        let img = imgref::ImgVec::new(pixels, 2, 2);
+        let ff_config = FarbfeldEncoderConfig::new();
+        let encoded = ff_config
+            .job()
+            .encoder()
+            .unwrap()
+            .encode(PixelSlice::from(img.as_ref()).erase())
+            .unwrap();
+        assert_eq!(encoded.format(), ImageFormat::Farbfeld);
+
+        let dec_config = FarbfeldDecoderConfig::new();
+        let decoded = dec_config
+            .job()
+            .decoder(Cow::Borrowed(encoded.data()), &[])
+            .unwrap()
+            .decode()
+            .unwrap();
+        assert!(
+            decoded.has_alpha(),
+            "farbfeld RGBA16 decode must report has_alpha"
+        );
+    }
+
+    #[test]
+    fn farbfeld_probe_has_alpha() {
+        // Farbfeld probe should also report has_alpha: true.
+        let pixels = vec![
+            rgb::Rgba::<u8> {
+                r: 1,
+                g: 2,
+                b: 3,
+                a: 4
+            };
+            4
+        ];
+        let img = imgref::ImgVec::new(pixels, 2, 2);
+        let encoded = FarbfeldEncoderConfig::new()
+            .job()
+            .encoder()
+            .unwrap()
+            .encode(PixelSlice::from(img.as_ref()).erase())
+            .unwrap();
+
+        let info = FarbfeldDecoderConfig::new()
+            .job()
+            .probe(encoded.data())
+            .unwrap();
+        assert!(info.has_alpha, "farbfeld probe must report has_alpha");
+    }
+
+    #[test]
+    fn pnm_decode_descriptors_exclude_rgba16() {
+        // PNM decoder downscales non-gray 16-bit to 8-bit, so RGBA16 must
+        // not appear in the supported decode descriptors.
+        let descs = PnmDecoderConfig::supported_descriptors();
+        assert!(
+            !descs.contains(&PixelDescriptor::RGBA16_SRGB),
+            "PNM_DECODE_DESCRIPTORS should not contain RGBA16_SRGB"
+        );
+        // Gray16 IS preserved, so it should be present.
+        assert!(
+            descs.contains(&PixelDescriptor::GRAY16_SRGB),
+            "PNM_DECODE_DESCRIPTORS should contain GRAY16_SRGB"
+        );
+    }
+
+    #[cfg(feature = "bmp")]
+    #[test]
+    fn bmp_capabilities_include_native_gray() {
+        let caps = BmpDecoderConfig::capabilities();
+        assert!(
+            caps.native_gray(),
+            "BMP decode capabilities should include native_gray"
+        );
+        assert!(caps.native_alpha());
+        assert!(caps.cheap_probe());
+    }
+
+    #[cfg(feature = "bmp")]
+    #[test]
+    fn bmp_decode_descriptors_include_gray8() {
+        let descs = BmpDecoderConfig::supported_descriptors();
+        assert!(
+            descs.contains(&PixelDescriptor::GRAY8_SRGB),
+            "BMP_DECODE_DESCRIPTORS should contain GRAY8_SRGB"
+        );
     }
 }
