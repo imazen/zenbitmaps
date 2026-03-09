@@ -4,9 +4,9 @@ version = 4
 
 [[package]]
 name = "archmage"
-version = "0.9.3"
+version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c06fce4ba08fb97a48343135a4a3a1306a402137650ce7f2e2d377af19135b6f"
+checksum = "8890833f60d40334c52df791e924456e3688eb54579973df1bcb6137fd40b59b"
 dependencies = [
  "archmage-macros",
  "safe_unaligned_simd",
@@ -14,9 +14,9 @@ dependencies = [
 
 [[package]]
 name = "archmage-macros"
-version = "0.9.3"
+version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1313d66c52ca713bb53065953e1ecaa9bf69cb8f4e190aa08232ac5790a66dc1"
+checksum = "320a3958b3befe63e12cc761781da61013529f6d1697bcae0061c447ae2486fc"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -400,7 +400,7 @@ dependencies = [
  "rgb",
  "thiserror",
  "zencodec-types",
- "zenpixels",
+ "zenpixels 0.1.0",
 ]
 
 [[package]]
@@ -408,7 +408,7 @@ name = "zencodec-types"
 version = "0.1.0"
 dependencies = [
  "enough",
- "zenpixels",
+ "zenpixels 0.1.1",
 ]
 
 [[package]]
@@ -416,6 +416,15 @@ name = "zenpixels"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1a5034cd8276387929cdc53b7cc8b391e140e7769183664dc76c0fc2a04891be"
+dependencies = [
+ "bytemuck",
+ "imgref",
+ "rgb",
+]
+
+[[package]]
+name = "zenpixels"
+version = "0.1.1"
 dependencies = [
  "bytemuck",
  "imgref",
