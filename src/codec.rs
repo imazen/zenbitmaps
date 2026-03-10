@@ -9,9 +9,9 @@ use alloc::borrow::Cow;
 use alloc::string::ToString as _;
 use alloc::vec::Vec;
 use enough::Stop;
-use zencodec::decode::{DecodeCapabilities, DecodeOutput, OutputInfo, push_decoder_via_full_decode};
+use zencodec::decode::{DecodeCapabilities, DecodeOutput, OutputInfo};
 use zencodec::encode::{EncodeCapabilities, EncodeOutput};
-use zencodec::{ImageFormat, ImageInfo, MetadataView, ResourceLimits};
+use zencodec::{ImageFormat, ImageInfo, Metadata, ResourceLimits};
 use zenpixels::{ChannelLayout, ChannelType, PixelBuffer, PixelDescriptor, PixelSlice};
 
 use crate::error::BitmapError;
@@ -28,7 +28,7 @@ static PNM_ENCODE_CAPS: EncodeCapabilities = EncodeCapabilities::new()
     .with_native_alpha(true)
     .with_native_f32(true)
     .with_hdr(true)
-    .with_cancel(true)
+    .with_stop(true)
     .with_enforces_max_pixels(true);
 
 static PNM_DECODE_CAPS: DecodeCapabilities = DecodeCapabilities::new()
@@ -38,7 +38,7 @@ static PNM_DECODE_CAPS: DecodeCapabilities = DecodeCapabilities::new()
     .with_native_16bit(true)
     .with_native_f32(true)
     .with_hdr(true)
-    .with_cancel(true)
+    .with_stop(true)
     .with_enforces_max_pixels(true);
 
 // Note: U16 encode is not implemented — RGBA16_SRGB intentionally absent.
@@ -69,7 +69,7 @@ static PNM_DECODE_DESCRIPTORS: &[PixelDescriptor] = &[
 static BMP_ENCODE_CAPS: EncodeCapabilities = EncodeCapabilities::new()
     .with_lossless(true)
     .with_native_alpha(true)
-    .with_cancel(true)
+    .with_stop(true)
     .with_enforces_max_pixels(true);
 
 #[cfg(feature = "bmp")]
@@ -77,7 +77,7 @@ static BMP_DECODE_CAPS: DecodeCapabilities = DecodeCapabilities::new()
     .with_cheap_probe(true)
     .with_native_gray(true)
     .with_native_alpha(true)
-    .with_cancel(true)
+    .with_stop(true)
     .with_enforces_max_pixels(true);
 
 #[cfg(feature = "bmp")]
@@ -99,14 +99,14 @@ static FF_ENCODE_CAPS: EncodeCapabilities = EncodeCapabilities::new()
     .with_lossless(true)
     .with_native_alpha(true)
     .with_native_16bit(true)
-    .with_cancel(true)
+    .with_stop(true)
     .with_enforces_max_pixels(true);
 
 static FF_DECODE_CAPS: DecodeCapabilities = DecodeCapabilities::new()
     .with_cheap_probe(true)
     .with_native_alpha(true)
     .with_native_16bit(true)
-    .with_cancel(true)
+    .with_stop(true)
     .with_enforces_max_pixels(true);
 
 static FF_ENCODE_DESCRIPTORS: &[PixelDescriptor] = &[
@@ -201,7 +201,7 @@ impl<'a> zencodec::encode::EncodeJob<'a> for PnmEncodeJob<'a> {
         self
     }
 
-    fn with_metadata(self, _meta: &'a MetadataView<'a>) -> Self {
+    fn with_metadata(self, _meta: &Metadata) -> Self {
         self
     }
 
@@ -487,7 +487,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for PnmDecodeJob<'a> {
         sink: &mut dyn zencodec::decode::DecodeRowSink,
         preferred: &[PixelDescriptor],
     ) -> Result<OutputInfo, Self::Error> {
-        push_decoder_via_full_decode(self, data, sink, preferred, |e| {
+        zencodec::helpers::copy_decode_to_sink(self, data, sink, preferred, |e| {
             BitmapError::InvalidData(e.to_string())
         })
     }
@@ -616,7 +616,7 @@ mod bmp_codec {
             self
         }
 
-        fn with_metadata(self, _meta: &'a MetadataView<'a>) -> Self {
+        fn with_metadata(self, _meta: &Metadata) -> Self {
             self
         }
 
@@ -821,7 +821,7 @@ mod bmp_codec {
             sink: &mut dyn zencodec::decode::DecodeRowSink,
             preferred: &[PixelDescriptor],
         ) -> Result<OutputInfo, Self::Error> {
-            push_decoder_via_full_decode(self, data, sink, preferred, |e| {
+            zencodec::helpers::copy_decode_to_sink(self, data, sink, preferred, |e| {
                 BitmapError::InvalidData(e.to_string())
             })
         }
@@ -950,7 +950,7 @@ impl<'a> zencodec::encode::EncodeJob<'a> for FarbfeldEncodeJob<'a> {
         self
     }
 
-    fn with_metadata(self, _meta: &'a MetadataView<'a>) -> Self {
+    fn with_metadata(self, _meta: &Metadata) -> Self {
         self
     }
 
@@ -1144,7 +1144,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for FarbfeldDecodeJob<'a> {
         sink: &mut dyn zencodec::decode::DecodeRowSink,
         preferred: &[PixelDescriptor],
     ) -> Result<OutputInfo, Self::Error> {
-        push_decoder_via_full_decode(self, data, sink, preferred, |e| {
+        zencodec::helpers::copy_decode_to_sink(self, data, sink, preferred, |e| {
             BitmapError::InvalidData(e.to_string())
         })
     }
