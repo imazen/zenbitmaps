@@ -39,7 +39,7 @@ jobs:
         shell: bash
         run: |
           sed \
-            -e 's|path = "\.\./zencodec-types"|git = "https://github.com/imazen/zencodec-types"|g' \
+            -e 's|path = "\.\./zencodec"|git = "https://github.com/imazen/zencodec"|g' \
             -e 's|path = "\.\./zenpixels/zenpixels"|git = "https://github.com/imazen/zenpixels"|g' \
             Cargo.toml > Cargo.toml.ci && mv Cargo.toml.ci Cargo.toml
           printf '\n[patch.crates-io]\nzenpixels = { git = "https://github.com/imazen/zenpixels" }\nzenpixels-convert = { git = "https://github.com/imazen/zenpixels" }\n' >> Cargo.toml
@@ -71,7 +71,7 @@ jobs:
         shell: bash
         run: |
           sed \
-            -e 's|path = "\.\./zencodec-types"|git = "https://github.com/imazen/zencodec-types"|g' \
+            -e 's|path = "\.\./zencodec"|git = "https://github.com/imazen/zencodec"|g' \
             -e 's|path = "\.\./zenpixels/zenpixels"|git = "https://github.com/imazen/zenpixels"|g' \
             Cargo.toml > Cargo.toml.ci && mv Cargo.toml.ci Cargo.toml
           printf '\n[patch.crates-io]\nzenpixels = { git = "https://github.com/imazen/zenpixels" }\nzenpixels-convert = { git = "https://github.com/imazen/zenpixels" }\n' >> Cargo.toml
@@ -96,7 +96,7 @@ jobs:
         shell: bash
         run: |
           sed \
-            -e 's|path = "\.\./zencodec-types"|git = "https://github.com/imazen/zencodec-types"|g' \
+            -e 's|path = "\.\./zencodec"|git = "https://github.com/imazen/zencodec"|g' \
             -e 's|path = "\.\./zenpixels/zenpixels"|git = "https://github.com/imazen/zenpixels"|g' \
             Cargo.toml > Cargo.toml.ci && mv Cargo.toml.ci Cargo.toml
           printf '\n[patch.crates-io]\nzenpixels = { git = "https://github.com/imazen/zenpixels" }\nzenpixels-convert = { git = "https://github.com/imazen/zenpixels" }\n' >> Cargo.toml
@@ -121,7 +121,7 @@ jobs:
         shell: bash
         run: |
           sed \
-            -e 's|path = "\.\./zencodec-types"|git = "https://github.com/imazen/zencodec-types"|g' \
+            -e 's|path = "\.\./zencodec"|git = "https://github.com/imazen/zencodec"|g' \
             -e 's|path = "\.\./zenpixels/zenpixels"|git = "https://github.com/imazen/zenpixels"|g' \
             Cargo.toml > Cargo.toml.ci && mv Cargo.toml.ci Cargo.toml
           printf '\n[patch.crates-io]\nzenpixels = { git = "https://github.com/imazen/zenpixels" }\nzenpixels-convert = { git = "https://github.com/imazen/zenpixels" }\n' >> Cargo.toml
@@ -157,7 +157,7 @@ jobs:
         shell: bash
         run: |
           sed \
-            -e 's|path = "\.\./zencodec-types"|git = "https://github.com/imazen/zencodec-types"|g' \
+            -e 's|path = "\.\./zencodec"|git = "https://github.com/imazen/zencodec"|g' \
             -e 's|path = "\.\./zenpixels/zenpixels"|git = "https://github.com/imazen/zenpixels"|g' \
             Cargo.toml > Cargo.toml.ci && mv Cargo.toml.ci Cargo.toml
           printf '\n[patch.crates-io]\nzenpixels = { git = "https://github.com/imazen/zenpixels" }\nzenpixels-convert = { git = "https://github.com/imazen/zenpixels" }\n' >> Cargo.toml
@@ -181,7 +181,7 @@ jobs:
         shell: bash
         run: |
           sed \
-            -e 's|path = "\.\./zencodec-types"|git = "https://github.com/imazen/zencodec-types"|g' \
+            -e 's|path = "\.\./zencodec"|git = "https://github.com/imazen/zencodec"|g' \
             -e 's|path = "\.\./zenpixels/zenpixels"|git = "https://github.com/imazen/zenpixels"|g' \
             Cargo.toml > Cargo.toml.ci && mv Cargo.toml.ci Cargo.toml
           printf '\n[patch.crates-io]\nzenpixels = { git = "https://github.com/imazen/zenpixels" }\nzenpixels-convert = { git = "https://github.com/imazen/zenpixels" }\n' >> Cargo.toml

@@ -1,4 +1,4 @@
-//! zencodec-types trait implementations for zenbitmaps.
+//! zencodec trait implementations for zenbitmaps.
 //!
 //! Provides per-format codec pairs:
 //! - PNM: PnmEncoderConfig / PnmDecoderConfig (always available)

@@ -18,7 +18,7 @@ enough = "0.4"
 imgref = { version = "1.12", default-features = false, optional = true }
 rgb = { version = "0.8", default-features = false, features = ["as-bytes"], optional = true }
 thiserror = { version = "2.0", default-features = false }
-zencodec-types = { path = "../zencodec-types", optional = true }
+zc = { path = "../zencodec", package = "zencodec", optional = true }
 zenpixels = { path = "../zenpixels/zenpixels", default-features = false, features = ["buffer"], optional = true }
 
 [dev-dependencies]
@@ -38,8 +38,8 @@ bmp = []   # Full BMP support (all bit depths, RLE, bitfields, palettes)
 rgb = ["dep:rgb"]              # RGB8, RGBA8 etc. typed pixel encode/decode
 imgref = ["dep:imgref", "rgb"] # ImgVec/ImgRef 2D buffer support (implies rgb)
 
-# zencodec-types trait integration
-zencodec = ["dep:zencodec-types", "dep:zenpixels", "imgref", "rgb"]
+# zencodec trait integration
+zencodec = ["dep:zc", "dep:zenpixels", "imgref", "rgb"]
 
 # All optional features
 all = ["bmp", "rgb", "imgref"]
