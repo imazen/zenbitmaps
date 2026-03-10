@@ -131,7 +131,7 @@ static FF_DECODE_DESCRIPTORS: &[PixelDescriptor] = &[
 
 /// Encoding configuration for PNM formats.
 ///
-/// Implements [`zc::encode::EncoderConfig`] for the PNM family.
+/// Implements [`zencodec::encode::EncoderConfig`] for the PNM family.
 /// Default output: PPM for RGB, PGM for Gray, PAM for RGBA, PFM for float.
 #[derive(Clone, Debug)]
 pub struct PnmEncoderConfig {
@@ -153,7 +153,7 @@ impl PnmEncoderConfig {
     }
 }
 
-impl zc::encode::EncoderConfig for PnmEncoderConfig {
+impl zencodec::encode::EncoderConfig for PnmEncoderConfig {
     type Error = BitmapError;
     type Job<'a> = PnmEncodeJob<'a>;
 
@@ -191,7 +191,7 @@ pub struct PnmEncodeJob<'a> {
     stop: &'a dyn Stop,
 }
 
-impl<'a> zc::encode::EncodeJob<'a> for PnmEncodeJob<'a> {
+impl<'a> zencodec::encode::EncodeJob<'a> for PnmEncodeJob<'a> {
     type Error = BitmapError;
     type Enc = PnmEncoder<'a>;
     type FullFrameEnc = ();
@@ -219,7 +219,7 @@ impl<'a> zc::encode::EncodeJob<'a> for PnmEncodeJob<'a> {
     }
 
     fn full_frame_encoder(self) -> Result<(), BitmapError> {
-        Err(BitmapError::from(zc::UnsupportedOperation::AnimationEncode))
+        Err(BitmapError::from(zencodec::UnsupportedOperation::AnimationEncode))
     }
 }
 
@@ -249,10 +249,10 @@ impl PnmEncoder<'_> {
     }
 }
 
-impl zc::encode::Encoder for PnmEncoder<'_> {
+impl zencodec::encode::Encoder for PnmEncoder<'_> {
     type Error = BitmapError;
 
-    fn reject(op: zc::UnsupportedOperation) -> BitmapError {
+    fn reject(op: zencodec::UnsupportedOperation) -> BitmapError {
         BitmapError::from(op)
     }
 
@@ -370,7 +370,7 @@ impl zc::encode::Encoder for PnmEncoder<'_> {
 
 /// Decoding configuration for PNM formats.
 ///
-/// Implements [`zc::decode::DecoderConfig`] for the PNM family.
+/// Implements [`zencodec::decode::DecoderConfig`] for the PNM family.
 #[derive(Clone, Debug)]
 pub struct PnmDecoderConfig {
     limits: Option<Limits>,
@@ -389,7 +389,7 @@ impl PnmDecoderConfig {
     }
 }
 
-impl zc::decode::DecoderConfig for PnmDecoderConfig {
+impl zencodec::decode::DecoderConfig for PnmDecoderConfig {
     type Error = BitmapError;
     type Job<'a> = PnmDecodeJob<'a>;
 
@@ -425,11 +425,11 @@ pub struct PnmDecodeJob<'a> {
     max_input_bytes: Option<u64>,
 }
 
-impl<'a> zc::decode::DecodeJob<'a> for PnmDecodeJob<'a> {
+impl<'a> zencodec::decode::DecodeJob<'a> for PnmDecodeJob<'a> {
     type Error = BitmapError;
     type Dec = PnmDecoder<'a>;
-    type StreamDec = zc::Unsupported<BitmapError>;
-    type FullFrameDec = zc::Unsupported<BitmapError>;
+    type StreamDec = zencodec::Unsupported<BitmapError>;
+    type FullFrameDec = zencodec::Unsupported<BitmapError>;
 
     fn with_stop(mut self, stop: &'a dyn Stop) -> Self {
         self.stop = stop;
@@ -484,7 +484,7 @@ impl<'a> zc::decode::DecodeJob<'a> for PnmDecodeJob<'a> {
     fn push_decoder(
         self,
         data: Cow<'a, [u8]>,
-        sink: &mut dyn zc::decode::DecodeRowSink,
+        sink: &mut dyn zencodec::decode::DecodeRowSink,
         preferred: &[PixelDescriptor],
     ) -> Result<OutputInfo, Self::Error> {
         push_decoder_via_full_decode(self, data, sink, preferred, |e| {
@@ -496,16 +496,16 @@ impl<'a> zc::decode::DecodeJob<'a> for PnmDecodeJob<'a> {
         self,
         _data: Cow<'a, [u8]>,
         _preferred: &[PixelDescriptor],
-    ) -> Result<zc::Unsupported<BitmapError>, BitmapError> {
-        Err(BitmapError::from(zc::UnsupportedOperation::RowLevelDecode))
+    ) -> Result<zencodec::Unsupported<BitmapError>, BitmapError> {
+        Err(BitmapError::from(zencodec::UnsupportedOperation::RowLevelDecode))
     }
 
     fn full_frame_decoder(
         self,
         _data: Cow<'a, [u8]>,
         _preferred: &[PixelDescriptor],
-    ) -> Result<zc::Unsupported<BitmapError>, BitmapError> {
-        Err(BitmapError::from(zc::UnsupportedOperation::AnimationDecode))
+    ) -> Result<zencodec::Unsupported<BitmapError>, BitmapError> {
+        Err(BitmapError::from(zencodec::UnsupportedOperation::AnimationDecode))
     }
 }
 
@@ -525,7 +525,7 @@ impl PnmDecoder<'_> {
     }
 }
 
-impl zc::decode::Decode for PnmDecoder<'_> {
+impl zencodec::decode::Decode for PnmDecoder<'_> {
     type Error = BitmapError;
 
     fn decode(self) -> Result<DecodeOutput, BitmapError> {
@@ -568,7 +568,7 @@ mod bmp_codec {
         }
     }
 
-    impl zc::encode::EncoderConfig for BmpEncoderConfig {
+    impl zencodec::encode::EncoderConfig for BmpEncoderConfig {
         type Error = BitmapError;
         type Job<'a> = BmpEncodeJob<'a>;
 
@@ -606,7 +606,7 @@ mod bmp_codec {
         stop: &'a dyn Stop,
     }
 
-    impl<'a> zc::encode::EncodeJob<'a> for BmpEncodeJob<'a> {
+    impl<'a> zencodec::encode::EncodeJob<'a> for BmpEncodeJob<'a> {
         type Error = BitmapError;
         type Enc = BmpEncoder<'a>;
         type FullFrameEnc = ();
@@ -634,7 +634,7 @@ mod bmp_codec {
         }
 
         fn full_frame_encoder(self) -> Result<(), BitmapError> {
-            Err(BitmapError::from(zc::UnsupportedOperation::AnimationEncode))
+            Err(BitmapError::from(zencodec::UnsupportedOperation::AnimationEncode))
         }
     }
 
@@ -664,10 +664,10 @@ mod bmp_codec {
         }
     }
 
-    impl zc::encode::Encoder for BmpEncoder<'_> {
+    impl zencodec::encode::Encoder for BmpEncoder<'_> {
         type Error = BitmapError;
 
-        fn reject(op: zc::UnsupportedOperation) -> BitmapError {
+        fn reject(op: zencodec::UnsupportedOperation) -> BitmapError {
             BitmapError::from(op)
         }
 
@@ -719,7 +719,7 @@ mod bmp_codec {
         }
     }
 
-    impl zc::decode::DecoderConfig for BmpDecoderConfig {
+    impl zencodec::decode::DecoderConfig for BmpDecoderConfig {
         type Error = BitmapError;
         type Job<'a> = BmpDecodeJob<'a>;
 
@@ -755,11 +755,11 @@ mod bmp_codec {
         max_input_bytes: Option<u64>,
     }
 
-    impl<'a> zc::decode::DecodeJob<'a> for BmpDecodeJob<'a> {
+    impl<'a> zencodec::decode::DecodeJob<'a> for BmpDecodeJob<'a> {
         type Error = BitmapError;
         type Dec = BmpDecoder<'a>;
-        type StreamDec = zc::Unsupported<BitmapError>;
-        type FullFrameDec = zc::Unsupported<BitmapError>;
+        type StreamDec = zencodec::Unsupported<BitmapError>;
+        type FullFrameDec = zencodec::Unsupported<BitmapError>;
 
         fn with_stop(mut self, stop: &'a dyn Stop) -> Self {
             self.stop = stop;
@@ -818,7 +818,7 @@ mod bmp_codec {
         fn push_decoder(
             self,
             data: Cow<'a, [u8]>,
-            sink: &mut dyn zc::decode::DecodeRowSink,
+            sink: &mut dyn zencodec::decode::DecodeRowSink,
             preferred: &[PixelDescriptor],
         ) -> Result<OutputInfo, Self::Error> {
             push_decoder_via_full_decode(self, data, sink, preferred, |e| {
@@ -830,16 +830,16 @@ mod bmp_codec {
             self,
             _data: Cow<'a, [u8]>,
             _preferred: &[PixelDescriptor],
-        ) -> Result<zc::Unsupported<BitmapError>, BitmapError> {
-            Err(BitmapError::from(zc::UnsupportedOperation::RowLevelDecode))
+        ) -> Result<zencodec::Unsupported<BitmapError>, BitmapError> {
+            Err(BitmapError::from(zencodec::UnsupportedOperation::RowLevelDecode))
         }
 
         fn full_frame_decoder(
             self,
             _data: Cow<'a, [u8]>,
             _preferred: &[PixelDescriptor],
-        ) -> Result<zc::Unsupported<BitmapError>, BitmapError> {
-            Err(BitmapError::from(zc::UnsupportedOperation::AnimationDecode))
+        ) -> Result<zencodec::Unsupported<BitmapError>, BitmapError> {
+            Err(BitmapError::from(zencodec::UnsupportedOperation::AnimationDecode))
         }
     }
 
@@ -859,7 +859,7 @@ mod bmp_codec {
         }
     }
 
-    impl zc::decode::Decode for BmpDecoder<'_> {
+    impl zencodec::decode::Decode for BmpDecoder<'_> {
         type Error = BitmapError;
 
         fn decode(self) -> Result<DecodeOutput, BitmapError> {
@@ -902,7 +902,7 @@ impl FarbfeldEncoderConfig {
     }
 }
 
-impl zc::encode::EncoderConfig for FarbfeldEncoderConfig {
+impl zencodec::encode::EncoderConfig for FarbfeldEncoderConfig {
     type Error = BitmapError;
     type Job<'a> = FarbfeldEncodeJob<'a>;
 
@@ -940,7 +940,7 @@ pub struct FarbfeldEncodeJob<'a> {
     stop: &'a dyn Stop,
 }
 
-impl<'a> zc::encode::EncodeJob<'a> for FarbfeldEncodeJob<'a> {
+impl<'a> zencodec::encode::EncodeJob<'a> for FarbfeldEncodeJob<'a> {
     type Error = BitmapError;
     type Enc = FarbfeldEncoder<'a>;
     type FullFrameEnc = ();
@@ -968,7 +968,7 @@ impl<'a> zc::encode::EncodeJob<'a> for FarbfeldEncodeJob<'a> {
     }
 
     fn full_frame_encoder(self) -> Result<(), BitmapError> {
-        Err(BitmapError::from(zc::UnsupportedOperation::AnimationEncode))
+        Err(BitmapError::from(zencodec::UnsupportedOperation::AnimationEncode))
     }
 }
 
@@ -998,10 +998,10 @@ impl FarbfeldEncoder<'_> {
     }
 }
 
-impl zc::encode::Encoder for FarbfeldEncoder<'_> {
+impl zencodec::encode::Encoder for FarbfeldEncoder<'_> {
     type Error = BitmapError;
 
-    fn reject(op: zc::UnsupportedOperation) -> BitmapError {
+    fn reject(op: zencodec::UnsupportedOperation) -> BitmapError {
         BitmapError::from(op)
     }
 
@@ -1054,7 +1054,7 @@ impl FarbfeldDecoderConfig {
     }
 }
 
-impl zc::decode::DecoderConfig for FarbfeldDecoderConfig {
+impl zencodec::decode::DecoderConfig for FarbfeldDecoderConfig {
     type Error = BitmapError;
     type Job<'a> = FarbfeldDecodeJob<'a>;
 
@@ -1090,11 +1090,11 @@ pub struct FarbfeldDecodeJob<'a> {
     max_input_bytes: Option<u64>,
 }
 
-impl<'a> zc::decode::DecodeJob<'a> for FarbfeldDecodeJob<'a> {
+impl<'a> zencodec::decode::DecodeJob<'a> for FarbfeldDecodeJob<'a> {
     type Error = BitmapError;
     type Dec = FarbfeldDecoder<'a>;
-    type StreamDec = zc::Unsupported<BitmapError>;
-    type FullFrameDec = zc::Unsupported<BitmapError>;
+    type StreamDec = zencodec::Unsupported<BitmapError>;
+    type FullFrameDec = zencodec::Unsupported<BitmapError>;
 
     fn with_stop(mut self, stop: &'a dyn Stop) -> Self {
         self.stop = stop;
@@ -1141,7 +1141,7 @@ impl<'a> zc::decode::DecodeJob<'a> for FarbfeldDecodeJob<'a> {
     fn push_decoder(
         self,
         data: Cow<'a, [u8]>,
-        sink: &mut dyn zc::decode::DecodeRowSink,
+        sink: &mut dyn zencodec::decode::DecodeRowSink,
         preferred: &[PixelDescriptor],
     ) -> Result<OutputInfo, Self::Error> {
         push_decoder_via_full_decode(self, data, sink, preferred, |e| {
@@ -1153,16 +1153,16 @@ impl<'a> zc::decode::DecodeJob<'a> for FarbfeldDecodeJob<'a> {
         self,
         _data: Cow<'a, [u8]>,
         _preferred: &[PixelDescriptor],
-    ) -> Result<zc::Unsupported<BitmapError>, BitmapError> {
-        Err(BitmapError::from(zc::UnsupportedOperation::RowLevelDecode))
+    ) -> Result<zencodec::Unsupported<BitmapError>, BitmapError> {
+        Err(BitmapError::from(zencodec::UnsupportedOperation::RowLevelDecode))
     }
 
     fn full_frame_decoder(
         self,
         _data: Cow<'a, [u8]>,
         _preferred: &[PixelDescriptor],
-    ) -> Result<zc::Unsupported<BitmapError>, BitmapError> {
-        Err(BitmapError::from(zc::UnsupportedOperation::AnimationDecode))
+    ) -> Result<zencodec::Unsupported<BitmapError>, BitmapError> {
+        Err(BitmapError::from(zencodec::UnsupportedOperation::AnimationDecode))
     }
 }
 
@@ -1182,7 +1182,7 @@ impl FarbfeldDecoder<'_> {
     }
 }
 
-impl zc::decode::Decode for FarbfeldDecoder<'_> {
+impl zencodec::decode::Decode for FarbfeldDecoder<'_> {
     type Error = BitmapError;
 
     fn decode(self) -> Result<DecodeOutput, BitmapError> {

@@ -19,7 +19,7 @@ imgref = { version = "1.12", default-features = false, optional = true }
 rgb = { version = "0.8", default-features = false, features = ["as-bytes"], optional = true }
 thiserror = { version = "2.0", default-features = false }
 zencodec = { path = "../zencodec", optional = true }
-zenpixels = { path = "../zenpixels/zenpixels", default-features = false, features = ["buffer"], optional = true }
+zenpixels = { path = "../zenpixels/zenpixels", default-features = false, features = ["imgref"], optional = true }
 
 [dev-dependencies]
 archmage = { version = "0.9.4", features = ["std"] }
