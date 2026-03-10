@@ -9,9 +9,9 @@ use alloc::borrow::Cow;
 use alloc::string::ToString as _;
 use alloc::vec::Vec;
 use enough::Stop;
-use zc::decode::{DecodeCapabilities, DecodeOutput, OutputInfo, push_decoder_via_full_decode};
-use zc::encode::{EncodeCapabilities, EncodeOutput};
-use zc::{ImageFormat, ImageInfo, MetadataView, ResourceLimits};
+use zencodec::decode::{DecodeCapabilities, DecodeOutput, OutputInfo, push_decoder_via_full_decode};
+use zencodec::encode::{EncodeCapabilities, EncodeOutput};
+use zencodec::{ImageFormat, ImageInfo, MetadataView, ResourceLimits};
 use zenpixels::{ChannelLayout, ChannelType, PixelBuffer, PixelDescriptor, PixelSlice};
 
 use crate::error::BitmapError;
@@ -1341,8 +1341,8 @@ mod tests {
     use alloc::vec;
 
     use super::*;
-    use zc::decode::{Decode, DecodeJob, DecoderConfig};
-    use zc::encode::{EncodeJob, Encoder, EncoderConfig};
+    use zencodec::decode::{Decode, DecodeJob, DecoderConfig};
+    use zencodec::encode::{EncodeJob, Encoder, EncoderConfig};
 
     /// Helper: encode via the four-layer flow (type-erased).
     fn encode_pixels(slice: PixelSlice<'_>) -> EncodeOutput {

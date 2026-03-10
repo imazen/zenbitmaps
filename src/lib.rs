@@ -161,7 +161,7 @@ mod bmp;
 mod pixel_traits;
 
 #[cfg(feature = "zencodec")]
-mod zencodec;
+mod codec;
 
 pub use decode::DecodeOutput;
 pub use enough::{Stop, Unstoppable};
@@ -176,17 +176,17 @@ pub use bmp::BmpPermissiveness;
 pub use pixel_traits::{DecodePixel, EncodePixel};
 
 #[cfg(feature = "zencodec")]
-pub use zencodec::{
+pub use codec::{
     PnmDecodeJob, PnmDecoder, PnmDecoderConfig, PnmEncodeJob, PnmEncoder, PnmEncoderConfig,
 };
 
 #[cfg(all(feature = "zencodec", feature = "bmp"))]
-pub use zencodec::{
+pub use codec::{
     BmpDecodeJob, BmpDecoder, BmpDecoderConfig, BmpEncodeJob, BmpEncoder, BmpEncoderConfig,
 };
 
 #[cfg(feature = "zencodec")]
-pub use zencodec::{
+pub use codec::{
     FarbfeldDecodeJob, FarbfeldDecoder, FarbfeldDecoderConfig, FarbfeldEncodeJob, FarbfeldEncoder,
     FarbfeldEncoderConfig,
 };
