@@ -170,7 +170,7 @@ pub use limits::Limits;
 pub use pixel::{ImageFormat, PixelLayout};
 
 #[cfg(feature = "bmp")]
-pub use bmp::BmpPermissiveness;
+pub use bmp::{BmpMetadata, BmpPermissiveness};
 
 #[cfg(feature = "rgb")]
 pub use pixel_traits::{DecodePixel, EncodePixel};
@@ -365,6 +365,16 @@ pub fn encode_farbfeld(
 }
 
 // ── BMP (auto-detected, or explicit) ─────────────────────────────────
+
+/// Probe BMP metadata without decoding pixels.
+///
+/// Returns resolution (DPI), pixel layout, dimensions, and color table
+/// information from the BMP header. This is much faster than a full decode
+/// when you only need metadata.
+#[cfg(feature = "bmp")]
+pub fn probe_bmp(data: &[u8]) -> Result<BmpMetadata, BitmapError> {
+    bmp::probe(data)
+}
 
 /// Decode BMP data to pixels.
 ///

@@ -241,6 +241,11 @@ pub(crate) struct BmpHeader {
     pub width: u32,
     pub height: u32,
     pub layout: PixelLayout,
+    pub x_pels_per_meter: u32,
+    pub y_pels_per_meter: u32,
+    /// Color table entries (BGRA order, up to 256 entries).
+    /// Only present for indexed-color BMPs (1/2/4/8-bit).
+    pub color_table: Option<alloc::vec::Vec<[u8; 4]>>,
 }
 
 // ── Public header parsing (for probe) ───────────────────────────────
@@ -264,10 +269,25 @@ pub(crate) fn parse_bmp_header(data: &[u8]) -> Result<BmpHeader, BitmapError> {
         }
     };
 
+    // Extract color table for indexed formats
+    let color_table = if dec.pix_fmt == BmpPixelFormat::Pal8 && dec.palette_numbers > 0 {
+        let mut table = alloc::vec::Vec::with_capacity(dec.palette_numbers);
+        for i in 0..dec.palette_numbers {
+            let e = &dec.palette[i];
+            table.push([e.blue, e.green, e.red, e.alpha]);
+        }
+        Some(table)
+    } else {
+        None
+    };
+
     Ok(BmpHeader {
         width: dec.width as u32,
         height: dec.height as u32,
         layout,
+        x_pels_per_meter: dec.x_pels_per_meter,
+        y_pels_per_meter: dec.y_pels_per_meter,
+        color_table,
     })
 }
 
@@ -350,6 +370,10 @@ struct BmpDecoderState<'a> {
     palette_numbers: usize,
     image_in_bgra: bool,
     permissiveness: BmpPermissiveness,
+    /// Horizontal pixels per meter from the DIB header (0 if not present).
+    x_pels_per_meter: u32,
+    /// Vertical pixels per meter from the DIB header (0 if not present).
+    y_pels_per_meter: u32,
 }
 
 impl<'a> BmpDecoderState<'a> {
@@ -378,6 +402,8 @@ impl<'a> BmpDecoderState<'a> {
             palette_numbers: 0,
             image_in_bgra: false,
             permissiveness,
+            x_pels_per_meter: 0,
+            y_pels_per_meter: 0,
         }
     }
 
@@ -446,6 +472,8 @@ impl<'a> BmpDecoderState<'a> {
                     let image_size_field = self.bytes.get_u32_le_err()?;
                     let x_pixels = self.bytes.get_u32_le_err()?;
                     let y_pixels = self.bytes.get_u32_le_err()?;
+                    self.x_pels_per_meter = x_pixels;
+                    self.y_pels_per_meter = y_pixels;
                     let _color_used = self.bytes.get_u32_le_err()?;
                     let _important_colors = self.bytes.get_u32_le_err()?;
 
