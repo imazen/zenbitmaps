@@ -48,8 +48,8 @@
 //! slice into the input buffer — no allocation or copy needed. Formats that
 //! require transformation (BMP row flip, farbfeld endian swap, etc.) allocate.
 //!
-//! Use [`DecodeOutput::as_pixels()`] for a zero-copy typed pixel view,
-//! or [`DecodeOutput::as_imgref()`] for a zero-copy 2D view (with `imgref` feature):
+//! Use `DecodeOutput::as_pixels()` for a zero-copy typed pixel view,
+//! or `DecodeOutput::as_imgref()` for a zero-copy 2D view (with `imgref` feature):
 //!
 //! ```
 //! # use zenbitmaps::*;
@@ -67,19 +67,18 @@
 //!
 //! ## BGRA Pipeline
 //!
-//! BMP files store pixels in BGR/BGRA order. Use [`decode_bmp_native()`] to
+//! BMP files store pixels in BGR/BGRA order. Use `decode_bmp_native()` to
 //! skip the BGR→RGB swizzle and work in native byte order:
 //!
-//! ```no_run
-//! # use zenbitmaps::*;
-//! # use enough::Unstoppable;
-//! # let bmp_data = &[0u8; 0];
+//! ```ignore
+//! // Requires `bmp` feature
+//! use zenbitmaps::*;
+//! use enough::Unstoppable;
 //! let decoded = decode_bmp_native(bmp_data, Unstoppable)?;
 //! // decoded.layout is Bgr8, Bgra8, or Gray8
 //! // Encode to PAM or farbfeld — swizzle happens automatically
 //! let pam = encode_pam(decoded.pixels(), decoded.width, decoded.height,
 //!                      decoded.layout, Unstoppable)?;
-//! # Ok::<(), BitmapError>(())
 //! ```
 //!
 //! All encoders accept BGR/BGRA input and swizzle to the target format's
@@ -101,7 +100,7 @@
 //! - All standard bit depths: 1, 2, 4, 8, 16, 24, 32
 //! - Compression: uncompressed, RLE4, RLE8, BITFIELDS
 //! - Palette expansion, bottom-up/top-down, grayscale detection
-//! - [`BmpPermissiveness`] levels: Strict, Standard, Permissive
+//! - `BmpPermissiveness` levels: Strict, Standard, Permissive
 //! - Auto-detected by [`decode()`] via `"BM"` magic
 //!
 //! ## Cooperative Cancellation
