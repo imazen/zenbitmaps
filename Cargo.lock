@@ -88,9 +88,9 @@ dependencies = [
 
 [[package]]
 name = "enough"
-version = "0.4.0"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "177a59811828ea5dbc8927662d444ffee7b55a44696486f1b1a245ae9e652533"
+checksum = "0b1c403c8f831754063050c270711041a002743142338831c0212d287ddddcfa"
 
 [[package]]
 name = "errno"

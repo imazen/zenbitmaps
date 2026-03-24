@@ -155,7 +155,7 @@ impl PnmEncoderConfig {
 
 impl zencodec::encode::EncoderConfig for PnmEncoderConfig {
     type Error = BitmapError;
-    type Job<'a> = PnmEncodeJob<'a>;
+    type Job = PnmEncodeJob;
 
     fn format() -> ImageFormat {
         ImageFormat::Pnm
@@ -173,11 +173,11 @@ impl zencodec::encode::EncoderConfig for PnmEncoderConfig {
         Some(true)
     }
 
-    fn job(&self) -> PnmEncodeJob<'_> {
+    fn job(self) -> PnmEncodeJob {
         PnmEncodeJob {
             config: self,
             limits: None,
-            stop: &enough::Unstoppable,
+            stop: None,
         }
     }
 }
@@ -185,19 +185,19 @@ impl zencodec::encode::EncoderConfig for PnmEncoderConfig {
 // ── PnmEncodeJob ─────────────────────────────────────────────────────
 
 /// Per-operation PNM encode job.
-pub struct PnmEncodeJob<'a> {
-    config: &'a PnmEncoderConfig,
+pub struct PnmEncodeJob {
+    config: PnmEncoderConfig,
     limits: Option<ResourceLimits>,
-    stop: &'a dyn Stop,
+    stop: Option<zencodec::StopToken>,
 }
 
-impl<'a> zencodec::encode::EncodeJob<'a> for PnmEncodeJob<'a> {
+impl zencodec::encode::EncodeJob for PnmEncodeJob {
     type Error = BitmapError;
-    type Enc = PnmEncoder<'a>;
+    type Enc = PnmEncoder;
     type FullFrameEnc = ();
 
-    fn with_stop(mut self, stop: &'a dyn Stop) -> Self {
-        self.stop = stop;
+    fn with_stop(mut self, stop: zencodec::StopToken) -> Self {
+        self.stop = Some(stop);
         self
     }
 
@@ -210,7 +210,7 @@ impl<'a> zencodec::encode::EncodeJob<'a> for PnmEncodeJob<'a> {
         self
     }
 
-    fn encoder(self) -> Result<PnmEncoder<'a>, BitmapError> {
+    fn encoder(self) -> Result<PnmEncoder, BitmapError> {
         Ok(PnmEncoder {
             config: self.config,
             limits: self.limits,
@@ -226,13 +226,13 @@ impl<'a> zencodec::encode::EncodeJob<'a> for PnmEncodeJob<'a> {
 // ── PnmEncoder ───────────────────────────────────────────────────────
 
 /// Single-image PNM encoder.
-pub struct PnmEncoder<'a> {
-    config: &'a PnmEncoderConfig,
+pub struct PnmEncoder {
+    config: PnmEncoderConfig,
     limits: Option<ResourceLimits>,
-    stop: &'a dyn Stop,
+    stop: Option<zencodec::StopToken>,
 }
 
-impl PnmEncoder<'_> {
+impl PnmEncoder {
     fn effective_limits(&self) -> Option<Limits> {
         self.limits.as_ref().map(convert_limits).or_else(|| {
             let l = &self.config.limits;
@@ -249,7 +249,7 @@ impl PnmEncoder<'_> {
     }
 }
 
-impl zencodec::encode::Encoder for PnmEncoder<'_> {
+impl zencodec::encode::Encoder for PnmEncoder {
     type Error = BitmapError;
 
     fn reject(op: zencodec::UnsupportedOperation) -> BitmapError {
@@ -257,6 +257,10 @@ impl zencodec::encode::Encoder for PnmEncoder<'_> {
     }
 
     fn encode(self, pixels: PixelSlice<'_>) -> Result<EncodeOutput, BitmapError> {
+        let stop: &dyn Stop = match &self.stop {
+            Some(s) => s,
+            None => &enough::Unstoppable,
+        };
         let desc = pixels.descriptor();
         let w = pixels.width();
         let h = pixels.rows();
@@ -274,7 +278,7 @@ impl zencodec::encode::Encoder for PnmEncoder<'_> {
                     h,
                     crate::PixelLayout::Rgb8,
                     pnm::PnmFormat::Ppm,
-                    self.stop,
+                    stop,
                 )?;
                 Ok(EncodeOutput::new(encoded, ImageFormat::Pnm))
             }
@@ -286,7 +290,7 @@ impl zencodec::encode::Encoder for PnmEncoder<'_> {
                     h,
                     crate::PixelLayout::Rgba8,
                     pnm::PnmFormat::Pam,
-                    self.stop,
+                    stop,
                 )?;
                 Ok(EncodeOutput::new(encoded, ImageFormat::Pnm))
             }
@@ -298,7 +302,7 @@ impl zencodec::encode::Encoder for PnmEncoder<'_> {
                     h,
                     crate::PixelLayout::Gray8,
                     pnm::PnmFormat::Pgm,
-                    self.stop,
+                    stop,
                 )?;
                 Ok(EncodeOutput::new(encoded, ImageFormat::Pnm))
             }
@@ -310,7 +314,7 @@ impl zencodec::encode::Encoder for PnmEncoder<'_> {
                     h,
                     crate::PixelLayout::Bgra8,
                     pnm::PnmFormat::Ppm,
-                    self.stop,
+                    stop,
                 )?;
                 Ok(EncodeOutput::new(encoded, ImageFormat::Pnm))
             }
@@ -322,7 +326,7 @@ impl zencodec::encode::Encoder for PnmEncoder<'_> {
                     h,
                     crate::PixelLayout::RgbF32,
                     pnm::PnmFormat::Pfm,
-                    self.stop,
+                    stop,
                 )?;
                 Ok(EncodeOutput::new(encoded, ImageFormat::Pnm))
             }
@@ -342,7 +346,7 @@ impl zencodec::encode::Encoder for PnmEncoder<'_> {
                     h,
                     crate::PixelLayout::RgbF32,
                     pnm::PnmFormat::Pfm,
-                    self.stop,
+                    stop,
                 )?;
                 Ok(EncodeOutput::new(encoded, ImageFormat::Pnm))
             }
@@ -354,7 +358,7 @@ impl zencodec::encode::Encoder for PnmEncoder<'_> {
                     h,
                     crate::PixelLayout::GrayF32,
                     pnm::PnmFormat::Pfm,
-                    self.stop,
+                    stop,
                 )?;
                 Ok(EncodeOutput::new(encoded, ImageFormat::Pnm))
             }
@@ -409,7 +413,7 @@ impl zencodec::decode::DecoderConfig for PnmDecoderConfig {
         PnmDecodeJob {
             config: self,
             limits: None,
-            stop: &enough::Unstoppable,
+            stop: None,
             max_input_bytes: None,
         }
     }
@@ -421,7 +425,7 @@ impl zencodec::decode::DecoderConfig for PnmDecoderConfig {
 pub struct PnmDecodeJob<'a> {
     config: &'a PnmDecoderConfig,
     limits: Option<Limits>,
-    stop: &'a dyn Stop,
+    stop: Option<zencodec::StopToken>,
     max_input_bytes: Option<u64>,
 }
 
@@ -431,8 +435,8 @@ impl<'a> zencodec::decode::DecodeJob<'a> for PnmDecodeJob<'a> {
     type StreamDec = zencodec::Unsupported<BitmapError>;
     type FullFrameDec = zencodec::Unsupported<BitmapError>;
 
-    fn with_stop(mut self, stop: &'a dyn Stop) -> Self {
-        self.stop = stop;
+    fn with_stop(mut self, stop: zencodec::StopToken) -> Self {
+        self.stop = Some(stop);
         self
     }
 
@@ -516,7 +520,7 @@ pub struct PnmDecoder<'a> {
     config: &'a PnmDecoderConfig,
     limits: Option<Limits>,
     data: Cow<'a, [u8]>,
-    stop: &'a dyn Stop,
+    stop: Option<zencodec::StopToken>,
 }
 
 impl PnmDecoder<'_> {
@@ -530,7 +534,11 @@ impl zencodec::decode::Decode for PnmDecoder<'_> {
 
     fn decode(self) -> Result<DecodeOutput, BitmapError> {
         let limits = self.effective_limits();
-        let decoded = crate::pnm::decode(&self.data, limits, self.stop)?;
+        let stop: &dyn Stop = match &self.stop {
+            Some(s) => s,
+            None => &enough::Unstoppable,
+        };
+        let decoded = crate::pnm::decode(&self.data, limits, stop)?;
         decode_output_from_internal(&decoded, ImageFormat::Pnm)
     }
 }
@@ -570,7 +578,7 @@ mod bmp_codec {
 
     impl zencodec::encode::EncoderConfig for BmpEncoderConfig {
         type Error = BitmapError;
-        type Job<'a> = BmpEncodeJob<'a>;
+        type Job = BmpEncodeJob;
 
         fn format() -> ImageFormat {
             ImageFormat::Bmp
@@ -588,11 +596,11 @@ mod bmp_codec {
             Some(true)
         }
 
-        fn job(&self) -> BmpEncodeJob<'_> {
+        fn job(self) -> BmpEncodeJob {
             BmpEncodeJob {
                 config: self,
                 limits: None,
-                stop: &enough::Unstoppable,
+                stop: None,
             }
         }
     }
@@ -600,19 +608,19 @@ mod bmp_codec {
     // ── BmpEncodeJob ─────────────────────────────────────────────────
 
     /// Per-operation BMP encode job.
-    pub struct BmpEncodeJob<'a> {
-        config: &'a BmpEncoderConfig,
+    pub struct BmpEncodeJob {
+        config: BmpEncoderConfig,
         limits: Option<ResourceLimits>,
-        stop: &'a dyn Stop,
+        stop: Option<zencodec::StopToken>,
     }
 
-    impl<'a> zencodec::encode::EncodeJob<'a> for BmpEncodeJob<'a> {
+    impl zencodec::encode::EncodeJob for BmpEncodeJob {
         type Error = BitmapError;
-        type Enc = BmpEncoder<'a>;
+        type Enc = BmpEncoder;
         type FullFrameEnc = ();
 
-        fn with_stop(mut self, stop: &'a dyn Stop) -> Self {
-            self.stop = stop;
+        fn with_stop(mut self, stop: zencodec::StopToken) -> Self {
+            self.stop = Some(stop);
             self
         }
 
@@ -625,7 +633,7 @@ mod bmp_codec {
             self
         }
 
-        fn encoder(self) -> Result<BmpEncoder<'a>, BitmapError> {
+        fn encoder(self) -> Result<BmpEncoder, BitmapError> {
             Ok(BmpEncoder {
                 config: self.config,
                 limits: self.limits,
@@ -641,13 +649,13 @@ mod bmp_codec {
     // ── BmpEncoder ───────────────────────────────────────────────────
 
     /// Single-image BMP encoder.
-    pub struct BmpEncoder<'a> {
-        config: &'a BmpEncoderConfig,
+    pub struct BmpEncoder {
+        config: BmpEncoderConfig,
         limits: Option<ResourceLimits>,
-        stop: &'a dyn Stop,
+        stop: Option<zencodec::StopToken>,
     }
 
-    impl BmpEncoder<'_> {
+    impl BmpEncoder {
         fn effective_limits(&self) -> Option<Limits> {
             self.limits.as_ref().map(convert_limits).or_else(|| {
                 let l = &self.config.limits;
@@ -664,7 +672,7 @@ mod bmp_codec {
         }
     }
 
-    impl zencodec::encode::Encoder for BmpEncoder<'_> {
+    impl zencodec::encode::Encoder for BmpEncoder {
         type Error = BitmapError;
 
         fn reject(op: zencodec::UnsupportedOperation) -> BitmapError {
@@ -672,6 +680,10 @@ mod bmp_codec {
         }
 
         fn encode(self, pixels: PixelSlice<'_>) -> Result<EncodeOutput, BitmapError> {
+            let stop: &dyn Stop = match &self.stop {
+                Some(s) => s,
+                None => &enough::Unstoppable,
+            };
             let desc = pixels.descriptor();
             let w = pixels.width();
             let h = pixels.rows();
@@ -693,7 +705,7 @@ mod bmp_codec {
                 }
             };
 
-            let encoded = crate::bmp::encode(&bytes, w, h, layout, alpha, self.stop)?;
+            let encoded = crate::bmp::encode(&bytes, w, h, layout, alpha, stop)?;
             Ok(EncodeOutput::new(encoded, ImageFormat::Bmp))
         }
     }
@@ -739,7 +751,7 @@ mod bmp_codec {
             BmpDecodeJob {
                 config: self,
                 limits: None,
-                stop: &enough::Unstoppable,
+                stop: None,
                 max_input_bytes: None,
             }
         }
@@ -751,7 +763,7 @@ mod bmp_codec {
     pub struct BmpDecodeJob<'a> {
         config: &'a BmpDecoderConfig,
         limits: Option<Limits>,
-        stop: &'a dyn Stop,
+        stop: Option<zencodec::StopToken>,
         max_input_bytes: Option<u64>,
     }
 
@@ -761,8 +773,8 @@ mod bmp_codec {
         type StreamDec = zencodec::Unsupported<BitmapError>;
         type FullFrameDec = zencodec::Unsupported<BitmapError>;
 
-        fn with_stop(mut self, stop: &'a dyn Stop) -> Self {
-            self.stop = stop;
+        fn with_stop(mut self, stop: zencodec::StopToken) -> Self {
+            self.stop = Some(stop);
             self
         }
 
@@ -850,7 +862,7 @@ mod bmp_codec {
         config: &'a BmpDecoderConfig,
         limits: Option<Limits>,
         data: Cow<'a, [u8]>,
-        stop: &'a dyn Stop,
+        stop: Option<zencodec::StopToken>,
     }
 
     impl BmpDecoder<'_> {
@@ -864,7 +876,11 @@ mod bmp_codec {
 
         fn decode(self) -> Result<DecodeOutput, BitmapError> {
             let limits = self.effective_limits();
-            let decoded = crate::bmp::decode(&self.data, limits, self.stop)?;
+            let stop: &dyn Stop = match &self.stop {
+                Some(s) => s,
+                None => &enough::Unstoppable,
+            };
+            let decoded = crate::bmp::decode(&self.data, limits, stop)?;
             decode_output_from_internal(&decoded, ImageFormat::Bmp)
         }
     }
@@ -904,7 +920,7 @@ impl FarbfeldEncoderConfig {
 
 impl zencodec::encode::EncoderConfig for FarbfeldEncoderConfig {
     type Error = BitmapError;
-    type Job<'a> = FarbfeldEncodeJob<'a>;
+    type Job = FarbfeldEncodeJob;
 
     fn format() -> ImageFormat {
         ImageFormat::Farbfeld
@@ -922,11 +938,11 @@ impl zencodec::encode::EncoderConfig for FarbfeldEncoderConfig {
         Some(true)
     }
 
-    fn job(&self) -> FarbfeldEncodeJob<'_> {
+    fn job(self) -> FarbfeldEncodeJob {
         FarbfeldEncodeJob {
             config: self,
             limits: None,
-            stop: &enough::Unstoppable,
+            stop: None,
         }
     }
 }
@@ -934,19 +950,19 @@ impl zencodec::encode::EncoderConfig for FarbfeldEncoderConfig {
 // ── FarbfeldEncodeJob ────────────────────────────────────────────────
 
 /// Per-operation farbfeld encode job.
-pub struct FarbfeldEncodeJob<'a> {
-    config: &'a FarbfeldEncoderConfig,
+pub struct FarbfeldEncodeJob {
+    config: FarbfeldEncoderConfig,
     limits: Option<ResourceLimits>,
-    stop: &'a dyn Stop,
+    stop: Option<zencodec::StopToken>,
 }
 
-impl<'a> zencodec::encode::EncodeJob<'a> for FarbfeldEncodeJob<'a> {
+impl zencodec::encode::EncodeJob for FarbfeldEncodeJob {
     type Error = BitmapError;
-    type Enc = FarbfeldEncoder<'a>;
+    type Enc = FarbfeldEncoder;
     type FullFrameEnc = ();
 
-    fn with_stop(mut self, stop: &'a dyn Stop) -> Self {
-        self.stop = stop;
+    fn with_stop(mut self, stop: zencodec::StopToken) -> Self {
+        self.stop = Some(stop);
         self
     }
 
@@ -959,7 +975,7 @@ impl<'a> zencodec::encode::EncodeJob<'a> for FarbfeldEncodeJob<'a> {
         self
     }
 
-    fn encoder(self) -> Result<FarbfeldEncoder<'a>, BitmapError> {
+    fn encoder(self) -> Result<FarbfeldEncoder, BitmapError> {
         Ok(FarbfeldEncoder {
             config: self.config,
             limits: self.limits,
@@ -975,13 +991,13 @@ impl<'a> zencodec::encode::EncodeJob<'a> for FarbfeldEncodeJob<'a> {
 // ── FarbfeldEncoder ──────────────────────────────────────────────────
 
 /// Single-image farbfeld encoder.
-pub struct FarbfeldEncoder<'a> {
-    config: &'a FarbfeldEncoderConfig,
+pub struct FarbfeldEncoder {
+    config: FarbfeldEncoderConfig,
     limits: Option<ResourceLimits>,
-    stop: &'a dyn Stop,
+    stop: Option<zencodec::StopToken>,
 }
 
-impl FarbfeldEncoder<'_> {
+impl FarbfeldEncoder {
     fn effective_limits(&self) -> Option<Limits> {
         self.limits.as_ref().map(convert_limits).or_else(|| {
             let l = &self.config.limits;
@@ -998,7 +1014,7 @@ impl FarbfeldEncoder<'_> {
     }
 }
 
-impl zencodec::encode::Encoder for FarbfeldEncoder<'_> {
+impl zencodec::encode::Encoder for FarbfeldEncoder {
     type Error = BitmapError;
 
     fn reject(op: zencodec::UnsupportedOperation) -> BitmapError {
@@ -1006,6 +1022,10 @@ impl zencodec::encode::Encoder for FarbfeldEncoder<'_> {
     }
 
     fn encode(self, pixels: PixelSlice<'_>) -> Result<EncodeOutput, BitmapError> {
+        let stop: &dyn Stop = match &self.stop {
+            Some(s) => s,
+            None => &enough::Unstoppable,
+        };
         let desc = pixels.descriptor();
         let w = pixels.width();
         let h = pixels.rows();
@@ -1028,7 +1048,7 @@ impl zencodec::encode::Encoder for FarbfeldEncoder<'_> {
             }
         };
 
-        let encoded = crate::farbfeld::encode(&bytes, w, h, layout, self.stop)?;
+        let encoded = crate::farbfeld::encode(&bytes, w, h, layout, stop)?;
         Ok(EncodeOutput::new(encoded, ImageFormat::Farbfeld))
     }
 }
@@ -1074,7 +1094,7 @@ impl zencodec::decode::DecoderConfig for FarbfeldDecoderConfig {
         FarbfeldDecodeJob {
             config: self,
             limits: None,
-            stop: &enough::Unstoppable,
+            stop: None,
             max_input_bytes: None,
         }
     }
@@ -1086,7 +1106,7 @@ impl zencodec::decode::DecoderConfig for FarbfeldDecoderConfig {
 pub struct FarbfeldDecodeJob<'a> {
     config: &'a FarbfeldDecoderConfig,
     limits: Option<Limits>,
-    stop: &'a dyn Stop,
+    stop: Option<zencodec::StopToken>,
     max_input_bytes: Option<u64>,
 }
 
@@ -1096,8 +1116,8 @@ impl<'a> zencodec::decode::DecodeJob<'a> for FarbfeldDecodeJob<'a> {
     type StreamDec = zencodec::Unsupported<BitmapError>;
     type FullFrameDec = zencodec::Unsupported<BitmapError>;
 
-    fn with_stop(mut self, stop: &'a dyn Stop) -> Self {
-        self.stop = stop;
+    fn with_stop(mut self, stop: zencodec::StopToken) -> Self {
+        self.stop = Some(stop);
         self
     }
 
@@ -1173,7 +1193,7 @@ pub struct FarbfeldDecoder<'a> {
     config: &'a FarbfeldDecoderConfig,
     limits: Option<Limits>,
     data: Cow<'a, [u8]>,
-    stop: &'a dyn Stop,
+    stop: Option<zencodec::StopToken>,
 }
 
 impl FarbfeldDecoder<'_> {
@@ -1187,7 +1207,11 @@ impl zencodec::decode::Decode for FarbfeldDecoder<'_> {
 
     fn decode(self) -> Result<DecodeOutput, BitmapError> {
         let limits = self.effective_limits();
-        let decoded = crate::farbfeld::decode(&self.data, limits, self.stop)?;
+        let stop: &dyn Stop = match &self.stop {
+            Some(s) => s,
+            None => &enough::Unstoppable,
+        };
+        let decoded = crate::farbfeld::decode(&self.data, limits, stop)?;
         decode_output_from_internal(&decoded, ImageFormat::Farbfeld)
     }
 }
