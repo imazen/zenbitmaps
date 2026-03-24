@@ -219,7 +219,9 @@ impl zencodec::encode::EncodeJob for PnmEncodeJob {
     }
 
     fn full_frame_encoder(self) -> Result<(), BitmapError> {
-        Err(BitmapError::from(zencodec::UnsupportedOperation::AnimationEncode))
+        Err(BitmapError::from(
+            zencodec::UnsupportedOperation::AnimationEncode,
+        ))
     }
 }
 
@@ -501,7 +503,9 @@ impl<'a> zencodec::decode::DecodeJob<'a> for PnmDecodeJob<'a> {
         _data: Cow<'a, [u8]>,
         _preferred: &[PixelDescriptor],
     ) -> Result<zencodec::Unsupported<BitmapError>, BitmapError> {
-        Err(BitmapError::from(zencodec::UnsupportedOperation::RowLevelDecode))
+        Err(BitmapError::from(
+            zencodec::UnsupportedOperation::RowLevelDecode,
+        ))
     }
 
     fn full_frame_decoder(
@@ -509,7 +513,9 @@ impl<'a> zencodec::decode::DecodeJob<'a> for PnmDecodeJob<'a> {
         _data: Cow<'a, [u8]>,
         _preferred: &[PixelDescriptor],
     ) -> Result<zencodec::Unsupported<BitmapError>, BitmapError> {
-        Err(BitmapError::from(zencodec::UnsupportedOperation::AnimationDecode))
+        Err(BitmapError::from(
+            zencodec::UnsupportedOperation::AnimationDecode,
+        ))
     }
 }
 
@@ -642,7 +648,9 @@ mod bmp_codec {
         }
 
         fn full_frame_encoder(self) -> Result<(), BitmapError> {
-            Err(BitmapError::from(zencodec::UnsupportedOperation::AnimationEncode))
+            Err(BitmapError::from(
+                zencodec::UnsupportedOperation::AnimationEncode,
+            ))
         }
     }
 
@@ -843,7 +851,9 @@ mod bmp_codec {
             _data: Cow<'a, [u8]>,
             _preferred: &[PixelDescriptor],
         ) -> Result<zencodec::Unsupported<BitmapError>, BitmapError> {
-            Err(BitmapError::from(zencodec::UnsupportedOperation::RowLevelDecode))
+            Err(BitmapError::from(
+                zencodec::UnsupportedOperation::RowLevelDecode,
+            ))
         }
 
         fn full_frame_decoder(
@@ -851,7 +861,9 @@ mod bmp_codec {
             _data: Cow<'a, [u8]>,
             _preferred: &[PixelDescriptor],
         ) -> Result<zencodec::Unsupported<BitmapError>, BitmapError> {
-            Err(BitmapError::from(zencodec::UnsupportedOperation::AnimationDecode))
+            Err(BitmapError::from(
+                zencodec::UnsupportedOperation::AnimationDecode,
+            ))
         }
     }
 
@@ -984,7 +996,9 @@ impl zencodec::encode::EncodeJob for FarbfeldEncodeJob {
     }
 
     fn full_frame_encoder(self) -> Result<(), BitmapError> {
-        Err(BitmapError::from(zencodec::UnsupportedOperation::AnimationEncode))
+        Err(BitmapError::from(
+            zencodec::UnsupportedOperation::AnimationEncode,
+        ))
     }
 }
 
@@ -1174,7 +1188,9 @@ impl<'a> zencodec::decode::DecodeJob<'a> for FarbfeldDecodeJob<'a> {
         _data: Cow<'a, [u8]>,
         _preferred: &[PixelDescriptor],
     ) -> Result<zencodec::Unsupported<BitmapError>, BitmapError> {
-        Err(BitmapError::from(zencodec::UnsupportedOperation::RowLevelDecode))
+        Err(BitmapError::from(
+            zencodec::UnsupportedOperation::RowLevelDecode,
+        ))
     }
 
     fn full_frame_decoder(
@@ -1182,7 +1198,9 @@ impl<'a> zencodec::decode::DecodeJob<'a> for FarbfeldDecodeJob<'a> {
         _data: Cow<'a, [u8]>,
         _preferred: &[PixelDescriptor],
     ) -> Result<zencodec::Unsupported<BitmapError>, BitmapError> {
-        Err(BitmapError::from(zencodec::UnsupportedOperation::AnimationDecode))
+        Err(BitmapError::from(
+            zencodec::UnsupportedOperation::AnimationDecode,
+        ))
     }
 }
 
