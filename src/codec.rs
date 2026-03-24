@@ -1536,7 +1536,7 @@ mod tests {
         assert!(enc_caps.native_f32());
         assert!(enc_caps.hdr());
         assert!(enc_caps.lossless());
-        assert!(enc_caps.cancel());
+        assert!(enc_caps.stop());
         assert!(enc_caps.enforces_max_pixels());
         assert!(!enc_caps.icc());
         assert!(!enc_caps.lossy());
@@ -1548,7 +1548,7 @@ mod tests {
         assert!(dec_caps.native_f32());
         assert!(dec_caps.hdr());
         assert!(dec_caps.cheap_probe());
-        assert!(dec_caps.cancel());
+        assert!(dec_caps.stop());
         assert!(dec_caps.enforces_max_pixels());
         assert!(!dec_caps.icc());
     }
