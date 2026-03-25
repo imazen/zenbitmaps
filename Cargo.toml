@@ -18,8 +18,8 @@ enough = "0.4.2"
 imgref = { version = "1.12", default-features = false, optional = true }
 rgb = { version = "0.8", default-features = false, features = ["as-bytes"], optional = true }
 thiserror = { version = "2.0", default-features = false }
-zencodec = { path = "../zencodec", optional = true }
-zenpixels = { path = "../zenpixels/zenpixels", default-features = false, features = ["imgref"], optional = true }
+zencodec = { version = "0.1.0", optional = true }
+zenpixels = { version = "0.2.0", default-features = false, features = ["imgref"], optional = true }
 
 [dev-dependencies]
 archmage = { version = "0.9.12", features = ["std"] }
