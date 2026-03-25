@@ -194,7 +194,7 @@ pub struct PnmEncodeJob {
 impl zencodec::encode::EncodeJob for PnmEncodeJob {
     type Error = BitmapError;
     type Enc = PnmEncoder;
-    type FullFrameEnc = ();
+    type AnimationFrameEnc = ();
 
     fn with_stop(mut self, stop: zencodec::StopToken) -> Self {
         self.stop = Some(stop);
@@ -218,7 +218,7 @@ impl zencodec::encode::EncodeJob for PnmEncodeJob {
         })
     }
 
-    fn full_frame_encoder(self) -> Result<(), BitmapError> {
+    fn animation_frame_encoder(self) -> Result<(), BitmapError> {
         Err(BitmapError::from(
             zencodec::UnsupportedOperation::AnimationEncode,
         ))
@@ -435,7 +435,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for PnmDecodeJob<'a> {
     type Error = BitmapError;
     type Dec = PnmDecoder<'a>;
     type StreamDec = zencodec::Unsupported<BitmapError>;
-    type FullFrameDec = zencodec::Unsupported<BitmapError>;
+    type AnimationFrameDec = zencodec::Unsupported<BitmapError>;
 
     fn with_stop(mut self, stop: zencodec::StopToken) -> Self {
         self.stop = Some(stop);
@@ -508,7 +508,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for PnmDecodeJob<'a> {
         ))
     }
 
-    fn full_frame_decoder(
+    fn animation_frame_decoder(
         self,
         _data: Cow<'a, [u8]>,
         _preferred: &[PixelDescriptor],
@@ -623,7 +623,7 @@ mod bmp_codec {
     impl zencodec::encode::EncodeJob for BmpEncodeJob {
         type Error = BitmapError;
         type Enc = BmpEncoder;
-        type FullFrameEnc = ();
+        type AnimationFrameEnc = ();
 
         fn with_stop(mut self, stop: zencodec::StopToken) -> Self {
             self.stop = Some(stop);
@@ -647,7 +647,7 @@ mod bmp_codec {
             })
         }
 
-        fn full_frame_encoder(self) -> Result<(), BitmapError> {
+        fn animation_frame_encoder(self) -> Result<(), BitmapError> {
             Err(BitmapError::from(
                 zencodec::UnsupportedOperation::AnimationEncode,
             ))
@@ -779,7 +779,7 @@ mod bmp_codec {
         type Error = BitmapError;
         type Dec = BmpDecoder<'a>;
         type StreamDec = zencodec::Unsupported<BitmapError>;
-        type FullFrameDec = zencodec::Unsupported<BitmapError>;
+        type AnimationFrameDec = zencodec::Unsupported<BitmapError>;
 
         fn with_stop(mut self, stop: zencodec::StopToken) -> Self {
             self.stop = Some(stop);
@@ -856,7 +856,7 @@ mod bmp_codec {
             ))
         }
 
-        fn full_frame_decoder(
+        fn animation_frame_decoder(
             self,
             _data: Cow<'a, [u8]>,
             _preferred: &[PixelDescriptor],
@@ -971,7 +971,7 @@ pub struct FarbfeldEncodeJob {
 impl zencodec::encode::EncodeJob for FarbfeldEncodeJob {
     type Error = BitmapError;
     type Enc = FarbfeldEncoder;
-    type FullFrameEnc = ();
+    type AnimationFrameEnc = ();
 
     fn with_stop(mut self, stop: zencodec::StopToken) -> Self {
         self.stop = Some(stop);
@@ -995,7 +995,7 @@ impl zencodec::encode::EncodeJob for FarbfeldEncodeJob {
         })
     }
 
-    fn full_frame_encoder(self) -> Result<(), BitmapError> {
+    fn animation_frame_encoder(self) -> Result<(), BitmapError> {
         Err(BitmapError::from(
             zencodec::UnsupportedOperation::AnimationEncode,
         ))
@@ -1128,7 +1128,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for FarbfeldDecodeJob<'a> {
     type Error = BitmapError;
     type Dec = FarbfeldDecoder<'a>;
     type StreamDec = zencodec::Unsupported<BitmapError>;
-    type FullFrameDec = zencodec::Unsupported<BitmapError>;
+    type AnimationFrameDec = zencodec::Unsupported<BitmapError>;
 
     fn with_stop(mut self, stop: zencodec::StopToken) -> Self {
         self.stop = Some(stop);
@@ -1193,7 +1193,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for FarbfeldDecodeJob<'a> {
         ))
     }
 
-    fn full_frame_decoder(
+    fn animation_frame_decoder(
         self,
         _data: Cow<'a, [u8]>,
         _preferred: &[PixelDescriptor],
