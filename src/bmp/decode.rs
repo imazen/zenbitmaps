@@ -241,6 +241,8 @@ pub(crate) struct BmpHeader {
     pub width: u32,
     pub height: u32,
     pub layout: PixelLayout,
+    /// Bits per pixel as declared in the BMP header.
+    pub bpp: u16,
     pub x_pels_per_meter: u32,
     pub y_pels_per_meter: u32,
     /// Color table entries (BGRA order, up to 256 entries).
@@ -285,6 +287,7 @@ pub(crate) fn parse_bmp_header(data: &[u8]) -> Result<BmpHeader, BitmapError> {
         width: dec.width as u32,
         height: dec.height as u32,
         layout,
+        bpp: dec.depth,
         x_pels_per_meter: dec.x_pels_per_meter,
         y_pels_per_meter: dec.y_pels_per_meter,
         color_table,

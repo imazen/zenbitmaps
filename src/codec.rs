@@ -18,6 +18,22 @@ use crate::error::BitmapError;
 use crate::limits::Limits;
 use crate::pnm;
 
+/// Source encoding details shared by all bitmap formats (PNM, BMP, Farbfeld).
+///
+/// All three are lossless and have no meaningful quality metric.
+#[derive(Debug, Clone, Copy)]
+pub struct BitmapSourceEncoding;
+
+impl zencodec::SourceEncodingDetails for BitmapSourceEncoding {
+    fn source_generic_quality(&self) -> Option<f32> {
+        None
+    }
+
+    fn is_lossless(&self) -> bool {
+        true
+    }
+}
+
 // ══════════════════════════════════════════════════════════════════════
 // Shared capabilities and descriptors
 // ══════════════════════════════════════════════════════════════════════
@@ -39,7 +55,9 @@ static PNM_DECODE_CAPS: DecodeCapabilities = DecodeCapabilities::new()
     .with_native_f32(true)
     .with_hdr(true)
     .with_stop(true)
-    .with_enforces_max_pixels(true);
+    .with_enforces_max_pixels(true)
+    .with_enforces_max_memory(true)
+    .with_enforces_max_input_bytes(true);
 
 // Note: U16 encode is not implemented — RGBA16_SRGB intentionally absent.
 static PNM_ENCODE_DESCRIPTORS: &[PixelDescriptor] = &[
@@ -78,7 +96,9 @@ static BMP_DECODE_CAPS: DecodeCapabilities = DecodeCapabilities::new()
     .with_native_gray(true)
     .with_native_alpha(true)
     .with_stop(true)
-    .with_enforces_max_pixels(true);
+    .with_enforces_max_pixels(true)
+    .with_enforces_max_memory(true)
+    .with_enforces_max_input_bytes(true);
 
 #[cfg(feature = "bmp")]
 static BMP_ENCODE_DESCRIPTORS: &[PixelDescriptor] = &[
@@ -107,7 +127,9 @@ static FF_DECODE_CAPS: DecodeCapabilities = DecodeCapabilities::new()
     .with_native_alpha(true)
     .with_native_16bit(true)
     .with_stop(true)
-    .with_enforces_max_pixels(true);
+    .with_enforces_max_pixels(true)
+    .with_enforces_max_memory(true)
+    .with_enforces_max_input_bytes(true);
 
 static FF_ENCODE_DESCRIPTORS: &[PixelDescriptor] = &[
     PixelDescriptor::RGBA16_SRGB,
@@ -798,7 +820,19 @@ mod bmp_codec {
                 header.layout,
                 crate::PixelLayout::Rgba8 | crate::PixelLayout::Bgra8
             );
-            Ok(ImageInfo::new(header.width, header.height, ImageFormat::Bmp).with_alpha(has_alpha))
+            let channel_count: u8 = match header.layout {
+                crate::PixelLayout::Gray8 => 1,
+                crate::PixelLayout::Rgb8 => 3,
+                crate::PixelLayout::Rgba8 | crate::PixelLayout::Bgra8 => 4,
+                _ => 3, // BMP decoded output is at least RGB
+            };
+            Ok(
+                ImageInfo::new(header.width, header.height, ImageFormat::Bmp)
+                    .with_alpha(has_alpha)
+                    .with_bit_depth(header.bpp as u8)
+                    .with_channel_count(channel_count)
+                    .with_source_encoding_details(BitmapSourceEncoding),
+            )
         }
 
         fn output_info(&self, data: &[u8]) -> Result<OutputInfo, BitmapError> {
@@ -1143,7 +1177,11 @@ impl<'a> zencodec::decode::DecodeJob<'a> for FarbfeldDecodeJob<'a> {
 
     fn probe(&self, data: &[u8]) -> Result<ImageInfo, BitmapError> {
         let (width, height) = crate::farbfeld::decode::parse_header(data)?;
-        Ok(ImageInfo::new(width, height, ImageFormat::Farbfeld).with_alpha(true))
+        Ok(ImageInfo::new(width, height, ImageFormat::Farbfeld)
+            .with_alpha(true)
+            .with_bit_depth(16)
+            .with_channel_count(4)
+            .with_source_encoding_details(BitmapSourceEncoding))
     }
 
     fn output_info(&self, data: &[u8]) -> Result<OutputInfo, BitmapError> {
@@ -1253,7 +1291,16 @@ fn header_to_image_info(header: &pnm::PnmHeader) -> ImageInfo {
         header.layout,
         PixelLayout::Rgba8 | PixelLayout::Bgra8 | PixelLayout::Rgba16
     );
-    ImageInfo::new(header.width, header.height, ImageFormat::Pnm).with_alpha(has_alpha)
+    let bit_depth: u8 = match header.layout {
+        PixelLayout::GrayF32 | PixelLayout::RgbF32 => 32,
+        _ if header.maxval > 255 => 16,
+        _ => 8,
+    };
+    ImageInfo::new(header.width, header.height, ImageFormat::Pnm)
+        .with_alpha(has_alpha)
+        .with_bit_depth(bit_depth)
+        .with_channel_count(header.depth as u8)
+        .with_source_encoding_details(BitmapSourceEncoding)
 }
 
 fn layout_to_descriptor(layout: crate::PixelLayout) -> PixelDescriptor {
@@ -1373,9 +1420,11 @@ fn decode_output_from_internal(
         decoded.layout,
         crate::PixelLayout::Rgba8 | crate::PixelLayout::Bgra8 | crate::PixelLayout::Rgba16
     );
-    let info = ImageInfo::new(decoded.width, decoded.height, format).with_alpha(has_alpha);
+    let info = ImageInfo::new(decoded.width, decoded.height, format)
+        .with_alpha(has_alpha)
+        .with_source_encoding_details(BitmapSourceEncoding);
     let pixels = layout_to_pixel_buffer(decoded)?;
-    Ok(DecodeOutput::new(pixels, info))
+    Ok(DecodeOutput::new(pixels, info).with_source_encoding_details(BitmapSourceEncoding))
 }
 
 #[cfg(test)]
