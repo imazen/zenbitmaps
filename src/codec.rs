@@ -9,7 +9,7 @@ use alloc::borrow::Cow;
 use alloc::string::ToString as _;
 use alloc::vec::Vec;
 use enough::Stop;
-use zencodec::decode::{DecodeCapabilities, DecodeOutput, OutputInfo};
+use zencodec::decode::{DecodeCapabilities, DecodeOutput, DecodePolicy, OutputInfo};
 use zencodec::encode::{EncodeCapabilities, EncodeOutput};
 use zencodec::{ImageFormat, ImageInfo, Metadata, ResourceLimits};
 use zenpixels::{ChannelLayout, ChannelType, PixelBuffer, PixelDescriptor, PixelSlice};
@@ -439,6 +439,7 @@ impl zencodec::decode::DecoderConfig for PnmDecoderConfig {
             limits: None,
             stop: None,
             max_input_bytes: None,
+            policy: None,
         }
     }
 }
@@ -451,6 +452,7 @@ pub struct PnmDecodeJob<'a> {
     limits: Option<Limits>,
     stop: Option<zencodec::StopToken>,
     max_input_bytes: Option<u64>,
+    policy: Option<DecodePolicy>,
 }
 
 impl<'a> zencodec::decode::DecodeJob<'a> for PnmDecodeJob<'a> {
@@ -467,6 +469,11 @@ impl<'a> zencodec::decode::DecodeJob<'a> for PnmDecodeJob<'a> {
     fn with_limits(mut self, limits: ResourceLimits) -> Self {
         self.max_input_bytes = limits.max_input_bytes;
         self.limits = Some(convert_limits(&limits));
+        self
+    }
+
+    fn with_policy(mut self, policy: DecodePolicy) -> Self {
+        self.policy = Some(policy);
         self
     }
 
@@ -783,6 +790,7 @@ mod bmp_codec {
                 limits: None,
                 stop: None,
                 max_input_bytes: None,
+                policy: None,
             }
         }
     }
@@ -795,6 +803,7 @@ mod bmp_codec {
         limits: Option<Limits>,
         stop: Option<zencodec::StopToken>,
         max_input_bytes: Option<u64>,
+        policy: Option<DecodePolicy>,
     }
 
     impl<'a> zencodec::decode::DecodeJob<'a> for BmpDecodeJob<'a> {
@@ -811,6 +820,11 @@ mod bmp_codec {
         fn with_limits(mut self, limits: ResourceLimits) -> Self {
             self.max_input_bytes = limits.max_input_bytes;
             self.limits = Some(convert_limits(&limits));
+            self
+        }
+
+        fn with_policy(mut self, policy: DecodePolicy) -> Self {
+            self.policy = Some(policy);
             self
         }
 
@@ -861,11 +875,13 @@ mod bmp_codec {
                     data.len()
                 )));
             }
+            let permissiveness = policy_to_bmp_permissiveness(self.policy.as_ref());
             Ok(BmpDecoder {
                 config: self.config,
                 limits: self.limits,
                 data,
                 stop: self.stop,
+                permissiveness,
             })
         }
 
@@ -909,6 +925,7 @@ mod bmp_codec {
         limits: Option<Limits>,
         data: Cow<'a, [u8]>,
         stop: Option<zencodec::StopToken>,
+        permissiveness: crate::bmp::BmpPermissiveness,
     }
 
     impl BmpDecoder<'_> {
@@ -926,8 +943,34 @@ mod bmp_codec {
                 Some(s) => s,
                 None => &enough::Unstoppable,
             };
-            let decoded = crate::bmp::decode(&self.data, limits, stop)?;
+            let decoded = crate::bmp::decode_with_permissiveness(
+                &self.data,
+                limits,
+                self.permissiveness,
+                stop,
+            )?;
             decode_output_from_internal(&decoded, ImageFormat::Bmp)
+        }
+    }
+
+    /// Map [`DecodePolicy`] to [`BmpPermissiveness`].
+    ///
+    /// - `strict == Some(true)` → `Strict`
+    /// - `allow_truncated == Some(true)` → `Permissive`
+    /// - otherwise (or no policy) → `Standard`
+    fn policy_to_bmp_permissiveness(
+        policy: Option<&DecodePolicy>,
+    ) -> crate::bmp::BmpPermissiveness {
+        use crate::bmp::BmpPermissiveness;
+        let Some(p) = policy else {
+            return BmpPermissiveness::Standard;
+        };
+        if p.resolve_strict(false) {
+            BmpPermissiveness::Strict
+        } else if p.resolve_truncated(false) {
+            BmpPermissiveness::Permissive
+        } else {
+            BmpPermissiveness::Standard
         }
     }
 }
@@ -1144,6 +1187,7 @@ impl zencodec::decode::DecoderConfig for FarbfeldDecoderConfig {
             limits: None,
             stop: None,
             max_input_bytes: None,
+            policy: None,
         }
     }
 }
@@ -1156,6 +1200,7 @@ pub struct FarbfeldDecodeJob<'a> {
     limits: Option<Limits>,
     stop: Option<zencodec::StopToken>,
     max_input_bytes: Option<u64>,
+    policy: Option<DecodePolicy>,
 }
 
 impl<'a> zencodec::decode::DecodeJob<'a> for FarbfeldDecodeJob<'a> {
@@ -1172,6 +1217,11 @@ impl<'a> zencodec::decode::DecodeJob<'a> for FarbfeldDecodeJob<'a> {
     fn with_limits(mut self, limits: ResourceLimits) -> Self {
         self.max_input_bytes = limits.max_input_bytes;
         self.limits = Some(convert_limits(&limits));
+        self
+    }
+
+    fn with_policy(mut self, policy: DecodePolicy) -> Self {
+        self.policy = Some(policy);
         self
     }
 
