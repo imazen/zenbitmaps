@@ -201,7 +201,7 @@ impl zencodec::encode::EncodeJob for PnmEncodeJob {
         self
     }
 
-    fn with_metadata(self, _meta: &Metadata) -> Self {
+    fn with_metadata(self, _meta: Metadata) -> Self {
         self
     }
 
@@ -630,7 +630,7 @@ mod bmp_codec {
             self
         }
 
-        fn with_metadata(self, _meta: &Metadata) -> Self {
+        fn with_metadata(self, _meta: Metadata) -> Self {
             self
         }
 
@@ -978,7 +978,7 @@ impl zencodec::encode::EncodeJob for FarbfeldEncodeJob {
         self
     }
 
-    fn with_metadata(self, _meta: &Metadata) -> Self {
+    fn with_metadata(self, _meta: Metadata) -> Self {
         self
     }
 
