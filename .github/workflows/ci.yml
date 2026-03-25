@@ -42,6 +42,38 @@ jobs:
       - name: Test (bmp feature)
         run: cargo test --features bmp
 
+  feature-perms:
+    name: Feature permutations
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Check (no default features)
+        run: cargo check --no-default-features
+
+      - name: Check (std)
+        run: cargo check --features std
+
+      - name: Check (bmp)
+        run: cargo check --features bmp
+
+      - name: Check (rgb)
+        run: cargo check --features rgb
+
+      - name: Check (imgref)
+        run: cargo check --features imgref
+
+      - name: Check (zencodec)
+        run: cargo check --features zencodec
+
+      - name: Check (all)
+        run: cargo check --features all
+
+      - name: Check (--all-features)
+        run: cargo check --all-features
+
   i686:
     name: Test (i686)
     runs-on: ubuntu-latest
