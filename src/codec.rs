@@ -419,7 +419,7 @@ impl PnmDecoderConfig {
 
 impl zencodec::decode::DecoderConfig for PnmDecoderConfig {
     type Error = BitmapError;
-    type Job<'a> = PnmDecodeJob<'a>;
+    type Job = PnmDecodeJob;
 
     fn formats() -> &'static [ImageFormat] {
         &[ImageFormat::Pnm]
@@ -433,7 +433,7 @@ impl zencodec::decode::DecoderConfig for PnmDecoderConfig {
         &PNM_DECODE_CAPS
     }
 
-    fn job(&self) -> PnmDecodeJob<'_> {
+    fn job(self) -> PnmDecodeJob {
         PnmDecodeJob {
             config: self,
             limits: None,
@@ -447,15 +447,15 @@ impl zencodec::decode::DecoderConfig for PnmDecoderConfig {
 // ── PnmDecodeJob ─────────────────────────────────────────────────────
 
 /// Per-operation PNM decode job.
-pub struct PnmDecodeJob<'a> {
-    config: &'a PnmDecoderConfig,
+pub struct PnmDecodeJob {
+    config: PnmDecoderConfig,
     limits: Option<Limits>,
     stop: Option<zencodec::StopToken>,
     max_input_bytes: Option<u64>,
     policy: Option<DecodePolicy>,
 }
 
-impl<'a> zencodec::decode::DecodeJob<'a> for PnmDecodeJob<'a> {
+impl<'a> zencodec::decode::DecodeJob<'a> for PnmDecodeJob {
     type Error = BitmapError;
     type Dec = PnmDecoder<'a>;
     type StreamDec = zencodec::Unsupported<BitmapError>;
@@ -552,7 +552,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for PnmDecodeJob<'a> {
 
 /// Single-image PNM decoder.
 pub struct PnmDecoder<'a> {
-    config: &'a PnmDecoderConfig,
+    config: PnmDecoderConfig,
     limits: Option<Limits>,
     data: Cow<'a, [u8]>,
     stop: Option<zencodec::StopToken>,
@@ -770,7 +770,7 @@ mod bmp_codec {
 
     impl zencodec::decode::DecoderConfig for BmpDecoderConfig {
         type Error = BitmapError;
-        type Job<'a> = BmpDecodeJob<'a>;
+        type Job = BmpDecodeJob;
 
         fn formats() -> &'static [ImageFormat] {
             &[ImageFormat::Bmp]
@@ -784,7 +784,7 @@ mod bmp_codec {
             &BMP_DECODE_CAPS
         }
 
-        fn job(&self) -> BmpDecodeJob<'_> {
+        fn job(self) -> BmpDecodeJob {
             BmpDecodeJob {
                 config: self,
                 limits: None,
@@ -798,15 +798,15 @@ mod bmp_codec {
     // ── BmpDecodeJob ─────────────────────────────────────────────────
 
     /// Per-operation BMP decode job.
-    pub struct BmpDecodeJob<'a> {
-        config: &'a BmpDecoderConfig,
+    pub struct BmpDecodeJob {
+        config: BmpDecoderConfig,
         limits: Option<Limits>,
         stop: Option<zencodec::StopToken>,
         max_input_bytes: Option<u64>,
         policy: Option<DecodePolicy>,
     }
 
-    impl<'a> zencodec::decode::DecodeJob<'a> for BmpDecodeJob<'a> {
+    impl<'a> zencodec::decode::DecodeJob<'a> for BmpDecodeJob {
         type Error = BitmapError;
         type Dec = BmpDecoder<'a>;
         type StreamDec = zencodec::Unsupported<BitmapError>;
@@ -921,7 +921,7 @@ mod bmp_codec {
 
     /// Single-image BMP decoder.
     pub struct BmpDecoder<'a> {
-        config: &'a BmpDecoderConfig,
+        config: BmpDecoderConfig,
         limits: Option<Limits>,
         data: Cow<'a, [u8]>,
         stop: Option<zencodec::StopToken>,
@@ -1167,7 +1167,7 @@ impl FarbfeldDecoderConfig {
 
 impl zencodec::decode::DecoderConfig for FarbfeldDecoderConfig {
     type Error = BitmapError;
-    type Job<'a> = FarbfeldDecodeJob<'a>;
+    type Job = FarbfeldDecodeJob;
 
     fn formats() -> &'static [ImageFormat] {
         &[ImageFormat::Farbfeld]
@@ -1181,7 +1181,7 @@ impl zencodec::decode::DecoderConfig for FarbfeldDecoderConfig {
         &FF_DECODE_CAPS
     }
 
-    fn job(&self) -> FarbfeldDecodeJob<'_> {
+    fn job(self) -> FarbfeldDecodeJob {
         FarbfeldDecodeJob {
             config: self,
             limits: None,
@@ -1195,15 +1195,15 @@ impl zencodec::decode::DecoderConfig for FarbfeldDecoderConfig {
 // ── FarbfeldDecodeJob ────────────────────────────────────────────────
 
 /// Per-operation farbfeld decode job.
-pub struct FarbfeldDecodeJob<'a> {
-    config: &'a FarbfeldDecoderConfig,
+pub struct FarbfeldDecodeJob {
+    config: FarbfeldDecoderConfig,
     limits: Option<Limits>,
     stop: Option<zencodec::StopToken>,
     max_input_bytes: Option<u64>,
     policy: Option<DecodePolicy>,
 }
 
-impl<'a> zencodec::decode::DecodeJob<'a> for FarbfeldDecodeJob<'a> {
+impl<'a> zencodec::decode::DecodeJob<'a> for FarbfeldDecodeJob {
     type Error = BitmapError;
     type Dec = FarbfeldDecoder<'a>;
     type StreamDec = zencodec::Unsupported<BitmapError>;
@@ -1296,7 +1296,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for FarbfeldDecodeJob<'a> {
 
 /// Single-image farbfeld decoder.
 pub struct FarbfeldDecoder<'a> {
-    config: &'a FarbfeldDecoderConfig,
+    config: FarbfeldDecoderConfig,
     limits: Option<Limits>,
     data: Cow<'a, [u8]>,
     stop: Option<zencodec::StopToken>,
