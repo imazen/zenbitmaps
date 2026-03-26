@@ -419,7 +419,7 @@ impl PnmDecoderConfig {
 
 impl zencodec::decode::DecoderConfig for PnmDecoderConfig {
     type Error = BitmapError;
-    type Job = PnmDecodeJob;
+    type Job<'a> = PnmDecodeJob;
 
     fn formats() -> &'static [ImageFormat] {
         &[ImageFormat::Pnm]
@@ -433,7 +433,7 @@ impl zencodec::decode::DecoderConfig for PnmDecoderConfig {
         &PNM_DECODE_CAPS
     }
 
-    fn job(self) -> PnmDecodeJob {
+    fn job<'a>(self) -> Self::Job<'a> {
         PnmDecodeJob {
             config: self,
             limits: None,
@@ -770,7 +770,7 @@ mod bmp_codec {
 
     impl zencodec::decode::DecoderConfig for BmpDecoderConfig {
         type Error = BitmapError;
-        type Job = BmpDecodeJob;
+        type Job<'a> = BmpDecodeJob;
 
         fn formats() -> &'static [ImageFormat] {
             &[ImageFormat::Bmp]
@@ -784,7 +784,7 @@ mod bmp_codec {
             &BMP_DECODE_CAPS
         }
 
-        fn job(self) -> BmpDecodeJob {
+        fn job<'a>(self) -> Self::Job<'a> {
             BmpDecodeJob {
                 config: self,
                 limits: None,
@@ -1167,7 +1167,7 @@ impl FarbfeldDecoderConfig {
 
 impl zencodec::decode::DecoderConfig for FarbfeldDecoderConfig {
     type Error = BitmapError;
-    type Job = FarbfeldDecodeJob;
+    type Job<'a> = FarbfeldDecodeJob;
 
     fn formats() -> &'static [ImageFormat] {
         &[ImageFormat::Farbfeld]
@@ -1181,7 +1181,7 @@ impl zencodec::decode::DecoderConfig for FarbfeldDecoderConfig {
         &FF_DECODE_CAPS
     }
 
-    fn job(self) -> FarbfeldDecodeJob {
+    fn job<'a>(self) -> Self::Job<'a> {
         FarbfeldDecodeJob {
             config: self,
             limits: None,
