@@ -104,7 +104,10 @@ fn check_limits(
     if let Some(limits) = limits {
         limits.check(width, height)?;
     }
-    let out_bytes = width as usize * height as usize * layout.bytes_per_pixel();
+    let out_bytes = (width as usize)
+        .checked_mul(height as usize)
+        .and_then(|px| px.checked_mul(layout.bytes_per_pixel()))
+        .ok_or_else(|| BitmapError::LimitExceeded("output size overflows usize".into()))?;
     if let Some(limits) = limits {
         limits.check_memory(out_bytes)?;
     }

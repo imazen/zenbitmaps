@@ -26,7 +26,10 @@ pub(crate) fn decode<'a>(
     if let Some(limits) = limits {
         limits.check(width, height)?;
     }
-    let out_bytes = width as usize * height as usize * 8; // 4 channels × 2 bytes
+    let out_bytes = (width as usize)
+        .checked_mul(height as usize)
+        .and_then(|px| px.checked_mul(8)) // 4 channels × 2 bytes
+        .ok_or_else(|| BitmapError::LimitExceeded("output size overflows usize".into()))?;
     if let Some(limits) = limits {
         limits.check_memory(out_bytes)?;
     }
