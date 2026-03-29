@@ -153,6 +153,10 @@ mod pnm;
 
 mod farbfeld;
 
+mod hdr;
+
+mod tga;
+
 #[cfg(feature = "qoi")]
 mod qoi;
 
@@ -250,6 +254,13 @@ pub fn detect_format(data: &[u8]) -> Option<ImageFormat> {
     if data.len() >= 4 && &data[0..4] == b"qoif" {
         return Some(ImageFormat::Qoi);
     }
+    // Radiance HDR: starts with #?RADIANCE or #?RGBE
+    if data.len() >= 10 && data.starts_with(b"#?RADIANCE") {
+        return Some(ImageFormat::Hdr);
+    }
+    if data.len() >= 6 && data.starts_with(b"#?RGBE") {
+        return Some(ImageFormat::Hdr);
+    }
     // PNM magic: P followed by 5, 6, 7, f, or F
     if data.len() >= 2 && data[0] == b'P' {
         match data[1] {
@@ -257,6 +268,46 @@ pub fn detect_format(data: &[u8]) -> Option<ImageFormat> {
             _ => {}
         }
     }
+
+    // TGA: no reliable magic bytes, so this MUST be last.
+    // Use header heuristic: valid image_type, reasonable dimensions,
+    // consistent color_map_type, and valid pixel_depth.
+    if data.len() >= 18 {
+        let color_map_type = data[1];
+        let image_type = data[2];
+        let pixel_depth = data[16];
+        let descriptor = data[17];
+        let width = u16::from_le_bytes([data[12], data[13]]);
+        let height = u16::from_le_bytes([data[14], data[15]]);
+        let alpha_bits = descriptor & 0x0F;
+        // Reserved descriptor bits 6-7 must be zero
+        let reserved_ok = descriptor & 0xC0 == 0;
+
+        if reserved_ok
+            && matches!(image_type, 1 | 2 | 3 | 9 | 10 | 11)
+            && color_map_type <= 1
+            && width > 0
+            && height > 0
+        {
+            // Validate pixel_depth per image type
+            let depth_ok = match image_type {
+                1 | 9 => pixel_depth == 8 && color_map_type == 1,
+                2 | 10 => matches!(pixel_depth, 15 | 16 | 24 | 32),
+                3 | 11 => pixel_depth == 8,
+                _ => false,
+            };
+            // Alpha bits should not exceed pixel depth
+            let alpha_ok = match pixel_depth {
+                32 => alpha_bits <= 8,
+                16 => alpha_bits <= 1,
+                _ => alpha_bits == 0,
+            };
+            if depth_ok && alpha_ok {
+                return Some(ImageFormat::Tga);
+            }
+        }
+    }
+
     None
 }
 
@@ -303,6 +354,8 @@ fn decode_dispatch<'a>(
             ));
         }
         Some(ImageFormat::Pnm) => pnm::decode(data, limits, stop),
+        Some(ImageFormat::Hdr) => hdr::decode(data, limits, stop),
+        Some(ImageFormat::Tga) => tga::decode(data, limits, stop),
         None => Err(BitmapError::UnrecognizedFormat),
     }
 }
@@ -384,6 +437,71 @@ pub fn encode_farbfeld(
     stop: impl Stop,
 ) -> Result<alloc::vec::Vec<u8>, BitmapError> {
     farbfeld::encode(pixels, width, height, layout, &stop)
+}
+
+// ── TGA encode/decode ────────────────────────────────────────────────
+
+/// Decode TGA data to pixels.
+///
+/// Also auto-detected by [`decode()`] via header heuristics (TGA has no magic bytes).
+/// Output layout is [`PixelLayout::Rgb8`], [`PixelLayout::Rgba8`], or [`PixelLayout::Gray8`].
+pub fn decode_tga(data: &[u8], stop: impl Stop) -> Result<DecodeOutput<'_>, BitmapError> {
+    tga::decode(data, None, &stop)
+}
+
+/// Decode TGA with resource limits.
+pub fn decode_tga_with_limits<'a>(
+    data: &'a [u8],
+    limits: &'a Limits,
+    stop: impl Stop,
+) -> Result<DecodeOutput<'a>, BitmapError> {
+    tga::decode(data, Some(limits), &stop)
+}
+
+/// Encode pixels as TGA.
+///
+/// Accepts `Gray8`, `Rgb8`, `Rgba8`, `Bgr8`, `Bgra8` input layouts.
+/// Writes uncompressed TGA with bottom-left origin.
+pub fn encode_tga(
+    pixels: &[u8],
+    width: u32,
+    height: u32,
+    layout: PixelLayout,
+    stop: impl Stop,
+) -> Result<alloc::vec::Vec<u8>, BitmapError> {
+    tga::encode(pixels, width, height, layout, &stop)
+}
+
+// ── HDR encode/decode ────────────────────────────────────────────────
+
+/// Decode Radiance HDR data to pixels.
+///
+/// Also auto-detected by [`decode()`] via `#?RADIANCE` / `#?RGBE` magic.
+/// Output layout is always [`PixelLayout::RgbF32`].
+pub fn decode_hdr(data: &[u8], stop: impl Stop) -> Result<DecodeOutput<'_>, BitmapError> {
+    hdr::decode(data, None, &stop)
+}
+
+/// Decode Radiance HDR with resource limits.
+pub fn decode_hdr_with_limits<'a>(
+    data: &'a [u8],
+    limits: &'a Limits,
+    stop: impl Stop,
+) -> Result<DecodeOutput<'a>, BitmapError> {
+    hdr::decode(data, Some(limits), &stop)
+}
+
+/// Encode pixels as Radiance HDR (RGBE with new-style RLE).
+///
+/// Accepts `RgbF32` (3×f32) or `Rgb8` (converted via /255.0).
+pub fn encode_hdr(
+    pixels: &[u8],
+    width: u32,
+    height: u32,
+    layout: PixelLayout,
+    stop: impl Stop,
+) -> Result<alloc::vec::Vec<u8>, BitmapError> {
+    hdr::encode(pixels, width, height, layout, &stop)
 }
 
 // ── QOI encode/decode ────────────────────────────────────────────────

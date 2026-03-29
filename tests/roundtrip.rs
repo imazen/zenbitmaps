@@ -552,3 +552,350 @@ fn into_owned_works() {
     assert!(!owned.is_borrowed());
     assert_eq!(owned.pixels(), &[1, 2, 3]);
 }
+
+// ── TGA tests ──────────────────────────────────────────────────────
+
+#[test]
+fn tga_roundtrip_rgb8() {
+    // 3x2 checkerboard
+    let pixels = vec![
+        255, 0, 0, 0, 255, 0, 0, 0, 255, 128, 128, 128, 64, 64, 64, 0, 0, 0,
+    ];
+    let encoded = encode_tga(&pixels, 3, 2, PixelLayout::Rgb8, Unstoppable).unwrap();
+    let decoded = decode_tga(&encoded, Unstoppable).unwrap();
+    assert_eq!(decoded.width, 3);
+    assert_eq!(decoded.height, 2);
+    assert_eq!(decoded.layout, PixelLayout::Rgb8);
+    assert_eq!(decoded.pixels(), &pixels[..]);
+}
+
+#[test]
+fn tga_roundtrip_rgba8() {
+    let pixels = vec![
+        255, 0, 0, 255, 0, 255, 0, 128, 0, 0, 255, 64, 128, 128, 128, 255,
+    ];
+    let encoded = encode_tga(&pixels, 2, 2, PixelLayout::Rgba8, Unstoppable).unwrap();
+    let decoded = decode_tga(&encoded, Unstoppable).unwrap();
+    assert_eq!(decoded.width, 2);
+    assert_eq!(decoded.height, 2);
+    assert_eq!(decoded.layout, PixelLayout::Rgba8);
+    assert_eq!(decoded.pixels(), &pixels[..]);
+}
+
+#[test]
+fn tga_roundtrip_gray8() {
+    let pixels = vec![0, 64, 128, 192, 255, 100];
+    let encoded = encode_tga(&pixels, 3, 2, PixelLayout::Gray8, Unstoppable).unwrap();
+    let decoded = decode_tga(&encoded, Unstoppable).unwrap();
+    assert_eq!(decoded.width, 3);
+    assert_eq!(decoded.height, 2);
+    assert_eq!(decoded.layout, PixelLayout::Gray8);
+    assert_eq!(decoded.pixels(), &pixels[..]);
+}
+
+#[test]
+fn tga_1x1() {
+    // Minimal image — single RGB pixel
+    let pixels = vec![42u8, 99, 200];
+    let encoded = encode_tga(&pixels, 1, 1, PixelLayout::Rgb8, Unstoppable).unwrap();
+    let decoded = decode_tga(&encoded, Unstoppable).unwrap();
+    assert_eq!(decoded.width, 1);
+    assert_eq!(decoded.height, 1);
+    assert_eq!(decoded.layout, PixelLayout::Rgb8);
+    assert_eq!(decoded.pixels(), &[42, 99, 200]);
+}
+
+#[test]
+fn tga_encode_bgr8() {
+    // BGR input — TGA stores BGR natively, so encode is direct copy
+    let bgr = vec![10u8, 20, 30]; // B=10, G=20, R=30
+    let encoded = encode_tga(&bgr, 1, 1, PixelLayout::Bgr8, Unstoppable).unwrap();
+    // Decode gives RGB
+    let decoded = decode_tga(&encoded, Unstoppable).unwrap();
+    assert_eq!(decoded.layout, PixelLayout::Rgb8);
+    // Should be swizzled to RGB: R=30, G=20, B=10
+    assert_eq!(decoded.pixels(), &[30, 20, 10]);
+}
+
+#[test]
+fn tga_encode_bgra8() {
+    // BGRA input — TGA stores BGRA natively
+    let bgra = vec![100u8, 150, 200, 255]; // B=100, G=150, R=200, A=255
+    let encoded = encode_tga(&bgra, 1, 1, PixelLayout::Bgra8, Unstoppable).unwrap();
+    let decoded = decode_tga(&encoded, Unstoppable).unwrap();
+    assert_eq!(decoded.layout, PixelLayout::Rgba8);
+    // Swizzled to RGBA: R=200, G=150, B=100, A=255
+    assert_eq!(decoded.pixels(), &[200, 150, 100, 255]);
+}
+
+#[test]
+fn tga_limits_reject() {
+    let pixels = vec![0u8; 100 * 100 * 3];
+    let encoded = encode_tga(&pixels, 100, 100, PixelLayout::Rgb8, Unstoppable).unwrap();
+    let limits = Limits {
+        max_pixels: Some(50),
+        ..Default::default()
+    };
+    let result = decode_tga_with_limits(&encoded, &limits, Unstoppable);
+    assert!(matches!(result, Err(BitmapError::LimitExceeded(_))));
+}
+
+#[test]
+fn tga_decode_empty() {
+    let result = decode_tga(&[], Unstoppable);
+    assert!(result.is_err());
+}
+
+#[test]
+fn tga_decode_truncated() {
+    // Valid-looking header but no pixel data
+    let mut data = vec![0u8; 18];
+    data[2] = 2; // image_type = truecolor
+    data[12] = 10; // width = 10
+    data[14] = 10; // height = 10
+    data[16] = 24; // pixel_depth = 24
+    let result = decode_tga(&data, Unstoppable);
+    assert!(result.is_err());
+}
+
+#[test]
+fn tga_encode_unsupported_layout() {
+    let result = encode_tga(&[0u8; 12], 1, 1, PixelLayout::RgbF32, Unstoppable);
+    assert!(matches!(result, Err(BitmapError::UnsupportedVariant(_))));
+
+    let result = encode_tga(&[0u8; 8], 1, 1, PixelLayout::Rgba16, Unstoppable);
+    assert!(matches!(result, Err(BitmapError::UnsupportedVariant(_))));
+
+    let result = encode_tga(&[0u8; 4], 1, 1, PixelLayout::GrayF32, Unstoppable);
+    assert!(matches!(result, Err(BitmapError::UnsupportedVariant(_))));
+}
+
+#[test]
+fn detect_format_tga() {
+    let pixels = vec![255u8, 0, 0, 0, 255, 0];
+    let encoded = encode_tga(&pixels, 2, 1, PixelLayout::Rgb8, Unstoppable).unwrap();
+    assert_eq!(detect_format(&encoded), Some(ImageFormat::Tga));
+}
+
+#[test]
+fn tga_auto_detect_decode() {
+    let pixels = vec![255u8, 0, 0, 0, 255, 0];
+    let encoded = encode_tga(&pixels, 2, 1, PixelLayout::Rgb8, Unstoppable).unwrap();
+    // decode() should auto-detect TGA from header heuristics and dispatch
+    let decoded = decode(&encoded, Unstoppable).unwrap();
+    assert_eq!(decoded.layout, PixelLayout::Rgb8);
+    assert_eq!(decoded.pixels(), &pixels[..]);
+}
+
+// ── HDR roundtrip tests ────────────────────────────────────────────
+
+/// Helper: build f32 RGB pixel bytes from f32 triples.
+fn make_rgbf32_pixels(values: &[(f32, f32, f32)]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(values.len() * 12);
+    for &(r, g, b) in values {
+        out.extend_from_slice(&r.to_le_bytes());
+        out.extend_from_slice(&g.to_le_bytes());
+        out.extend_from_slice(&b.to_le_bytes());
+    }
+    out
+}
+
+/// Helper: read f32 RGB triples from pixel bytes.
+fn read_rgbf32_pixels(data: &[u8]) -> Vec<(f32, f32, f32)> {
+    data.chunks_exact(12)
+        .map(|chunk| {
+            let r = f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+            let g = f32::from_le_bytes([chunk[4], chunk[5], chunk[6], chunk[7]]);
+            let b = f32::from_le_bytes([chunk[8], chunk[9], chunk[10], chunk[11]]);
+            (r, g, b)
+        })
+        .collect()
+}
+
+/// Assert two f32 values are within RGBE precision (~1% per channel).
+fn assert_f32_close(actual: f32, expected: f32, label: &str) {
+    let eps = 0.02 * expected.abs().max(0.01);
+    assert!(
+        (actual - expected).abs() <= eps,
+        "{label}: expected {expected}, got {actual} (eps={eps})"
+    );
+}
+
+#[test]
+fn hdr_roundtrip_rgbf32() {
+    let values = vec![
+        (1.0, 0.5, 0.25),
+        (0.0, 0.0, 0.0),
+        (2.0, 3.0, 4.0),
+        (0.1, 0.2, 0.3),
+        (100.0, 200.0, 50.0),
+        (0.001, 0.002, 0.003),
+        (10.0, 10.0, 10.0),
+        (0.5, 0.5, 0.5),
+        // 2 more to make a 5x2 image (width < 8, flat path)
+        (1.0, 1.0, 1.0),
+        (0.75, 0.75, 0.75),
+    ];
+    let pixels = make_rgbf32_pixels(&values);
+    let encoded = encode_hdr(&pixels, 5, 2, PixelLayout::RgbF32, Unstoppable).unwrap();
+    let decoded = decode_hdr(&encoded, Unstoppable).unwrap();
+    assert_eq!(decoded.width, 5);
+    assert_eq!(decoded.height, 2);
+    assert_eq!(decoded.layout, PixelLayout::RgbF32);
+
+    let result = read_rgbf32_pixels(decoded.pixels());
+    for (i, (&(er, eg, eb), &(ar, ag, ab))) in values.iter().zip(result.iter()).enumerate() {
+        if er == 0.0 && eg == 0.0 && eb == 0.0 {
+            assert_eq!(ar, 0.0, "pixel {i} R");
+            assert_eq!(ag, 0.0, "pixel {i} G");
+            assert_eq!(ab, 0.0, "pixel {i} B");
+        } else {
+            assert_f32_close(ar, er, &format!("pixel {i} R"));
+            assert_f32_close(ag, eg, &format!("pixel {i} G"));
+            assert_f32_close(ab, eb, &format!("pixel {i} B"));
+        }
+    }
+}
+
+#[test]
+fn hdr_1x1() {
+    let pixels = make_rgbf32_pixels(&[(1.0, 2.0, 3.0)]);
+    let encoded = encode_hdr(&pixels, 1, 1, PixelLayout::RgbF32, Unstoppable).unwrap();
+    let decoded = decode_hdr(&encoded, Unstoppable).unwrap();
+    assert_eq!(decoded.width, 1);
+    assert_eq!(decoded.height, 1);
+    assert_eq!(decoded.layout, PixelLayout::RgbF32);
+    let result = read_rgbf32_pixels(decoded.pixels());
+    assert_f32_close(result[0].0, 1.0, "R");
+    assert_f32_close(result[0].1, 2.0, "G");
+    assert_f32_close(result[0].2, 3.0, "B");
+}
+
+#[test]
+fn hdr_wide_image() {
+    // Width=64, height=2 -- exercises the new-style RLE path (width >= 8)
+    let mut values = Vec::with_capacity(128);
+    for i in 0..128 {
+        let v = (i as f32 + 1.0) * 0.1;
+        values.push((v, v * 0.5, v * 0.25));
+    }
+    let pixels = make_rgbf32_pixels(&values);
+    let encoded = encode_hdr(&pixels, 64, 2, PixelLayout::RgbF32, Unstoppable).unwrap();
+    let decoded = decode_hdr(&encoded, Unstoppable).unwrap();
+    assert_eq!(decoded.width, 64);
+    assert_eq!(decoded.height, 2);
+
+    let result = read_rgbf32_pixels(decoded.pixels());
+    assert_eq!(result.len(), 128);
+    for (i, (&(er, eg, eb), &(ar, ag, ab))) in values.iter().zip(result.iter()).enumerate() {
+        assert_f32_close(ar, er, &format!("pixel {i} R"));
+        assert_f32_close(ag, eg, &format!("pixel {i} G"));
+        assert_f32_close(ab, eb, &format!("pixel {i} B"));
+    }
+}
+
+#[test]
+fn hdr_decode_empty() {
+    let result = decode_hdr(&[], Unstoppable);
+    assert!(result.is_err());
+}
+
+#[test]
+fn hdr_decode_truncated() {
+    // Valid magic but truncated before resolution line
+    let result = decode_hdr(b"#?RADIANCE\n", Unstoppable);
+    assert!(result.is_err());
+}
+
+#[test]
+fn hdr_limits_reject() {
+    let pixels = make_rgbf32_pixels(&vec![(1.0, 1.0, 1.0); 100]);
+    let encoded = encode_hdr(&pixels, 10, 10, PixelLayout::RgbF32, Unstoppable).unwrap();
+    let limits = Limits {
+        max_pixels: Some(50),
+        ..Default::default()
+    };
+    let result = decode_hdr_with_limits(&encoded, &limits, Unstoppable);
+    assert!(matches!(result, Err(BitmapError::LimitExceeded(_))));
+}
+
+#[test]
+fn detect_format_hdr() {
+    let pixels = make_rgbf32_pixels(&[(1.0, 1.0, 1.0)]);
+    let encoded = encode_hdr(&pixels, 1, 1, PixelLayout::RgbF32, Unstoppable).unwrap();
+    assert_eq!(detect_format(&encoded), Some(ImageFormat::Hdr));
+
+    // Also test raw magic bytes
+    assert_eq!(
+        detect_format(b"#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n"),
+        Some(ImageFormat::Hdr)
+    );
+    assert_eq!(
+        detect_format(b"#?RGBE\nFORMAT=32-bit_rle_rgbe\n"),
+        Some(ImageFormat::Hdr)
+    );
+}
+
+#[test]
+fn hdr_auto_detect_decode() {
+    let pixels = make_rgbf32_pixels(&[(0.5, 1.0, 1.5)]);
+    let encoded = encode_hdr(&pixels, 1, 1, PixelLayout::RgbF32, Unstoppable).unwrap();
+    // decode() should auto-detect HDR from magic and dispatch
+    let decoded = decode(&encoded, Unstoppable).unwrap();
+    assert_eq!(decoded.layout, PixelLayout::RgbF32);
+    let result = read_rgbf32_pixels(decoded.pixels());
+    assert_f32_close(result[0].0, 0.5, "R");
+    assert_f32_close(result[0].1, 1.0, "G");
+    assert_f32_close(result[0].2, 1.5, "B");
+}
+
+#[test]
+fn hdr_encode_rgb8() {
+    // Test Rgb8 -> HDR -> decode roundtrip
+    let rgb8_pixels = vec![255u8, 128, 64, 0, 0, 0, 200, 100, 50];
+    let encoded = encode_hdr(&rgb8_pixels, 3, 1, PixelLayout::Rgb8, Unstoppable).unwrap();
+    let decoded = decode_hdr(&encoded, Unstoppable).unwrap();
+    assert_eq!(decoded.layout, PixelLayout::RgbF32);
+    let result = read_rgbf32_pixels(decoded.pixels());
+
+    // First pixel: 255/255=1.0, 128/255~0.502, 64/255~0.251
+    assert_f32_close(result[0].0, 1.0, "px0 R");
+    assert_f32_close(result[0].1, 128.0 / 255.0, "px0 G");
+    assert_f32_close(result[0].2, 64.0 / 255.0, "px0 B");
+
+    // Second pixel: all zero
+    assert_eq!(result[1].0, 0.0);
+    assert_eq!(result[1].1, 0.0);
+    assert_eq!(result[1].2, 0.0);
+
+    // Third pixel: 200/255, 100/255, 50/255
+    assert_f32_close(result[2].0, 200.0 / 255.0, "px2 R");
+    assert_f32_close(result[2].1, 100.0 / 255.0, "px2 G");
+    assert_f32_close(result[2].2, 50.0 / 255.0, "px2 B");
+}
+
+#[test]
+fn hdr_encode_unsupported_layout() {
+    let result = encode_hdr(&[0u8; 4], 1, 1, PixelLayout::Rgba8, Unstoppable);
+    assert!(matches!(result, Err(BitmapError::UnsupportedVariant(_))));
+}
+
+#[test]
+fn hdr_cancellation() {
+    struct AlreadyStopped;
+    impl enough::Stop for AlreadyStopped {
+        fn check(&self) -> Result<(), enough::StopReason> {
+            Err(enough::StopReason::Cancelled)
+        }
+    }
+
+    // Encode should cancel
+    let pixels = make_rgbf32_pixels(&vec![(1.0, 1.0, 1.0); 100]);
+    let result = encode_hdr(&pixels, 10, 10, PixelLayout::RgbF32, AlreadyStopped);
+    assert!(matches!(result, Err(BitmapError::Cancelled(_))));
+
+    // Decode should cancel (use a valid encoded file)
+    let encoded = encode_hdr(&pixels, 10, 10, PixelLayout::RgbF32, Unstoppable).unwrap();
+    let result = decode_hdr(&encoded, AlreadyStopped);
+    assert!(matches!(result, Err(BitmapError::Cancelled(_))));
+}

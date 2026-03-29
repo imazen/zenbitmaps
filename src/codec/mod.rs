@@ -938,7 +938,15 @@ mod tests {
         use zencodec::decode::{DecodeJob, DecoderConfig};
         use zencodec::encode::{EncodeJob, Encoder, EncoderConfig};
 
-        let pixels = vec![rgb::Rgba::<u8> { r: 1, g: 2, b: 3, a: 4 }; 4];
+        let pixels = vec![
+            rgb::Rgba::<u8> {
+                r: 1,
+                g: 2,
+                b: 3,
+                a: 4
+            };
+            4
+        ];
         let img = imgref::ImgVec::new(pixels, 2, 2);
         let encoded = QoiEncoderConfig::new()
             .job()
@@ -1062,10 +1070,30 @@ mod tests {
         use zencodec::encode::{EncodeJob, Encoder, EncoderConfig};
 
         let pixels = vec![
-            rgb::Rgba { r: 255u8, g: 0, b: 0, a: 255 },
-            rgb::Rgba { r: 0, g: 255, b: 0, a: 128 },
-            rgb::Rgba { r: 0, g: 0, b: 255, a: 64 },
-            rgb::Rgba { r: 42, g: 42, b: 42, a: 0 },
+            rgb::Rgba {
+                r: 255u8,
+                g: 0,
+                b: 0,
+                a: 255,
+            },
+            rgb::Rgba {
+                r: 0,
+                g: 255,
+                b: 0,
+                a: 128,
+            },
+            rgb::Rgba {
+                r: 0,
+                g: 0,
+                b: 255,
+                a: 64,
+            },
+            rgb::Rgba {
+                r: 42,
+                g: 42,
+                b: 42,
+                a: 0,
+            },
         ];
         let img = imgref::ImgVec::new(pixels, 2, 2);
         let encoded = QoiEncoderConfig::new()
@@ -1104,7 +1132,11 @@ mod tests {
         use zencodec::decode::{DecodeJob, DecoderConfig, StreamingDecode};
         use zencodec::encode::{EncodeJob, Encoder, EncoderConfig};
 
-        let pixels = vec![rgb::Rgb { r: 99u8, g: 88, b: 77 }];
+        let pixels = vec![rgb::Rgb {
+            r: 99u8,
+            g: 88,
+            b: 77,
+        }];
         let img = imgref::ImgVec::new(pixels, 1, 1);
         let encoded = QoiEncoderConfig::new()
             .job()
@@ -1133,16 +1165,36 @@ mod tests {
         use zencodec::decode::{Decode, DecodeJob, DecoderConfig};
         use zencodec::encode::{EncodeJob, Encoder, EncoderConfig};
 
-        let row0 = vec![rgb::Rgba { r: 10u8, g: 20, b: 30, a: 255 }; 3];
-        let row1 = vec![rgb::Rgba { r: 40u8, g: 50, b: 60, a: 128 }; 3];
+        let row0 = vec![
+            rgb::Rgba {
+                r: 10u8,
+                g: 20,
+                b: 30,
+                a: 255
+            };
+            3
+        ];
+        let row1 = vec![
+            rgb::Rgba {
+                r: 40u8,
+                g: 50,
+                b: 60,
+                a: 128
+            };
+            3
+        ];
 
         let mut encoder = QoiEncoderConfig::new().job().encoder().unwrap();
 
         let img0 = imgref::ImgVec::new(row0.clone(), 3, 1);
-        encoder.push_rows(PixelSlice::from(img0.as_ref()).erase()).unwrap();
+        encoder
+            .push_rows(PixelSlice::from(img0.as_ref()).erase())
+            .unwrap();
 
         let img1 = imgref::ImgVec::new(row1.clone(), 3, 1);
-        encoder.push_rows(PixelSlice::from(img1.as_ref()).erase()).unwrap();
+        encoder
+            .push_rows(PixelSlice::from(img1.as_ref()).erase())
+            .unwrap();
 
         let output = encoder.finish().unwrap();
 
@@ -1168,7 +1220,9 @@ mod tests {
 
         let row0 = vec![rgb::Rgb { r: 0u8, g: 0, b: 0 }; 3];
         let img0 = imgref::ImgVec::new(row0, 3, 1);
-        encoder.push_rows(PixelSlice::from(img0.as_ref()).erase()).unwrap();
+        encoder
+            .push_rows(PixelSlice::from(img0.as_ref()).erase())
+            .unwrap();
 
         // Different width — should error
         let row1 = vec![rgb::Rgb { r: 0u8, g: 0, b: 0 }; 5];

@@ -10,6 +10,10 @@ pub enum ImageFormat {
     Farbfeld,
     /// QOI (Quite OK Image).
     Qoi,
+    /// TGA (Targa).
+    Tga,
+    /// Radiance HDR (RGBE).
+    Hdr,
 }
 
 /// Pixel memory layout.
