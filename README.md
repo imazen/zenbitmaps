@@ -1,8 +1,4 @@
-# zenbitmaps
-
-[![Crates.io](https://img.shields.io/crates/v/zenbitmaps.svg)](https://crates.io/crates/zenbitmaps)
-[![docs.rs](https://docs.rs/zenbitmaps/badge.svg)](https://docs.rs/zenbitmaps)
-[![License](https://img.shields.io/crates/l/zenbitmaps.svg)](LICENSE)
+# zenbitmaps ![CI](https://img.shields.io/github/actions/workflow/status/imazen/zenbitmaps/ci.yml?style=for-the-badge) ![MSRV](https://img.shields.io/badge/MSRV-1.93-blue?style=for-the-badge) ![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue?style=for-the-badge)
 
 PNM/PAM/PFM, BMP, and farbfeld image format decoder and encoder.
 
@@ -12,11 +8,11 @@ PNM/PAM/PFM, BMP, and farbfeld image format decoder and encoder.
 
 ```toml
 [dependencies]
-zenbitmaps = "0.1"                                         # PNM + farbfeld
-zenbitmaps = { version = "0.1", features = ["bmp"] }       # + full BMP support
-zenbitmaps = { version = "0.1", features = ["rgb"] }       # + typed pixel API (RGB8, RGBA8, etc.)
-zenbitmaps = { version = "0.1", features = ["imgref"] }    # + ImgVec/ImgRef 2D buffers (implies rgb)
-zenbitmaps = { version = "0.1", features = ["all"] }       # everything
+zenbitmaps = "0.1.0"                                           # PNM + farbfeld
+zenbitmaps = { version = "0.1.0", features = ["bmp"] }         # + full BMP support
+zenbitmaps = { version = "0.1.0", features = ["rgb"] }         # + typed pixel API (RGB8, RGBA8, etc.)
+zenbitmaps = { version = "0.1.0", features = ["imgref"] }      # + ImgVec/ImgRef 2D buffers (implies rgb)
+zenbitmaps = { version = "0.1.0", features = ["all"] }         # everything
 ```
 
 ## Quick example
@@ -168,6 +164,9 @@ let decoded = decode_with_limits(&data, &limits, Unstoppable)?;
 | `bmp` | Full BMP decode/encode (all bit depths, RLE, bitfields) |
 | `rgb` | Typed pixel API (`RGB8`, `RGBA8`, `as_pixels()`, `encode_*_pixels()`) |
 | `imgref` | 2D buffer API (`ImgVec`/`ImgRef`, `as_imgref()`, `decode_into()`) — implies `rgb` |
+| `std` | Enable `std` support (not required — `no_std` + `alloc` by default) |
+| `zencodec` | zencodec trait integration (implies `rgb` + `imgref`) |
+| `zennode` | zennode node definitions (EncodeBmp schema with RIAPI keys) |
 | `all` | `bmp` + `rgb` + `imgref` |
 
 ## API
