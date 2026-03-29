@@ -888,6 +888,322 @@ mod tests {
         );
     }
 
+    // ── QOI zencodec trait tests ────────────────────────────────────────
+
+    #[cfg(feature = "qoi")]
+    #[test]
+    fn qoi_capabilities_correct() {
+        use zencodec::decode::DecoderConfig;
+        use zencodec::encode::EncoderConfig;
+
+        let enc_caps = QoiEncoderConfig::capabilities();
+        assert!(enc_caps.lossless());
+        assert!(enc_caps.native_alpha());
+        assert!(enc_caps.stop());
+        assert!(!enc_caps.native_gray());
+        assert!(!enc_caps.native_f32());
+
+        let dec_caps = QoiDecoderConfig::capabilities();
+        assert!(dec_caps.cheap_probe());
+        assert!(dec_caps.native_alpha());
+        assert!(dec_caps.streaming());
+        assert!(dec_caps.stop());
+        assert!(!dec_caps.native_gray());
+    }
+
+    #[cfg(feature = "qoi")]
+    #[test]
+    fn qoi_encode_descriptors() {
+        use zencodec::encode::EncoderConfig;
+        let descs = QoiEncoderConfig::supported_descriptors();
+        assert!(descs.contains(&PixelDescriptor::RGB8_SRGB));
+        assert!(descs.contains(&PixelDescriptor::RGBA8_SRGB));
+        assert!(descs.contains(&PixelDescriptor::BGRA8_SRGB));
+        assert!(!descs.contains(&PixelDescriptor::GRAY8_SRGB));
+    }
+
+    #[cfg(feature = "qoi")]
+    #[test]
+    fn qoi_decode_descriptors() {
+        use zencodec::decode::DecoderConfig;
+        let descs = QoiDecoderConfig::supported_descriptors();
+        assert!(descs.contains(&PixelDescriptor::RGB8_SRGB));
+        assert!(descs.contains(&PixelDescriptor::RGBA8_SRGB));
+        assert!(!descs.contains(&PixelDescriptor::BGRA8_SRGB));
+    }
+
+    #[cfg(feature = "qoi")]
+    #[test]
+    fn qoi_output_info() {
+        use zencodec::decode::{DecodeJob, DecoderConfig};
+        use zencodec::encode::{EncodeJob, Encoder, EncoderConfig};
+
+        let pixels = vec![rgb::Rgba::<u8> { r: 1, g: 2, b: 3, a: 4 }; 4];
+        let img = imgref::ImgVec::new(pixels, 2, 2);
+        let encoded = QoiEncoderConfig::new()
+            .job()
+            .encoder()
+            .unwrap()
+            .encode(PixelSlice::from(img.as_ref()).erase())
+            .unwrap();
+
+        let info = QoiDecoderConfig::new()
+            .job()
+            .output_info(encoded.data())
+            .unwrap();
+        assert_eq!(info.width, 2);
+        assert_eq!(info.height, 2);
+        assert!(info.has_alpha);
+        assert_eq!(info.native_format, PixelDescriptor::RGBA8_SRGB);
+    }
+
+    #[cfg(feature = "qoi")]
+    #[test]
+    fn qoi_animation_rejected() {
+        use zencodec::decode::{DecodeJob, DecoderConfig};
+        use zencodec::encode::{EncodeJob, EncoderConfig};
+
+        // Animation encode
+        let result = QoiEncoderConfig::new().job().animation_frame_encoder();
+        assert!(result.is_err());
+
+        // Animation decode
+        let pixels = vec![rgb::Rgb::<u8> { r: 0, g: 0, b: 0 }; 1];
+        let img = imgref::ImgVec::new(pixels, 1, 1);
+        let encoded = QoiEncoderConfig::new()
+            .job()
+            .encoder()
+            .unwrap()
+            .encode(PixelSlice::from(img.as_ref()).erase())
+            .unwrap();
+        let result = QoiDecoderConfig::new()
+            .job()
+            .animation_frame_decoder(Cow::Borrowed(encoded.data()), &[]);
+        assert!(result.is_err());
+    }
+
+    #[cfg(feature = "qoi")]
+    #[test]
+    fn qoi_with_limits_decode() {
+        use zencodec::decode::{Decode, DecodeJob, DecoderConfig};
+        use zencodec::encode::{EncodeJob, Encoder, EncoderConfig};
+
+        let pixels = vec![rgb::Rgb::<u8> { r: 0, g: 0, b: 0 }; 100];
+        let img = imgref::ImgVec::new(pixels, 10, 10);
+        let encoded = QoiEncoderConfig::new()
+            .job()
+            .encoder()
+            .unwrap()
+            .encode(PixelSlice::from(img.as_ref()).erase())
+            .unwrap();
+
+        // max_width too small
+        let limits = ResourceLimits::none().with_max_width(5);
+        let result = QoiDecoderConfig::new()
+            .job()
+            .with_limits(limits)
+            .decoder(Cow::Borrowed(encoded.data()), &[])
+            .unwrap()
+            .decode();
+        assert!(result.is_err());
+    }
+
+    #[cfg(feature = "qoi")]
+    #[test]
+    fn qoi_with_limits_streaming() {
+        use zencodec::decode::{DecodeJob, DecoderConfig};
+        use zencodec::encode::{EncodeJob, Encoder, EncoderConfig};
+
+        let pixels = vec![rgb::Rgb::<u8> { r: 0, g: 0, b: 0 }; 100];
+        let img = imgref::ImgVec::new(pixels, 10, 10);
+        let encoded = QoiEncoderConfig::new()
+            .job()
+            .encoder()
+            .unwrap()
+            .encode(PixelSlice::from(img.as_ref()).erase())
+            .unwrap();
+
+        // max_height too small — should fail at streaming_decoder creation
+        let limits = ResourceLimits::none().with_max_height(5);
+        let result = QoiDecoderConfig::new()
+            .job()
+            .with_limits(limits)
+            .streaming_decoder(Cow::Borrowed(encoded.data()), &[]);
+        assert!(result.is_err());
+    }
+
+    #[cfg(feature = "qoi")]
+    #[test]
+    fn qoi_max_input_bytes_limit() {
+        use zencodec::decode::{DecodeJob, DecoderConfig};
+        use zencodec::encode::{EncodeJob, Encoder, EncoderConfig};
+
+        let pixels = vec![rgb::Rgb::<u8> { r: 0, g: 0, b: 0 }; 4];
+        let img = imgref::ImgVec::new(pixels, 2, 2);
+        let encoded = QoiEncoderConfig::new()
+            .job()
+            .encoder()
+            .unwrap()
+            .encode(PixelSlice::from(img.as_ref()).erase())
+            .unwrap();
+
+        let limits = ResourceLimits::none().with_max_input_bytes(5); // too small
+        let result = QoiDecoderConfig::new()
+            .job()
+            .with_limits(limits)
+            .decoder(Cow::Borrowed(encoded.data()), &[]);
+        assert!(result.is_err());
+    }
+
+    #[cfg(feature = "qoi")]
+    #[test]
+    fn qoi_streaming_decode_rgba() {
+        use zencodec::decode::{DecodeJob, DecoderConfig, StreamingDecode};
+        use zencodec::encode::{EncodeJob, Encoder, EncoderConfig};
+
+        let pixels = vec![
+            rgb::Rgba { r: 255u8, g: 0, b: 0, a: 255 },
+            rgb::Rgba { r: 0, g: 255, b: 0, a: 128 },
+            rgb::Rgba { r: 0, g: 0, b: 255, a: 64 },
+            rgb::Rgba { r: 42, g: 42, b: 42, a: 0 },
+        ];
+        let img = imgref::ImgVec::new(pixels, 2, 2);
+        let encoded = QoiEncoderConfig::new()
+            .job()
+            .encoder()
+            .unwrap()
+            .encode(PixelSlice::from(img.as_ref()).erase())
+            .unwrap();
+
+        let mut stream = QoiDecoderConfig::new()
+            .job()
+            .streaming_decoder(Cow::Borrowed(encoded.data()), &[])
+            .unwrap();
+
+        assert!(stream.info().has_alpha);
+
+        // Row 0
+        let (y, batch) = stream.next_batch().unwrap().unwrap();
+        assert_eq!(y, 0);
+        let row0 = batch.contiguous_bytes();
+        assert_eq!(&row0[..], &[255, 0, 0, 255, 0, 255, 0, 128]);
+
+        // Row 1
+        let (y, batch) = stream.next_batch().unwrap().unwrap();
+        assert_eq!(y, 1);
+        let row1 = batch.contiguous_bytes();
+        assert_eq!(&row1[..], &[0, 0, 255, 64, 42, 42, 42, 0]);
+
+        // Done
+        assert!(stream.next_batch().unwrap().is_none());
+    }
+
+    #[cfg(feature = "qoi")]
+    #[test]
+    fn qoi_streaming_decode_1x1() {
+        use zencodec::decode::{DecodeJob, DecoderConfig, StreamingDecode};
+        use zencodec::encode::{EncodeJob, Encoder, EncoderConfig};
+
+        let pixels = vec![rgb::Rgb { r: 99u8, g: 88, b: 77 }];
+        let img = imgref::ImgVec::new(pixels, 1, 1);
+        let encoded = QoiEncoderConfig::new()
+            .job()
+            .encoder()
+            .unwrap()
+            .encode(PixelSlice::from(img.as_ref()).erase())
+            .unwrap();
+
+        let mut stream = QoiDecoderConfig::new()
+            .job()
+            .streaming_decoder(Cow::Borrowed(encoded.data()), &[])
+            .unwrap();
+
+        let (y, batch) = stream.next_batch().unwrap().unwrap();
+        assert_eq!(y, 0);
+        assert_eq!(batch.width(), 1);
+        assert_eq!(batch.rows(), 1);
+        assert_eq!(&batch.contiguous_bytes()[..], &[99, 88, 77]);
+
+        assert!(stream.next_batch().unwrap().is_none());
+    }
+
+    #[cfg(feature = "qoi")]
+    #[test]
+    fn qoi_streaming_encode_rgba_roundtrip() {
+        use zencodec::decode::{Decode, DecodeJob, DecoderConfig};
+        use zencodec::encode::{EncodeJob, Encoder, EncoderConfig};
+
+        let row0 = vec![rgb::Rgba { r: 10u8, g: 20, b: 30, a: 255 }; 3];
+        let row1 = vec![rgb::Rgba { r: 40u8, g: 50, b: 60, a: 128 }; 3];
+
+        let mut encoder = QoiEncoderConfig::new().job().encoder().unwrap();
+
+        let img0 = imgref::ImgVec::new(row0.clone(), 3, 1);
+        encoder.push_rows(PixelSlice::from(img0.as_ref()).erase()).unwrap();
+
+        let img1 = imgref::ImgVec::new(row1.clone(), 3, 1);
+        encoder.push_rows(PixelSlice::from(img1.as_ref()).erase()).unwrap();
+
+        let output = encoder.finish().unwrap();
+
+        let decoded = QoiDecoderConfig::new()
+            .job()
+            .decoder(Cow::Borrowed(output.data()), &[])
+            .unwrap()
+            .decode()
+            .unwrap();
+        assert!(decoded.has_alpha());
+        let buf = decoded.into_buffer();
+        let result = buf.try_as_imgref::<rgb::Rgba<u8>>().unwrap();
+        assert_eq!(result.width(), 3);
+        assert_eq!(result.height(), 2);
+    }
+
+    #[cfg(feature = "qoi")]
+    #[test]
+    fn qoi_streaming_encode_width_mismatch_error() {
+        use zencodec::encode::{EncodeJob, Encoder, EncoderConfig};
+
+        let mut encoder = QoiEncoderConfig::new().job().encoder().unwrap();
+
+        let row0 = vec![rgb::Rgb { r: 0u8, g: 0, b: 0 }; 3];
+        let img0 = imgref::ImgVec::new(row0, 3, 1);
+        encoder.push_rows(PixelSlice::from(img0.as_ref()).erase()).unwrap();
+
+        // Different width — should error
+        let row1 = vec![rgb::Rgb { r: 0u8, g: 0, b: 0 }; 5];
+        let img1 = imgref::ImgVec::new(row1, 5, 1);
+        let result = encoder.push_rows(PixelSlice::from(img1.as_ref()).erase());
+        assert!(result.is_err());
+    }
+
+    #[cfg(feature = "qoi")]
+    #[test]
+    fn qoi_streaming_encode_finish_without_push_errors() {
+        use zencodec::encode::{EncodeJob, Encoder, EncoderConfig};
+
+        let encoder = QoiEncoderConfig::new().job().encoder().unwrap();
+        let result = encoder.finish();
+        assert!(result.is_err());
+    }
+
+    #[cfg(feature = "qoi")]
+    #[test]
+    fn qoi_is_lossless() {
+        use zencodec::encode::EncoderConfig;
+        let config = QoiEncoderConfig::new();
+        assert_eq!(config.is_lossless(), Some(true));
+    }
+
+    #[cfg(feature = "qoi")]
+    #[test]
+    fn qoi_format_is_qoi() {
+        use zencodec::decode::DecoderConfig;
+        use zencodec::encode::EncoderConfig;
+        assert_eq!(QoiEncoderConfig::format(), ImageFormat::Qoi);
+        assert_eq!(QoiDecoderConfig::formats(), &[ImageFormat::Qoi]);
+    }
+
     #[cfg(feature = "bmp")]
     #[test]
     fn bmp_capabilities_include_native_gray() {
