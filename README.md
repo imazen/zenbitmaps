@@ -166,7 +166,7 @@ let decoded = decode_with_limits(&data, &limits, Unstoppable)?;
 | `imgref` | 2D buffer API (`ImgVec`/`ImgRef`, `as_imgref()`, `decode_into()`) — implies `rgb` |
 | `std` | Enable `std` support (not required — `no_std` + `alloc` by default) |
 | `zencodec` | zencodec trait integration (implies `rgb` + `imgref`) |
-| `zennode` | zennode node definitions (EncodeBmp schema with RIAPI keys) |
+| `zennode` | zennode node definitions (EncodeBmp schema with RIAPI keys) — *temporarily disabled, not yet published* |
 | `all` | `bmp` + `rgb` + `imgref` |
 
 ## API
