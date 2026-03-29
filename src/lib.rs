@@ -162,9 +162,9 @@ mod pixel_traits;
 #[cfg(feature = "zencodec")]
 mod codec;
 
-// zennode node definitions
-#[cfg(feature = "zennode")]
-pub mod zennode_defs;
+// zennode node definitions — disabled until zennode is published to crates.io
+// #[cfg(feature = "zennode")]
+// pub mod zennode_defs;
 
 pub use decode::DecodeOutput;
 pub use enough::{Stop, Unstoppable};

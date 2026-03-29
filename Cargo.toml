@@ -19,7 +19,8 @@ imgref = { version = "1.12", default-features = false, optional = true }
 rgb = { version = "0.8", default-features = false, features = ["as-bytes"], optional = true }
 thiserror = { version = "2.0", default-features = false }
 zencodec = { version = "0.1.5", optional = true }
-zennode = { path = "../zennode/zennode", default-features = false, features = ["derive"], optional = true }
+# zennode is not yet published; uncomment when it's on crates.io
+# zennode = { path = "../zennode/zennode", default-features = false, features = ["derive"], optional = true }
 zenpixels = { version = "0.2.1", default-features = false, features = ["imgref"], optional = true }
 
 [dev-dependencies]
@@ -43,7 +44,8 @@ imgref = ["dep:imgref", "rgb"] # ImgVec/ImgRef 2D buffer support (implies rgb)
 zencodec = ["dep:zencodec", "dep:zenpixels", "imgref", "rgb"]
 
 # zennode node definitions (EncodeBmp schema with RIAPI keys)
-zennode = ["dep:zennode"]
+# Disabled until zennode is published to crates.io
+# zennode = ["dep:zennode"]
 
 # All optional features
 all = ["bmp", "rgb", "imgref"]
