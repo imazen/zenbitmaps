@@ -12,7 +12,7 @@ pub enum ImageFormat {
 
 /// Pixel memory layout.
 #[non_exhaustive]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PixelLayout {
     /// Single channel, 8-bit grayscale.
     Gray8,

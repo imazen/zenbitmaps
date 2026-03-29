@@ -1,7 +1,7 @@
 /// Resource limits for decode/encode operations.
 ///
 /// All fields default to `None` (no limit).
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Limits {
     pub max_width: Option<u64>,
     pub max_height: Option<u64>,
