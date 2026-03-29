@@ -31,7 +31,7 @@ pub(crate) struct TgaHeader {
 
 impl TgaHeader {
     /// Number of alpha/attribute bits (descriptor bits 0-3).
-    fn alpha_bits(&self) -> u8 {
+    pub(crate) fn alpha_bits(&self) -> u8 {
         self.descriptor & 0x0F
     }
 
@@ -51,12 +51,12 @@ impl TgaHeader {
     }
 
     /// Whether this is a color-mapped image type.
-    fn is_color_mapped(&self) -> bool {
+    pub(crate) fn is_color_mapped(&self) -> bool {
         matches!(self.image_type, 1 | 9)
     }
 
     /// Whether this is a grayscale image type.
-    fn is_grayscale(&self) -> bool {
+    pub(crate) fn is_grayscale(&self) -> bool {
         matches!(self.image_type, 3 | 11)
     }
 }

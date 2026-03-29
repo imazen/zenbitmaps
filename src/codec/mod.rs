@@ -53,6 +53,12 @@ mod qoi_codec;
 #[cfg(feature = "qoi")]
 pub use qoi_codec::*;
 
+mod hdr_codec;
+pub use hdr_codec::*;
+
+mod tga_codec;
+pub use tga_codec::*;
+
 // ══════════════════════════════════════════════════════════════════════
 // Shared helpers
 // ══════════════════════════════════════════════════════════════════════
@@ -1286,5 +1292,335 @@ mod tests {
             descs.contains(&PixelDescriptor::GRAY8_SRGB),
             "BMP_DECODE_DESCRIPTORS should contain GRAY8_SRGB"
         );
+    }
+
+    // ── HDR zencodec trait tests ───────────────────────────────────────
+
+    #[test]
+    fn hdr_encode_decode_f32_roundtrip() {
+        use zencodec::decode::{Decode, DecodeJob, DecoderConfig};
+        use zencodec::encode::{EncodeJob, Encoder, EncoderConfig};
+
+        let pixels = vec![
+            rgb::Rgb {
+                r: 1.0f32,
+                g: 0.5,
+                b: 0.25,
+            },
+            rgb::Rgb {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+            },
+            rgb::Rgb {
+                r: 2.0,
+                g: 1.5,
+                b: 0.75,
+            },
+            rgb::Rgb {
+                r: 0.1,
+                g: 0.2,
+                b: 0.3,
+            },
+        ];
+        let img = imgref::ImgVec::new(pixels.clone(), 2, 2);
+        let encoded = HdrEncoderConfig::new()
+            .job()
+            .encoder()
+            .unwrap()
+            .encode(PixelSlice::from(img.as_ref()).erase())
+            .unwrap();
+        assert_eq!(encoded.format(), HDR_IMAGE_FORMAT);
+
+        let decoded = HdrDecoderConfig::new()
+            .job()
+            .decoder(Cow::Borrowed(encoded.data()), &[])
+            .unwrap()
+            .decode()
+            .unwrap();
+        assert_eq!(decoded.width(), 2);
+        assert_eq!(decoded.height(), 2);
+
+        // HDR decodes to RgbaF32 (promoted from RgbF32)
+        let buf = decoded.into_buffer();
+        let rgba_img = buf.try_as_imgref::<rgb::Rgba<f32>>().unwrap();
+        let result = rgba_img.buf();
+
+        // RGBE is lossy — verify within epsilon
+        let eps = 0.02;
+        for (i, orig) in pixels.iter().enumerate() {
+            let got = &result[i];
+            assert!(
+                (got.r - orig.r).abs() < eps,
+                "pixel {i} r: expected {}, got {}",
+                orig.r,
+                got.r
+            );
+            assert!(
+                (got.g - orig.g).abs() < eps,
+                "pixel {i} g: expected {}, got {}",
+                orig.g,
+                got.g
+            );
+            assert!(
+                (got.b - orig.b).abs() < eps,
+                "pixel {i} b: expected {}, got {}",
+                orig.b,
+                got.b
+            );
+            assert!(
+                (got.a - 1.0).abs() < f32::EPSILON,
+                "pixel {i} a: expected 1.0, got {}",
+                got.a
+            );
+        }
+    }
+
+    #[test]
+    fn hdr_probe_extracts_info() {
+        use zencodec::decode::{DecodeJob, DecoderConfig};
+        use zencodec::encode::{EncodeJob, Encoder, EncoderConfig};
+
+        let pixels = vec![
+            rgb::Rgb {
+                r: 1.0f32,
+                g: 0.5,
+                b: 0.25,
+            };
+            6
+        ];
+        let img = imgref::ImgVec::new(pixels, 3, 2);
+        let encoded = HdrEncoderConfig::new()
+            .job()
+            .encoder()
+            .unwrap()
+            .encode(PixelSlice::from(img.as_ref()).erase())
+            .unwrap();
+
+        let info = HdrDecoderConfig::new()
+            .job()
+            .probe(encoded.data())
+            .unwrap();
+        assert_eq!(info.width, 3);
+        assert_eq!(info.height, 2);
+        assert_eq!(info.format, HDR_IMAGE_FORMAT);
+        assert!(!info.has_alpha);
+        assert_eq!(info.source_color.bit_depth, Some(32));
+        assert_eq!(info.source_color.channel_count, Some(3));
+        // Linear CICP: color_primaries=1, transfer_characteristics=8, matrix_coefficients=0, full_range=true
+        let cicp = info.source_color.cicp.unwrap();
+        assert_eq!(cicp.color_primaries, 1);
+        assert_eq!(cicp.transfer_characteristics, 8);
+        assert_eq!(cicp.matrix_coefficients, 0);
+        assert!(cicp.full_range);
+    }
+
+    #[test]
+    fn hdr_streaming_decode() {
+        use zencodec::decode::{DecodeJob, DecoderConfig, StreamingDecode};
+        use zencodec::encode::{EncodeJob, Encoder, EncoderConfig};
+
+        let pixels = vec![
+            rgb::Rgb {
+                r: 1.0f32,
+                g: 0.5,
+                b: 0.25,
+            },
+            rgb::Rgb {
+                r: 0.5,
+                g: 1.0,
+                b: 0.75,
+            },
+            rgb::Rgb {
+                r: 0.1,
+                g: 0.2,
+                b: 0.3,
+            },
+            rgb::Rgb {
+                r: 2.0,
+                g: 1.5,
+                b: 1.0,
+            },
+        ];
+        let img = imgref::ImgVec::new(pixels.clone(), 2, 2);
+        let encoded = HdrEncoderConfig::new()
+            .job()
+            .encoder()
+            .unwrap()
+            .encode(PixelSlice::from(img.as_ref()).erase())
+            .unwrap();
+
+        let mut stream = HdrDecoderConfig::new()
+            .job()
+            .streaming_decoder(Cow::Borrowed(encoded.data()), &[])
+            .unwrap();
+
+        assert_eq!(stream.info().width, 2);
+        assert_eq!(stream.info().height, 2);
+        assert!(!stream.info().has_alpha);
+
+        let eps = 0.02;
+
+        // Row 0
+        let (y, batch) = stream.next_batch().unwrap().unwrap();
+        assert_eq!(y, 0);
+        assert_eq!(batch.rows(), 1);
+        assert_eq!(batch.width(), 2);
+        let row0_bytes = batch.contiguous_bytes();
+        // 2 pixels * 3 floats * 4 bytes = 24 bytes
+        assert_eq!(row0_bytes.len(), 24);
+        let r0 = f32::from_le_bytes([row0_bytes[0], row0_bytes[1], row0_bytes[2], row0_bytes[3]]);
+        assert!((r0 - 1.0).abs() < eps, "row0 px0 r = {r0}");
+
+        // Row 1
+        let (y, batch) = stream.next_batch().unwrap().unwrap();
+        assert_eq!(y, 1);
+        assert_eq!(batch.rows(), 1);
+
+        // Done
+        assert!(stream.next_batch().unwrap().is_none());
+    }
+
+    #[test]
+    fn hdr_streaming_encode_roundtrip() {
+        use zencodec::decode::{Decode, DecodeJob, DecoderConfig};
+        use zencodec::encode::{EncodeJob, Encoder, EncoderConfig};
+
+        let row0: Vec<rgb::Rgb<f32>> = vec![
+            rgb::Rgb {
+                r: 1.0f32,
+                g: 0.5,
+                b: 0.25,
+            },
+            rgb::Rgb {
+                r: 0.3,
+                g: 0.6,
+                b: 0.9,
+            },
+        ];
+        let row1: Vec<rgb::Rgb<f32>> = vec![
+            rgb::Rgb {
+                r: 2.0f32,
+                g: 1.5,
+                b: 1.0,
+            },
+            rgb::Rgb {
+                r: 0.1,
+                g: 0.2,
+                b: 0.3,
+            },
+        ];
+
+        let mut encoder = HdrEncoderConfig::new().job().encoder().unwrap();
+
+        let img0 = imgref::ImgVec::new(row0.clone(), 2, 1);
+        encoder
+            .push_rows(PixelSlice::from(img0.as_ref()).erase())
+            .unwrap();
+
+        let img1 = imgref::ImgVec::new(row1.clone(), 2, 1);
+        encoder
+            .push_rows(PixelSlice::from(img1.as_ref()).erase())
+            .unwrap();
+
+        let output = encoder.finish().unwrap();
+        assert_eq!(output.format(), HDR_IMAGE_FORMAT);
+
+        // Decode and verify
+        let decoded = HdrDecoderConfig::new()
+            .job()
+            .decoder(Cow::Borrowed(output.data()), &[])
+            .unwrap()
+            .decode()
+            .unwrap();
+        assert_eq!(decoded.width(), 2);
+        assert_eq!(decoded.height(), 2);
+
+        let buf = decoded.into_buffer();
+        let rgba_img = buf.try_as_imgref::<rgb::Rgba<f32>>().unwrap();
+        let result = rgba_img.buf();
+        let all_pixels: Vec<rgb::Rgb<f32>> = row0.into_iter().chain(row1).collect();
+
+        let eps = 0.02;
+        for (i, orig) in all_pixels.iter().enumerate() {
+            let got = &result[i];
+            assert!(
+                (got.r - orig.r).abs() < eps,
+                "pixel {i} r mismatch: {:.3} vs {:.3}",
+                got.r,
+                orig.r,
+            );
+            assert!(
+                (got.g - orig.g).abs() < eps,
+                "pixel {i} g mismatch",
+            );
+            assert!(
+                (got.b - orig.b).abs() < eps,
+                "pixel {i} b mismatch",
+            );
+        }
+    }
+
+    #[test]
+    fn hdr_capabilities_correct() {
+        use zencodec::decode::DecoderConfig;
+        use zencodec::encode::EncoderConfig;
+
+        let enc_caps = HdrEncoderConfig::capabilities();
+        assert!(enc_caps.hdr());
+        assert!(enc_caps.native_f32());
+        assert!(enc_caps.stop());
+        assert!(!enc_caps.lossless());
+        assert!(!enc_caps.native_alpha());
+        assert!(!enc_caps.native_gray());
+        assert!(!enc_caps.icc());
+
+        let dec_caps = HdrDecoderConfig::capabilities();
+        assert!(dec_caps.hdr());
+        assert!(dec_caps.native_f32());
+        assert!(dec_caps.cheap_probe());
+        assert!(dec_caps.streaming());
+        assert!(dec_caps.stop());
+        assert!(!dec_caps.native_alpha());
+        assert!(!dec_caps.native_gray());
+    }
+
+    #[test]
+    fn hdr_format_is_hdr() {
+        use zencodec::decode::DecoderConfig;
+        use zencodec::encode::EncoderConfig;
+        assert_eq!(HdrEncoderConfig::format(), HDR_IMAGE_FORMAT);
+        assert_eq!(HdrDecoderConfig::formats(), &[HDR_IMAGE_FORMAT]);
+    }
+
+    #[test]
+    fn hdr_animation_rejected() {
+        use zencodec::decode::{DecodeJob, DecoderConfig};
+        use zencodec::encode::{EncodeJob, EncoderConfig};
+
+        // Animation encode
+        let result = HdrEncoderConfig::new().job().animation_frame_encoder();
+        assert!(result.is_err());
+
+        // Animation decode
+        let pixels = vec![
+            rgb::Rgb {
+                r: 1.0f32,
+                g: 0.5,
+                b: 0.25,
+            };
+            1
+        ];
+        let img = imgref::ImgVec::new(pixels, 1, 1);
+        let encoded = HdrEncoderConfig::new()
+            .job()
+            .encoder()
+            .unwrap()
+            .encode(PixelSlice::from(img.as_ref()).erase())
+            .unwrap();
+        let result = HdrDecoderConfig::new()
+            .job()
+            .animation_frame_decoder(Cow::Borrowed(encoded.data()), &[]);
+        assert!(result.is_err());
     }
 }

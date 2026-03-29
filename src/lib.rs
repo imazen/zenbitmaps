@@ -206,6 +206,18 @@ pub use codec::{
     QoiDecodeJob, QoiDecoder, QoiDecoderConfig, QoiEncodeJob, QoiEncoder, QoiEncoderConfig,
 };
 
+#[cfg(feature = "zencodec")]
+pub use codec::{
+    HdrDecodeJob, HdrDecoder, HdrDecoderConfig, HdrEncodeJob, HdrEncoder, HdrEncoderConfig,
+    HDR_FORMAT_DEF, HDR_IMAGE_FORMAT,
+};
+
+#[cfg(feature = "zencodec")]
+pub use codec::{
+    TgaDecodeJob, TgaDecoder, TgaDecoderConfig, TgaEncodeJob, TgaEncoder, TgaEncoderConfig,
+    TGA_FORMAT_DEF, TGA_IMAGE_FORMAT,
+};
+
 // Re-export rgb pixel types for convenience
 #[cfg(feature = "rgb")]
 pub use rgb::RGB as Rgb;
