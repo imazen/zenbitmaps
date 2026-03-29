@@ -23,7 +23,7 @@ zennode = { path = "../zennode/zennode", default-features = false, features = ["
 zenpixels = { version = "0.2.0", default-features = false, features = ["imgref"], optional = true }
 
 [dev-dependencies]
-archmage = { version = "0.9.12", features = ["std"] }
+archmage = { version = "0.9.14", features = ["std"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 codec-corpus = "1"
