@@ -77,10 +77,18 @@ pub(crate) fn header_to_image_info(header: &crate::pnm::PnmHeader) -> ImageInfo 
         _ if header.maxval > 255 => 16,
         _ => 8,
     };
+    // PFM is linear float; all other PNM variants are sRGB
+    let cicp = match header.layout {
+        PixelLayout::GrayF32 | PixelLayout::RgbF32 => {
+            zencodec::Cicp::new(1, 8, 0, true) // BT.709 primaries, Linear transfer
+        }
+        _ => zencodec::Cicp::SRGB,
+    };
     ImageInfo::new(header.width, header.height, ImageFormat::Pnm)
         .with_alpha(has_alpha)
         .with_bit_depth(bit_depth)
         .with_channel_count(header.depth as u8)
+        .with_cicp(cicp)
         .with_source_encoding_details(BitmapSourceEncoding)
 }
 

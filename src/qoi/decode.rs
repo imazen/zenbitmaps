@@ -8,8 +8,17 @@ use enough::Stop;
 
 use crate::error::BitmapError;
 
-/// Parse QOI header, returning (width, height, has_alpha).
-pub(crate) fn parse_header(data: &[u8]) -> Result<(u32, u32, bool), BitmapError> {
+/// Parsed QOI header info.
+pub(crate) struct QoiHeaderInfo {
+    pub width: u32,
+    pub height: u32,
+    pub has_alpha: bool,
+    /// True if the QOI colorspace field signals linear (not sRGB).
+    pub is_linear: bool,
+}
+
+/// Parse QOI header, returning dimensions, alpha, and colorspace.
+pub(crate) fn parse_header(data: &[u8]) -> Result<QoiHeaderInfo, BitmapError> {
     let qoi = rapid_qoi::Qoi::decode_header(data)
         .map_err(|e| BitmapError::InvalidHeader(e.to_string()))?;
 
@@ -20,7 +29,14 @@ pub(crate) fn parse_header(data: &[u8]) -> Result<(u32, u32, bool), BitmapError>
         return Err(BitmapError::InvalidHeader("QOI height is zero".into()));
     }
 
-    Ok((qoi.width, qoi.height, qoi.colors.has_alpha()))
+    let is_linear = matches!(qoi.colors, rapid_qoi::Colors::Rgb | rapid_qoi::Colors::Rgba);
+
+    Ok(QoiHeaderInfo {
+        width: qoi.width,
+        height: qoi.height,
+        has_alpha: qoi.colors.has_alpha(),
+        is_linear,
+    })
 }
 
 /// Decode QOI pixel data with row-level cancellation.

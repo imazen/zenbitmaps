@@ -290,13 +290,21 @@ impl<'a> zencodec::decode::DecodeJob<'a> for BmpDecodeJob {
             crate::PixelLayout::Rgba8 | crate::PixelLayout::Bgra8 => 4,
             _ => 3, // BMP decoded output is at least RGB
         };
-        Ok(
-            ImageInfo::new(header.width, header.height, ImageFormat::Bmp)
-                .with_alpha(has_alpha)
-                .with_bit_depth(header.bpp as u8)
-                .with_channel_count(channel_count)
-                .with_source_encoding_details(BitmapSourceEncoding),
-        )
+        let mut info = ImageInfo::new(header.width, header.height, ImageFormat::Bmp)
+            .with_alpha(has_alpha)
+            .with_bit_depth(header.bpp as u8)
+            .with_channel_count(channel_count)
+            .with_cicp(zencodec::Cicp::SRGB)
+            .with_source_encoding_details(BitmapSourceEncoding);
+        // BMP stores resolution as pixels-per-meter
+        if header.x_pels_per_meter > 0 || header.y_pels_per_meter > 0 {
+            info = info.with_resolution(zencodec::Resolution {
+                x: header.x_pels_per_meter as f64,
+                y: header.y_pels_per_meter as f64,
+                unit: zencodec::ResolutionUnit::Meter,
+            });
+        }
+        Ok(info)
     }
 
     fn output_info(&self, data: &[u8]) -> Result<OutputInfo, BitmapError> {

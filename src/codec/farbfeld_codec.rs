@@ -287,6 +287,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for FarbfeldDecodeJob {
             .with_alpha(true)
             .with_bit_depth(16)
             .with_channel_count(4)
+            .with_cicp(zencodec::Cicp::SRGB)
             .with_source_encoding_details(BitmapSourceEncoding))
     }
 

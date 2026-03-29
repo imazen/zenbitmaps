@@ -355,16 +355,23 @@ impl<'a> zencodec::decode::DecodeJob<'a> for QoiDecodeJob {
     }
 
     fn probe(&self, data: &[u8]) -> Result<ImageInfo, BitmapError> {
-        let (width, height, has_alpha) = crate::qoi::decode::parse_header(data)?;
-        Ok(ImageInfo::new(width, height, ImageFormat::Qoi)
-            .with_alpha(has_alpha)
+        let hdr = crate::qoi::decode::parse_header(data)?;
+        let cicp = if hdr.is_linear {
+            zencodec::Cicp::new(1, 8, 0, true) // BT.709 primaries, Linear transfer
+        } else {
+            zencodec::Cicp::SRGB
+        };
+        Ok(ImageInfo::new(hdr.width, hdr.height, ImageFormat::Qoi)
+            .with_alpha(hdr.has_alpha)
             .with_bit_depth(8)
-            .with_channel_count(if has_alpha { 4 } else { 3 })
+            .with_channel_count(if hdr.has_alpha { 4 } else { 3 })
+            .with_cicp(cicp)
             .with_source_encoding_details(BitmapSourceEncoding))
     }
 
     fn output_info(&self, data: &[u8]) -> Result<OutputInfo, BitmapError> {
-        let (width, height, has_alpha) = crate::qoi::decode::parse_header(data)?;
+        let hdr = crate::qoi::decode::parse_header(data)?;
+        let (width, height, has_alpha) = (hdr.width, hdr.height, hdr.has_alpha);
         let desc = if has_alpha {
             PixelDescriptor::RGBA8_SRGB
         } else {
@@ -418,7 +425,8 @@ impl<'a> zencodec::decode::DecodeJob<'a> for QoiDecodeJob {
                 data.len()
             )));
         }
-        let (width, height, has_alpha) = crate::qoi::decode::parse_header(&data)?;
+        let hdr_info = crate::qoi::decode::parse_header(&data)?;
+        let (width, height, has_alpha) = (hdr_info.width, hdr_info.height, hdr_info.has_alpha);
 
         let limits = self.limits.or(self.config.limits);
         if let Some(ref lim) = limits {

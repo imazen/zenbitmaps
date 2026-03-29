@@ -20,7 +20,8 @@ pub(crate) fn decode<'a>(
     limits: Option<&Limits>,
     stop: &dyn Stop,
 ) -> Result<DecodeOutput<'a>, BitmapError> {
-    let (width, height, has_alpha) = decode::parse_header(data)?;
+    let hdr = decode::parse_header(data)?;
+    let (width, height, has_alpha) = (hdr.width, hdr.height, hdr.has_alpha);
     if let Some(limits) = limits {
         limits.check(width, height)?;
     }
