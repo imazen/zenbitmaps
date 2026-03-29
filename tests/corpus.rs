@@ -704,7 +704,7 @@ mod bmp_corpus {
             .unwrap()
             .filter_map(|e| e.ok())
             .map(|e| e.path())
-            .filter(|p| p.extension().map_or(false, |e| e == "bmp"))
+            .filter(|p| p.extension().is_some_and(|e| e == "bmp"))
             .collect();
         files.sort();
         files

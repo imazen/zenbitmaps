@@ -123,6 +123,7 @@ fn strided_decode_into() {
     let mut as_mut = full.as_mut();
     let sub = as_mut.sub_image_mut(0, 0, 2, 2);
     decode_into(&encoded, sub, Unstoppable).unwrap();
+    #[allow(clippy::drop_non_drop)] // ends the mutable borrow of `full`
     drop(as_mut);
     let buf = full.into_buf();
 
@@ -172,7 +173,7 @@ fn as_imgref_zero_copy_pnm() {
 #[cfg(feature = "bmp")]
 #[test]
 fn as_imgref_owned_bmp() {
-    let pixels = vec![RGB8::new(255, 0, 0), RGB8::new(0, 255, 0)];
+    let pixels = [RGB8::new(255, 0, 0), RGB8::new(0, 255, 0)];
     use rgb::ComponentBytes;
     let encoded = encode_bmp(pixels.as_bytes(), 2, 1, PixelLayout::Rgb8, Unstoppable).unwrap();
     let decoded = decode_bmp(&encoded, Unstoppable).unwrap();

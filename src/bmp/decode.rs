@@ -242,6 +242,7 @@ pub(crate) struct BmpHeader {
     pub height: u32,
     pub layout: PixelLayout,
     /// Bits per pixel as declared in the BMP header.
+    #[cfg_attr(not(feature = "zencodec"), allow(dead_code))]
     pub bpp: u16,
     pub x_pels_per_meter: u32,
     pub y_pels_per_meter: u32,
