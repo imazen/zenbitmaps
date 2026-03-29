@@ -1,4 +1,4 @@
-# zenbitmaps ![CI](https://img.shields.io/github/actions/workflow/status/imazen/zenbitmaps/ci.yml?style=for-the-badge) ![MSRV](https://img.shields.io/badge/MSRV-1.93-blue?style=for-the-badge) ![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue?style=for-the-badge)
+# zenbitmaps [![CI](https://img.shields.io/github/actions/workflow/status/imazen/zenbitmaps/ci.yml?style=for-the-badge)](https://github.com/imazen/zenbitmaps/actions/workflows/ci.yml) [![MSRV](https://img.shields.io/badge/MSRV-1.93-blue?style=for-the-badge)](https://doc.rust-lang.org/cargo/reference/manifest.html#the-rust-version-field) [![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue?style=for-the-badge)](https://github.com/imazen/zenbitmaps#license)
 
 PNM/PAM/PFM, BMP, and farbfeld image format decoder and encoder.
 
