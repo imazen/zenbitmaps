@@ -20,7 +20,7 @@ rgb = { version = "0.8", default-features = false, features = ["as-bytes"], opti
 thiserror = { version = "2.0", default-features = false }
 zencodec = { version = "0.1.5", optional = true }
 zennode = { path = "../zennode/zennode", default-features = false, features = ["derive"], optional = true }
-zenpixels = { version = "0.2.0", default-features = false, features = ["imgref"], optional = true }
+zenpixels = { version = "0.2.1", default-features = false, features = ["imgref"], optional = true }
 
 [dev-dependencies]
 archmage = { version = "0.9.14", features = ["std"] }
