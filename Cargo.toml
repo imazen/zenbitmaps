@@ -15,6 +15,7 @@ exclude = ["tests/bmp-fixtures/", "CLAUDE.md", "FEEDBACK.md", "justfile", "api-f
 [dependencies]
 # Core (always available)
 enough = "0.4.2"
+rapid-qoi = { version = "0.6.1", default-features = false, features = ["alloc"], optional = true }
 imgref = { version = "1.12", default-features = false, optional = true }
 rgb = { version = "0.8", default-features = false, features = ["as-bytes"], optional = true }
 thiserror = { version = "2.0", default-features = false }
@@ -35,6 +36,7 @@ std = []
 
 # Format groups
 bmp = []   # Full BMP support (all bit depths, RLE, bitfields, palettes)
+qoi = ["dep:rapid-qoi"]  # QOI (Quite OK Image) lossless format
 
 # Typed pixel support
 rgb = ["dep:rgb"]              # RGB8, RGBA8 etc. typed pixel encode/decode
@@ -48,4 +50,4 @@ zencodec = ["dep:zencodec", "dep:zenpixels", "imgref", "rgb"]
 # zennode = ["dep:zennode"]
 
 # All optional features
-all = ["bmp", "rgb", "imgref"]
+all = ["bmp", "qoi", "rgb", "imgref"]

@@ -185,6 +185,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rapid-qoi"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "965d4fa3abc71547be1527fa00e08c1114f972d3d2b9209563b420d301a257ac"
+dependencies = [
+ "bytemuck",
+]
+
+[[package]]
 name = "redox_users"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -368,6 +377,7 @@ dependencies = [
  "codec-corpus",
  "enough",
  "imgref",
+ "rapid-qoi",
  "rgb",
  "thiserror",
  "zencodec",

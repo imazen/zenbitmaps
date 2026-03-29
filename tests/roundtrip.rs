@@ -211,6 +211,72 @@ fn farbfeld_encode_bgr8() {
     assert_eq!(a, 65535);
 }
 
+#[cfg(feature = "qoi")]
+#[test]
+fn qoi_roundtrip_rgb8() {
+    let pixels = vec![
+        255, 0, 0, 0, 255, 0, 0, 0, 255, 128, 128, 128, 64, 64, 64, 0, 0, 0,
+    ];
+    let encoded = encode_qoi(&pixels, 3, 2, PixelLayout::Rgb8, Unstoppable).unwrap();
+    assert_eq!(&encoded[..4], b"qoif");
+
+    let decoded = decode_qoi(&encoded, Unstoppable).unwrap();
+    assert_eq!(decoded.width, 3);
+    assert_eq!(decoded.height, 2);
+    assert_eq!(decoded.layout, PixelLayout::Rgb8);
+    assert_eq!(decoded.pixels(), &pixels[..]);
+
+    // Auto-detect
+    let auto = decode(&encoded, Unstoppable).unwrap();
+    assert_eq!(auto.pixels(), &pixels[..]);
+}
+
+#[cfg(feature = "qoi")]
+#[test]
+fn qoi_roundtrip_rgba8() {
+    let pixels = vec![
+        255, 0, 0, 255, 0, 255, 0, 128, 0, 0, 255, 64, 128, 128, 128, 255,
+    ];
+    let encoded = encode_qoi(&pixels, 2, 2, PixelLayout::Rgba8, Unstoppable).unwrap();
+    let decoded = decode_qoi(&encoded, Unstoppable).unwrap();
+    assert_eq!(decoded.layout, PixelLayout::Rgba8);
+    assert_eq!(decoded.pixels(), &pixels[..]);
+}
+
+#[cfg(feature = "qoi")]
+#[test]
+fn qoi_roundtrip_bgra8() {
+    // BGRA: blue=100, green=150, red=200, alpha=255
+    let bgra = vec![100u8, 150, 200, 255];
+    let encoded = encode_qoi(&bgra, 1, 1, PixelLayout::Bgra8, Unstoppable).unwrap();
+    // QOI stores as RGBA, so decode gives RGBA
+    let decoded = decode_qoi(&encoded, Unstoppable).unwrap();
+    assert_eq!(decoded.layout, PixelLayout::Rgba8);
+    // Should be swizzled: R=200, G=150, B=100, A=255
+    assert_eq!(decoded.pixels(), &[200, 150, 100, 255]);
+}
+
+#[cfg(feature = "qoi")]
+#[test]
+fn qoi_limits_reject() {
+    let pixels = vec![0u8; 100 * 100 * 3];
+    let encoded = encode_qoi(&pixels, 100, 100, PixelLayout::Rgb8, Unstoppable).unwrap();
+    let limits = Limits {
+        max_pixels: Some(50),
+        ..Default::default()
+    };
+    let result = decode_qoi_with_limits(&encoded, &limits, Unstoppable);
+    assert!(matches!(result, Err(BitmapError::LimitExceeded(_))));
+}
+
+#[cfg(feature = "qoi")]
+#[test]
+fn detect_format_qoi() {
+    let pixels = vec![0u8; 3];
+    let encoded = encode_qoi(&pixels, 1, 1, PixelLayout::Rgb8, Unstoppable).unwrap();
+    assert_eq!(detect_format(&encoded), Some(ImageFormat::Qoi));
+}
+
 #[test]
 fn into_owned_works() {
     let pixels = vec![1u8, 2, 3];

@@ -153,6 +153,9 @@ mod pnm;
 
 mod farbfeld;
 
+#[cfg(feature = "qoi")]
+mod qoi;
+
 #[cfg(feature = "bmp")]
 mod bmp;
 
@@ -192,6 +195,11 @@ pub use codec::{
 pub use codec::{
     FarbfeldDecodeJob, FarbfeldDecoder, FarbfeldDecoderConfig, FarbfeldEncodeJob, FarbfeldEncoder,
     FarbfeldEncoderConfig,
+};
+
+#[cfg(all(feature = "zencodec", feature = "qoi"))]
+pub use codec::{
+    QoiDecodeJob, QoiDecoder, QoiDecoderConfig, QoiEncodeJob, QoiEncoder, QoiEncoderConfig,
 };
 
 // Re-export rgb pixel types for convenience
@@ -239,6 +247,9 @@ pub fn detect_format(data: &[u8]) -> Option<ImageFormat> {
     if data.len() >= 8 && &data[0..8] == b"farbfeld" {
         return Some(ImageFormat::Farbfeld);
     }
+    if data.len() >= 4 && &data[0..4] == b"qoif" {
+        return Some(ImageFormat::Qoi);
+    }
     // PNM magic: P followed by 5, 6, 7, f, or F
     if data.len() >= 2 && data[0] == b'P' {
         match data[1] {
@@ -283,6 +294,14 @@ fn decode_dispatch<'a>(
             ));
         }
         Some(ImageFormat::Farbfeld) => farbfeld::decode(data, limits, stop),
+        Some(ImageFormat::Qoi) => {
+            #[cfg(feature = "qoi")]
+            return qoi::decode(data, limits, stop);
+            #[cfg(not(feature = "qoi"))]
+            return Err(BitmapError::UnsupportedVariant(
+                "QOI support requires the 'qoi' feature".into(),
+            ));
+        }
         Some(ImageFormat::Pnm) => pnm::decode(data, limits, stop),
         None => Err(BitmapError::UnrecognizedFormat),
     }
@@ -365,6 +384,41 @@ pub fn encode_farbfeld(
     stop: impl Stop,
 ) -> Result<alloc::vec::Vec<u8>, BitmapError> {
     farbfeld::encode(pixels, width, height, layout, &stop)
+}
+
+// ── QOI encode/decode ────────────────────────────────────────────────
+
+/// Decode QOI data to pixels.
+///
+/// Also auto-detected by [`decode()`] via the `"qoif"` magic bytes.
+/// Output layout is [`PixelLayout::Rgb8`] or [`PixelLayout::Rgba8`].
+#[cfg(feature = "qoi")]
+pub fn decode_qoi(data: &[u8], stop: impl Stop) -> Result<DecodeOutput<'_>, BitmapError> {
+    qoi::decode(data, None, &stop)
+}
+
+/// Decode QOI with resource limits.
+#[cfg(feature = "qoi")]
+pub fn decode_qoi_with_limits<'a>(
+    data: &'a [u8],
+    limits: &'a Limits,
+    stop: impl Stop,
+) -> Result<DecodeOutput<'a>, BitmapError> {
+    qoi::decode(data, Some(limits), &stop)
+}
+
+/// Encode pixels as QOI.
+///
+/// Accepts `Rgb8`, `Rgba8`, `Bgr8`, `Bgra8` input layouts.
+#[cfg(feature = "qoi")]
+pub fn encode_qoi(
+    pixels: &[u8],
+    width: u32,
+    height: u32,
+    layout: PixelLayout,
+    stop: impl Stop,
+) -> Result<alloc::vec::Vec<u8>, BitmapError> {
+    qoi::encode(pixels, width, height, layout, &stop)
 }
 
 // ── BMP (auto-detected, or explicit) ─────────────────────────────────

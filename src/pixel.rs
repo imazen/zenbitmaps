@@ -8,6 +8,8 @@ pub enum ImageFormat {
     Bmp,
     /// Farbfeld (RGBA 16-bit).
     Farbfeld,
+    /// QOI (Quite OK Image).
+    Qoi,
 }
 
 /// Pixel memory layout.
