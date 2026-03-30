@@ -2,7 +2,7 @@
 //!
 //! Forked from zune-farbfeld 0.5.2 by Caleb Etemesi (MIT/Apache-2.0/Zlib).
 
-use alloc::vec::Vec;
+use alloc::vec;
 use enough::Stop;
 
 use crate::error::BitmapError;
@@ -33,7 +33,7 @@ pub(crate) fn decode_pixels(
     width: u32,
     height: u32,
     stop: &dyn Stop,
-) -> Result<Vec<u8>, BitmapError> {
+) -> Result<alloc::vec::Vec<u8>, BitmapError> {
     let pixel_count = (width as usize)
         .checked_mul(height as usize)
         .ok_or(BitmapError::DimensionsTooLarge { width, height })?;
@@ -48,37 +48,63 @@ pub(crate) fn decode_pixels(
         .get(16..16 + input_bytes)
         .ok_or(BitmapError::UnexpectedEof)?;
 
-    let mut out = Vec::with_capacity(input_bytes);
+    // Pre-allocate output and write directly — no Vec growth
+    let mut out = vec![0u8; input_bytes];
+    let row_bytes = width as usize * 8; // 4 channels × 2 bytes
 
-    // Convert each u16 from big-endian to native endian
-    let samples_per_row = width as usize * 4;
-    let row_bytes = samples_per_row * 2;
-    for (row_idx, chunk) in pixel_data.chunks_exact(row_bytes).enumerate() {
+    for (row_idx, (src_row, dst_row)) in pixel_data
+        .chunks_exact(row_bytes)
+        .zip(out.chunks_exact_mut(row_bytes))
+        .enumerate()
+    {
         if row_idx % 16 == 0 {
             stop.check()?;
         }
-        // Process 4 u16s (8 bytes) at a time for better throughput
-        let mut remaining = chunk;
-        while remaining.len() >= 8 {
-            let a = u16::from_be_bytes([remaining[0], remaining[1]]);
-            let b = u16::from_be_bytes([remaining[2], remaining[3]]);
-            let c = u16::from_be_bytes([remaining[4], remaining[5]]);
-            let d = u16::from_be_bytes([remaining[6], remaining[7]]);
-            out.extend_from_slice(&a.to_ne_bytes());
-            out.extend_from_slice(&b.to_ne_bytes());
-            out.extend_from_slice(&c.to_ne_bytes());
-            out.extend_from_slice(&d.to_ne_bytes());
-            remaining = &remaining[8..];
-        }
-        for pair in remaining.chunks_exact(2) {
-            let val = u16::from_be_bytes([pair[0], pair[1]]);
-            out.extend_from_slice(&val.to_ne_bytes());
-        }
-    }
-
-    if out.len() != input_bytes {
-        return Err(BitmapError::UnexpectedEof);
+        be16_to_ne_bulk(src_row, dst_row);
     }
 
     Ok(out)
+}
+
+/// Batch big-endian u16 → native endian u16, writing directly into output.
+///
+/// Processes 8 u16s (16 bytes) per iteration for pipeline-friendly throughput.
+/// src and dst must have equal length and be a multiple of 2.
+#[inline]
+fn be16_to_ne_bulk(src: &[u8], dst: &mut [u8]) {
+    debug_assert_eq!(src.len(), dst.len());
+    debug_assert_eq!(src.len() % 2, 0);
+
+    let mut i = 0;
+    let len = src.len();
+
+    // Process 16 bytes (8 u16s) at a time
+    while i + 16 <= len {
+        let s = &src[i..i + 16];
+        let d = &mut dst[i..i + 16];
+        let a = u16::from_be_bytes([s[0], s[1]]);
+        let b = u16::from_be_bytes([s[2], s[3]]);
+        let c = u16::from_be_bytes([s[4], s[5]]);
+        let d_val = u16::from_be_bytes([s[6], s[7]]);
+        let e = u16::from_be_bytes([s[8], s[9]]);
+        let f = u16::from_be_bytes([s[10], s[11]]);
+        let g = u16::from_be_bytes([s[12], s[13]]);
+        let h = u16::from_be_bytes([s[14], s[15]]);
+        d[0..2].copy_from_slice(&a.to_ne_bytes());
+        d[2..4].copy_from_slice(&b.to_ne_bytes());
+        d[4..6].copy_from_slice(&c.to_ne_bytes());
+        d[6..8].copy_from_slice(&d_val.to_ne_bytes());
+        d[8..10].copy_from_slice(&e.to_ne_bytes());
+        d[10..12].copy_from_slice(&f.to_ne_bytes());
+        d[12..14].copy_from_slice(&g.to_ne_bytes());
+        d[14..16].copy_from_slice(&h.to_ne_bytes());
+        i += 16;
+    }
+
+    // Handle remaining pairs
+    while i + 2 <= len {
+        let val = u16::from_be_bytes([src[i], src[i + 1]]);
+        dst[i..i + 2].copy_from_slice(&val.to_ne_bytes());
+        i += 2;
+    }
 }

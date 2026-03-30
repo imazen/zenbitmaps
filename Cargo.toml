@@ -16,6 +16,7 @@ exclude = ["tests/bmp-fixtures/", "CLAUDE.md", "FEEDBACK.md", "justfile", "api-f
 # Core (always available)
 enough = "0.4.2"
 garb = { version = "0.2.5", default-features = false, optional = true }
+archmage = { version = "0.9.14", default-features = false, optional = true }
 rapid-qoi = { version = "0.6.1", default-features = false, features = ["alloc"], optional = true }
 imgref = { version = "1.12", default-features = false, optional = true }
 rgb = { version = "0.8", default-features = false, features = ["as-bytes"], optional = true }
@@ -27,6 +28,7 @@ zenpixels = { version = "0.2.1", default-features = false, features = ["imgref"]
 
 [dev-dependencies]
 archmage = { version = "0.9.14", features = ["std"] }
+zenbench = { path = "../zenbench" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 codec-corpus = "1"
@@ -38,7 +40,7 @@ std = []
 # Format groups
 bmp = []   # Full BMP support (all bit depths, RLE, bitfields, palettes)
 qoi = ["dep:rapid-qoi"]  # QOI (Quite OK Image) lossless format
-simd = ["dep:garb"]  # SIMD-accelerated pixel swizzle (BGR↔RGB, BGRA↔RGBA)
+simd = ["dep:garb", "dep:archmage"]  # SIMD-accelerated pixel swizzle and batch conversion
 
 # Typed pixel support
 rgb = ["dep:rgb"]              # RGB8, RGBA8 etc. typed pixel encode/decode
@@ -53,3 +55,8 @@ zencodec = ["dep:zencodec", "dep:zenpixels", "imgref", "rgb"]
 
 # All optional features
 all = ["bmp", "qoi", "simd", "rgb", "imgref"]
+
+[[bench]]
+name = "codecs"
+harness = false
+required-features = ["bmp", "qoi"]

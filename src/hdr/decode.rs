@@ -193,35 +193,18 @@ pub(crate) fn decode_pixels(
             }
 
             // Convert RGBE to f32 and write directly into output
-            for px in 0..w {
-                let r = scanline_buf[px * 4];
-                let g = scanline_buf[px * 4 + 1];
-                let b = scanline_buf[px * 4 + 2];
-                let e = scanline_buf[px * 4 + 3];
-                let (rf, gf, bf) = rgbe_to_f32(r, g, b, e);
-                out[out_pos..out_pos + 4].copy_from_slice(&rf.to_le_bytes());
-                out[out_pos + 4..out_pos + 8].copy_from_slice(&gf.to_le_bytes());
-                out[out_pos + 8..out_pos + 12].copy_from_slice(&bf.to_le_bytes());
-                out_pos += 12;
-            }
+            let row_out = &mut out[out_pos..out_pos + w * 12];
+            rgbe_deinterleaved_to_f32(&scanline_buf[..w * 4], w, row_out);
+            out_pos += w * 12;
         } else {
             // Uncompressed: read flat RGBE quads
             let needed = w * 4;
             if pos + needed > data.len() {
                 return Err(BitmapError::UnexpectedEof);
             }
-            for px in 0..w {
-                let base = pos + px * 4;
-                let r = data[base];
-                let g = data[base + 1];
-                let b = data[base + 2];
-                let e = data[base + 3];
-                let (rf, gf, bf) = rgbe_to_f32(r, g, b, e);
-                out[out_pos..out_pos + 4].copy_from_slice(&rf.to_le_bytes());
-                out[out_pos + 4..out_pos + 8].copy_from_slice(&gf.to_le_bytes());
-                out[out_pos + 8..out_pos + 12].copy_from_slice(&bf.to_le_bytes());
-                out_pos += 12;
-            }
+            let row_out = &mut out[out_pos..out_pos + w * 12];
+            rgbe_scanline_to_f32(&data[pos..pos + needed], row_out);
+            out_pos += w * 12;
             pos += needed;
         }
     }
@@ -245,6 +228,47 @@ pub(crate) fn rgbe_to_f32(r: u8, g: u8, b: u8, e: u8) -> (f32, f32, f32) {
         (g as f32 + 0.5) * scale,
         (b as f32 + 0.5) * scale,
     )
+}
+
+/// Batch convert RGBE scanline to f32 RGB, writing directly into output buffer.
+///
+/// `rgbe` is interleaved [R,G,B,E, R,G,B,E, ...] data (4 bytes per pixel).
+/// `out` must be exactly `pixel_count * 12` bytes. Writes 3×f32 per pixel.
+#[inline]
+pub(crate) fn rgbe_scanline_to_f32(rgbe: &[u8], out: &mut [u8]) {
+    debug_assert_eq!(rgbe.len() % 4, 0);
+    let pixel_count = rgbe.len() / 4;
+    debug_assert_eq!(out.len(), pixel_count * 12);
+
+    let mut out_pos = 0;
+    for px in rgbe.chunks_exact(4) {
+        let (rf, gf, bf) = rgbe_to_f32(px[0], px[1], px[2], px[3]);
+        out[out_pos..out_pos + 4].copy_from_slice(&rf.to_le_bytes());
+        out[out_pos + 4..out_pos + 8].copy_from_slice(&gf.to_le_bytes());
+        out[out_pos + 8..out_pos + 12].copy_from_slice(&bf.to_le_bytes());
+        out_pos += 12;
+    }
+}
+
+/// Batch convert deinterleaved RGBE channels to f32 RGB.
+///
+/// `scanline_buf` is channel-interleaved [R0,G0,B0,E0, R1,G1,B1,E1, ...] (4 bytes per pixel).
+/// `out` must be exactly `pixel_count * 12` bytes.
+#[inline]
+pub(crate) fn rgbe_deinterleaved_to_f32(scanline_buf: &[u8], width: usize, out: &mut [u8]) {
+    debug_assert_eq!(scanline_buf.len(), width * 4);
+    debug_assert_eq!(out.len(), width * 12);
+
+    let mut out_pos = 0;
+    for px in 0..width {
+        let base = px * 4;
+        let (rf, gf, bf) =
+            rgbe_to_f32(scanline_buf[base], scanline_buf[base + 1], scanline_buf[base + 2], scanline_buf[base + 3]);
+        out[out_pos..out_pos + 4].copy_from_slice(&rf.to_le_bytes());
+        out[out_pos + 4..out_pos + 8].copy_from_slice(&gf.to_le_bytes());
+        out[out_pos + 8..out_pos + 12].copy_from_slice(&bf.to_le_bytes());
+        out_pos += 12;
+    }
 }
 
 /// Find the position of the first `\n` in `data`, or `None`.
