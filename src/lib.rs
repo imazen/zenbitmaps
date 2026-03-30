@@ -153,8 +153,10 @@ mod pnm;
 
 mod farbfeld;
 
+#[cfg(feature = "hdr")]
 mod hdr;
 
+#[cfg(feature = "tga")]
 mod tga;
 
 #[cfg(feature = "qoi")]
@@ -206,13 +208,13 @@ pub use codec::{
     QoiDecodeJob, QoiDecoder, QoiDecoderConfig, QoiEncodeJob, QoiEncoder, QoiEncoderConfig,
 };
 
-#[cfg(feature = "zencodec")]
+#[cfg(all(feature = "zencodec", feature = "hdr"))]
 pub use codec::{
     HdrDecodeJob, HdrDecoder, HdrDecoderConfig, HdrEncodeJob, HdrEncoder, HdrEncoderConfig,
     HDR_FORMAT_DEF, HDR_IMAGE_FORMAT,
 };
 
-#[cfg(feature = "zencodec")]
+#[cfg(all(feature = "zencodec", feature = "tga"))]
 pub use codec::{
     TgaDecodeJob, TgaDecoder, TgaDecoderConfig, TgaEncodeJob, TgaEncoder, TgaEncoderConfig,
     TGA_FORMAT_DEF, TGA_IMAGE_FORMAT,
@@ -366,8 +368,22 @@ fn decode_dispatch<'a>(
             ));
         }
         Some(ImageFormat::Pnm) => pnm::decode(data, limits, stop),
-        Some(ImageFormat::Hdr) => hdr::decode(data, limits, stop),
-        Some(ImageFormat::Tga) => tga::decode(data, limits, stop),
+        Some(ImageFormat::Hdr) => {
+            #[cfg(feature = "hdr")]
+            return hdr::decode(data, limits, stop);
+            #[cfg(not(feature = "hdr"))]
+            return Err(BitmapError::UnsupportedVariant(
+                "HDR support requires the 'hdr' feature".into(),
+            ));
+        }
+        Some(ImageFormat::Tga) => {
+            #[cfg(feature = "tga")]
+            return tga::decode(data, limits, stop);
+            #[cfg(not(feature = "tga"))]
+            return Err(BitmapError::UnsupportedVariant(
+                "TGA support requires the 'tga' feature".into(),
+            ));
+        }
         None => Err(BitmapError::UnrecognizedFormat),
     }
 }
@@ -454,6 +470,7 @@ pub fn encode_farbfeld(
 // ── TGA encode/decode ────────────────────────────────────────────────
 
 /// Decode TGA data to pixels.
+#[cfg(feature = "tga")]
 ///
 /// Also auto-detected by [`decode()`] via header heuristics (TGA has no magic bytes).
 /// Output layout is [`PixelLayout::Rgb8`], [`PixelLayout::Rgba8`], or [`PixelLayout::Gray8`].
@@ -462,6 +479,7 @@ pub fn decode_tga(data: &[u8], stop: impl Stop) -> Result<DecodeOutput<'_>, Bitm
 }
 
 /// Decode TGA with resource limits.
+#[cfg(feature = "tga")]
 pub fn decode_tga_with_limits<'a>(
     data: &'a [u8],
     limits: &'a Limits,
@@ -474,6 +492,7 @@ pub fn decode_tga_with_limits<'a>(
 ///
 /// Accepts `Gray8`, `Rgb8`, `Rgba8`, `Bgr8`, `Bgra8` input layouts.
 /// Writes uncompressed TGA with bottom-left origin.
+#[cfg(feature = "tga")]
 pub fn encode_tga(
     pixels: &[u8],
     width: u32,
@@ -490,11 +509,13 @@ pub fn encode_tga(
 ///
 /// Also auto-detected by [`decode()`] via `#?RADIANCE` / `#?RGBE` magic.
 /// Output layout is always [`PixelLayout::RgbF32`].
+#[cfg(feature = "hdr")]
 pub fn decode_hdr(data: &[u8], stop: impl Stop) -> Result<DecodeOutput<'_>, BitmapError> {
     hdr::decode(data, None, &stop)
 }
 
 /// Decode Radiance HDR with resource limits.
+#[cfg(feature = "hdr")]
 pub fn decode_hdr_with_limits<'a>(
     data: &'a [u8],
     limits: &'a Limits,
@@ -506,6 +527,7 @@ pub fn decode_hdr_with_limits<'a>(
 /// Encode pixels as Radiance HDR (RGBE with new-style RLE).
 ///
 /// Accepts `RgbF32` (3×f32) or `Rgb8` (converted via /255.0).
+#[cfg(feature = "hdr")]
 pub fn encode_hdr(
     pixels: &[u8],
     width: u32,

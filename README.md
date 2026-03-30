@@ -1,6 +1,6 @@
 # zenbitmaps [![CI](https://img.shields.io/github/actions/workflow/status/imazen/zenbitmaps/ci.yml?style=flat-square)](https://github.com/imazen/zenbitmaps/actions/workflows/ci.yml) [![crates.io](https://img.shields.io/crates/v/zenbitmaps?style=flat-square)](https://crates.io/crates/zenbitmaps) [![lib.rs](https://img.shields.io/crates/v/zenbitmaps?style=flat-square&label=lib.rs&color=blue)](https://lib.rs/crates/zenbitmaps) [![docs.rs](https://img.shields.io/docsrs/zenbitmaps?style=flat-square)](https://docs.rs/zenbitmaps) [![license](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue?style=flat-square)](https://github.com/imazen/zenbitmaps#license)
 
-PNM/PAM/PFM, BMP, and farbfeld image format decoder and encoder.
+PNM/PAM/PFM, BMP, farbfeld, QOI, TGA, and Radiance HDR decoder and encoder.
 
 `no_std` compatible (with `alloc`), `forbid(unsafe_code)`, panic-free. All arithmetic is checked. Suitable for server and embedded use.
 
@@ -8,11 +8,12 @@ PNM/PAM/PFM, BMP, and farbfeld image format decoder and encoder.
 
 ```toml
 [dependencies]
-zenbitmaps = "0.1.0"                                           # PNM + farbfeld
-zenbitmaps = { version = "0.1.0", features = ["bmp"] }         # + full BMP support
-zenbitmaps = { version = "0.1.0", features = ["rgb"] }         # + typed pixel API (RGB8, RGBA8, etc.)
-zenbitmaps = { version = "0.1.0", features = ["imgref"] }      # + ImgVec/ImgRef 2D buffers (implies rgb)
-zenbitmaps = { version = "0.1.0", features = ["all"] }         # everything
+zenbitmaps = "0.2"                                         # PNM + farbfeld
+zenbitmaps = { version = "0.2", features = ["bmp"] }       # + BMP
+zenbitmaps = { version = "0.2", features = ["qoi"] }       # + QOI (via rapid-qoi)
+zenbitmaps = { version = "0.2", features = ["tga"] }       # + TGA
+zenbitmaps = { version = "0.2", features = ["hdr"] }       # + Radiance HDR
+zenbitmaps = { version = "0.2", features = ["all"] }       # everything
 ```
 
 ## Quick example
@@ -43,12 +44,15 @@ match detect_format(&data) {
     Some(ImageFormat::Pnm) => { /* PGM, PPM, PAM, or PFM */ }
     Some(ImageFormat::Bmp) => { /* Windows bitmap */ }
     Some(ImageFormat::Farbfeld) => { /* farbfeld RGBA16 */ }
+    Some(ImageFormat::Qoi) => { /* QOI */ }
+    Some(ImageFormat::Hdr) => { /* Radiance HDR */ }
+    Some(ImageFormat::Tga) => { /* TGA (Targa) */ }
     None => { /* unknown */ }
     _ => { /* future formats */ }
 }
 ```
 
-`decode()` uses this internally. You only need `detect_format()` if you want to inspect the format before committing to a full decode, or if you need to route data to format-specific functions.
+`decode()` uses this internally and dispatches to the right codec.
 
 ## Supported formats
 
@@ -57,19 +61,39 @@ match detect_format(&data) {
 - P6 (PPM binary) — RGB, 8-bit and 16-bit
 - P7 (PAM) — arbitrary channels (grayscale, RGB, RGBA), 8-bit and 16-bit
 - PFM — floating-point grayscale and RGB (32-bit per channel)
-- Auto-detected by `decode()` via `P5`/`P6`/`P7`/`Pf`/`PF` magic
+- Magic: `P5`/`P6`/`P7`/`Pf`/`PF`
 
 **Farbfeld** (always available):
-- RGBA 16-bit per channel
-- Auto-detected by `decode()` via `"farbfeld"` magic
+- RGBA 16-bit per channel, big-endian
+- Magic: `farbfeld`
 
-**BMP** (`bmp` feature, opt-in):
+**BMP** (`bmp` feature):
 - All standard bit depths: 1, 2, 4, 8, 16, 24, 32
 - Compression: uncompressed, RLE4, RLE8, BITFIELDS
 - Palette expansion, bottom-up/top-down, grayscale detection
 - `BmpPermissiveness` levels: Strict, Standard (default), Permissive
 - Native byte order decoding via `decode_bmp_native()` (skips BGR→RGB swizzle)
-- Auto-detected by `decode()` via `"BM"` magic
+- Magic: `BM`
+
+**QOI** (`qoi` feature, via [rapid-qoi](https://github.com/zakarumych/rapid-qoi)):
+- RGB8 and RGBA8, lossless
+- Row-level streaming decode via `decode_range`
+- Streaming encode via `push_rows`/`finish`
+- Magic: `qoif`
+
+**TGA** (`tga` feature):
+- Uncompressed and RLE-compressed (types 1-3, 9-11)
+- True color (15/16/24/32-bit), grayscale, color-mapped
+- All image origins (top/bottom, left/right)
+- Fast path: memcpy + SIMD batch BGR→RGB swizzle for 24/32-bit
+- Detection: header heuristic (TGA has no magic bytes)
+
+**Radiance HDR** (`hdr` feature):
+- RGBE format with new-style per-channel RLE
+- Decodes to `RgbF32` (linear float)
+- RGBE↔f32 via IEEE 754 bit manipulation (no libm, no unsafe)
+- Encodes from `RgbF32` or `Rgb8`
+- Magic: `#?RADIANCE` / `#?RGBE`
 
 ## Zero-copy decoding
 
@@ -161,13 +185,16 @@ let decoded = decode_with_limits(&data, &limits, Unstoppable)?;
 | Feature | What it adds |
 |---------|-------------|
 | *(default)* | PNM (P5/P6/P7/PFM) + farbfeld decode/encode |
-| `bmp` | Full BMP decode/encode (all bit depths, RLE, bitfields) |
+| `bmp` | BMP decode/encode (all bit depths, RLE, bitfields, palettes) |
+| `qoi` | QOI decode/encode via rapid-qoi (streaming, lossless) |
+| `tga` | TGA decode/encode (truecolor, grayscale, color-mapped, RLE) |
+| `hdr` | Radiance HDR decode/encode (RGBE, RLE, f32 output) |
+| `simd` | SIMD-accelerated BGR↔RGB swizzle via [garb](https://lib.rs/crates/garb) |
 | `rgb` | Typed pixel API (`RGB8`, `RGBA8`, `as_pixels()`, `encode_*_pixels()`) |
 | `imgref` | 2D buffer API (`ImgVec`/`ImgRef`, `as_imgref()`, `decode_into()`) — implies `rgb` |
-| `std` | Enable `std` support (not required — `no_std` + `alloc` by default) |
 | `zencodec` | zencodec trait integration (implies `rgb` + `imgref`) |
-| `zennode` | zennode node definitions (EncodeBmp schema with RIAPI keys) — *temporarily disabled, not yet published* |
-| `all` | `bmp` + `rgb` + `imgref` |
+| `std` | Enable `std` support (not required — `no_std` + `alloc` by default) |
+| `all` | All format + pixel API features |
 
 ## API
 
@@ -179,15 +206,21 @@ All public functions are flat, one-shot calls at crate root.
 - `decode_with_limits(data, limits, stop)`
 
 **Decode (format-specific):**
-- `decode_farbfeld(data, stop)` / `decode_farbfeld_with_limits(...)`
-- `decode_bmp(data, stop)` / `decode_bmp_with_limits(...)` — RGB output (`bmp`)
-- `decode_bmp_native(data, stop)` / `decode_bmp_native_with_limits(...)` — BGR output (`bmp`)
-- `decode_bmp_permissive(data, permissiveness, stop)` / `..._with_limits(...)` (`bmp`)
+- `decode_farbfeld` / `decode_farbfeld_with_limits`
+- `decode_bmp` / `decode_bmp_with_limits` — RGB output (`bmp`)
+- `decode_bmp_native` / `decode_bmp_native_with_limits` — BGR output (`bmp`)
+- `decode_bmp_permissive` / `..._with_limits` (`bmp`)
+- `decode_qoi` / `decode_qoi_with_limits` (`qoi`)
+- `decode_tga` / `decode_tga_with_limits` (`tga`)
+- `decode_hdr` / `decode_hdr_with_limits` (`hdr`)
 
 **Encode (raw bytes):**
 - `encode_ppm`, `encode_pgm`, `encode_pam`, `encode_pfm` — PNM family
 - `encode_farbfeld` — farbfeld
 - `encode_bmp`, `encode_bmp_rgba` — BMP (`bmp`)
+- `encode_qoi` — QOI (`qoi`)
+- `encode_tga` — TGA (`tga`)
+- `encode_hdr` — Radiance HDR (`hdr`)
 
 **Typed pixel** (`rgb`): `decode_pixels`, `encode_ppm_pixels`, `encode_pam_pixels`, etc.
 
@@ -195,17 +228,47 @@ All public functions are flat, one-shot calls at crate root.
 
 **Types:**
 - `DecodeOutput<'a>` — decoded image (`.pixels()`, `.width`, `.height`, `.layout`, `.is_borrowed()`, `.as_pixels()`, `.as_imgref()`, `.to_imgvec()`)
-- `ImageFormat` — format enum (Pnm, Bmp, Farbfeld)
+- `ImageFormat` — format enum (Pnm, Bmp, Farbfeld, Qoi, Tga, Hdr)
 - `PixelLayout` — pixel format (Gray8, Gray16, Rgb8, Rgba8, Rgba16, Bgr8, Bgra8, Bgrx8, GrayF32, RgbF32)
 - `BmpPermissiveness` — decode strictness (Strict, Standard, Permissive) (`bmp`)
 - `Limits` — resource limits (max width/height/pixels/memory)
 - `BitmapError` — error type, `#[non_exhaustive]`
+
+## Performance
+
+1 megapixel (1000x1000) RGB8, single-threaded, AMD Ryzen (WSL2):
+
+**Decode throughput:**
+
+| Format | Time | Throughput | Notes |
+|--------|------|-----------|-------|
+| PPM | 2.1 us | 1327 GiB/s | Zero-copy (pointer math only) |
+| TGA | 576 us | 4.85 GiB/s | memcpy + batch BGR swizzle |
+| BMP | 600 us | 4.66 GiB/s | BGR swizzle + row flip |
+| Farbfeld | 920 us | 3.04 GiB/s | u16 BE endian swap |
+| QOI | 2.1 ms | 1.32 GiB/s | rapid-qoi compressed decode |
+| HDR | 2.7 ms | 1.05 GiB/s | RLE decode + RGBE to f32 |
+
+**Encode throughput:**
+
+| Format | Time | Throughput |
+|--------|------|-----------|
+| PPM | 267 us | 10.5 GiB/s |
+| TGA | 475 us | 5.88 GiB/s |
+| Farbfeld | 1.9 ms | 1.50 GiB/s |
+| BMP | 2.3 ms | 1.23 GiB/s |
+| QOI | 3.3 ms | 870 MiB/s |
+| HDR | 7.9 ms | 361 MiB/s |
+
+Run benchmarks: `cargo bench --bench codecs --all-features`
 
 ## Credits
 
 - PNM: draws from [zune-ppm](https://github.com/etemesi254/zune-image) by Caleb Etemesi (MIT/Apache-2.0/Zlib)
 - BMP: forked from [zune-bmp](https://github.com/etemesi254/zune-image) 0.5.2 by Caleb Etemesi (MIT/Apache-2.0/Zlib)
 - Farbfeld: forked from [zune-farbfeld](https://github.com/etemesi254/zune-image) 0.5.2 by Caleb Etemesi (MIT/Apache-2.0/Zlib)
+- QOI: uses [rapid-qoi](https://github.com/zakarumych/rapid-qoi) by Zakarum (MIT/Apache-2.0)
+- TGA, HDR: from-scratch implementations, no external dependencies
 
 ## AI-Generated Code Notice
 

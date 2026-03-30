@@ -4,9 +4,9 @@ version = "0.1.1"
 edition = "2024"
 rust-version = "1.93"
 license = "MIT OR Apache-2.0"
-description = "PNM/PAM/PFM, BMP, and farbfeld image format decoder and encoder"
+description = "PNM/PAM/PFM, BMP, farbfeld, QOI, TGA, and Radiance HDR image codec"
 categories = ["multimedia::images"]
-keywords = ["image", "pnm", "bmp", "farbfeld", "pam"]
+keywords = ["image", "pnm", "bmp", "tga", "qoi"]
 repository = "https://github.com/imazen/zenbitmaps"
 documentation = "https://docs.rs/zenbitmaps"
 readme = "README.md"
@@ -37,9 +37,11 @@ codec-corpus = "1"
 default = []
 std = []
 
-# Format groups
-bmp = []   # Full BMP support (all bit depths, RLE, bitfields, palettes)
+# Format groups (PNM and farbfeld are always available)
+bmp = []   # BMP (all bit depths, RLE, bitfields, palettes)
 qoi = ["dep:rapid-qoi"]  # QOI (Quite OK Image) lossless format
+tga = []   # TGA (Targa) truecolor, grayscale, color-mapped, RLE
+hdr = []   # Radiance HDR (RGBE, RLE)
 simd = ["dep:garb", "dep:archmage"]  # SIMD-accelerated pixel swizzle and batch conversion
 
 # Typed pixel support
@@ -54,9 +56,9 @@ zencodec = ["dep:zencodec", "dep:zenpixels", "imgref", "rgb"]
 # zennode = ["dep:zennode"]
 
 # All optional features
-all = ["bmp", "qoi", "simd", "rgb", "imgref"]
+all = ["bmp", "qoi", "tga", "hdr", "simd", "rgb", "imgref"]
 
 [[bench]]
 name = "codecs"
 harness = false
-required-features = ["bmp", "qoi"]
+required-features = ["bmp", "qoi", "tga", "hdr"]

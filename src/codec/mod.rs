@@ -53,10 +53,14 @@ mod qoi_codec;
 #[cfg(feature = "qoi")]
 pub use qoi_codec::*;
 
+#[cfg(feature = "hdr")]
 mod hdr_codec;
+#[cfg(feature = "hdr")]
 pub use hdr_codec::*;
 
+#[cfg(feature = "tga")]
 mod tga_codec;
+#[cfg(feature = "tga")]
 pub use tga_codec::*;
 
 // ══════════════════════════════════════════════════════════════════════
@@ -1296,6 +1300,7 @@ mod tests {
 
     // ── HDR zencodec trait tests ───────────────────────────────────────
 
+    #[cfg(feature = "hdr")]
     #[test]
     fn hdr_encode_decode_f32_roundtrip() {
         use zencodec::decode::{Decode, DecodeJob, DecoderConfig};
@@ -1376,6 +1381,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "hdr")]
     #[test]
     fn hdr_probe_extracts_info() {
         use zencodec::decode::{DecodeJob, DecoderConfig};
@@ -1415,6 +1421,7 @@ mod tests {
         assert!(cicp.full_range);
     }
 
+    #[cfg(feature = "hdr")]
     #[test]
     fn hdr_streaming_decode() {
         use zencodec::decode::{DecodeJob, DecoderConfig, StreamingDecode};
@@ -1481,6 +1488,7 @@ mod tests {
         assert!(stream.next_batch().unwrap().is_none());
     }
 
+    #[cfg(feature = "hdr")]
     #[test]
     fn hdr_streaming_encode_roundtrip() {
         use zencodec::decode::{Decode, DecodeJob, DecoderConfig};
@@ -1561,6 +1569,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "hdr")]
     #[test]
     fn hdr_capabilities_correct() {
         use zencodec::decode::DecoderConfig;
@@ -1585,6 +1594,7 @@ mod tests {
         assert!(!dec_caps.native_gray());
     }
 
+    #[cfg(feature = "hdr")]
     #[test]
     fn hdr_format_is_hdr() {
         use zencodec::decode::DecoderConfig;
@@ -1593,6 +1603,7 @@ mod tests {
         assert_eq!(HdrDecoderConfig::formats(), &[HDR_IMAGE_FORMAT]);
     }
 
+    #[cfg(feature = "hdr")]
     #[test]
     fn hdr_animation_rejected() {
         use zencodec::decode::{DecodeJob, DecoderConfig};
