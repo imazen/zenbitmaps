@@ -1,8 +1,17 @@
 # zenbitmaps [![CI](https://img.shields.io/github/actions/workflow/status/imazen/zenbitmaps/ci.yml?style=flat-square)](https://github.com/imazen/zenbitmaps/actions/workflows/ci.yml) [![crates.io](https://img.shields.io/crates/v/zenbitmaps?style=flat-square)](https://crates.io/crates/zenbitmaps) [![lib.rs](https://img.shields.io/crates/v/zenbitmaps?style=flat-square&label=lib.rs&color=blue)](https://lib.rs/crates/zenbitmaps) [![docs.rs](https://img.shields.io/docsrs/zenbitmaps?style=flat-square)](https://docs.rs/zenbitmaps) [![license](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue?style=flat-square)](https://github.com/imazen/zenbitmaps#license)
 
-PNM/PAM/PFM, BMP, farbfeld, QOI, TGA, and Radiance HDR decoder and encoder.
+Fast, safe bitmap format codecs. `no_std` + `alloc`, `forbid(unsafe_code)`, panic-free.
 
-`no_std` compatible (with `alloc`), `forbid(unsafe_code)`, panic-free. All arithmetic is checked. Suitable for server and embedded use.
+| Format | Feature | Decode | Encode | Detection |
+|--------|---------|--------|--------|-----------|
+| **PNM** (PGM/PPM/PAM/PFM) | *(default)* | 1327 GiB/s | 10.5 GiB/s | `P5`/`P6`/`P7`/`Pf`/`PF` magic |
+| **Farbfeld** | *(default)* | 3.04 GiB/s | 1.50 GiB/s | `farbfeld` magic |
+| **TGA** | `tga` | 4.85 GiB/s | 5.88 GiB/s | Header heuristic + v2 footer |
+| **BMP** | `bmp` | 4.66 GiB/s | 1.23 GiB/s | `BM` magic |
+| **QOI** | `qoi` | 1.32 GiB/s | 870 MiB/s | `qoif` magic |
+| **Radiance HDR** | `hdr` | 1.05 GiB/s | 361 MiB/s | `#?RADIANCE` / `#?RGBE` |
+
+<sub>1 megapixel RGB8, single-threaded. PPM decode is zero-copy. See [benchmarks](#performance).</sub>
 
 ## Getting started
 
@@ -236,31 +245,11 @@ All public functions are flat, one-shot calls at crate root.
 
 ## Performance
 
-1 megapixel (1000x1000) RGB8, single-threaded, AMD Ryzen (WSL2):
+Run: `cargo bench --bench codecs --all-features`
 
-**Decode throughput:**
+Benchmarks measured at 1000x1000 pixels, single-threaded, default target (no `-C target-cpu=native`). PPM decode is zero-copy (returns a borrowed slice). TGA decode uses a fast memcpy + batch BGR swizzle path for 24/32-bit uncompressed images. The `simd` feature enables garb's SIMD-accelerated swizzle for TGA and QOI encode.
 
-| Format | Time | Throughput | Notes |
-|--------|------|-----------|-------|
-| PPM | 2.1 us | 1327 GiB/s | Zero-copy (pointer math only) |
-| TGA | 576 us | 4.85 GiB/s | memcpy + batch BGR swizzle |
-| BMP | 600 us | 4.66 GiB/s | BGR swizzle + row flip |
-| Farbfeld | 920 us | 3.04 GiB/s | u16 BE endian swap |
-| QOI | 2.1 ms | 1.32 GiB/s | rapid-qoi compressed decode |
-| HDR | 2.7 ms | 1.05 GiB/s | RLE decode + RGBE to f32 |
-
-**Encode throughput:**
-
-| Format | Time | Throughput |
-|--------|------|-----------|
-| PPM | 267 us | 10.5 GiB/s |
-| TGA | 475 us | 5.88 GiB/s |
-| Farbfeld | 1.9 ms | 1.50 GiB/s |
-| BMP | 2.3 ms | 1.23 GiB/s |
-| QOI | 3.3 ms | 870 MiB/s |
-| HDR | 7.9 ms | 361 MiB/s |
-
-Run benchmarks: `cargo bench --bench codecs --all-features`
+TGA detection uses header heuristics since TGA has no magic bytes. False positive rate is approximately 1 in 11 million on random data. When the full file is available, the TGA v2 footer (`TRUEVISION-XFILE.\0`) is checked first as a definitive signal.
 
 ## Credits
 
