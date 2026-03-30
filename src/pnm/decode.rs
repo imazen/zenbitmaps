@@ -1,4 +1,9 @@
-//! PNM decoder: P5, P6, P7, PFM (binary formats only).
+//! PNM decoder: P1-P7, PFM.
+//!
+//! P1 (ASCII PBM), P2 (ASCII PGM), P3 (ASCII PPM) — text pixel data.
+//! P4 (binary PBM) — bit-packed, 8 pixels per byte, MSB first.
+//! P5 (binary PGM), P6 (binary PPM) — raw binary pixel data.
+//! P7 (PAM) — arbitrary channels, binary. PFM — float, binary.
 //!
 //! Credits: Draws from zune-ppm by Caleb Etemesi (MIT/Apache-2.0/Zlib).
 
@@ -21,9 +26,9 @@ pub(crate) fn parse_header(data: &[u8]) -> Result<PnmHeader, BitmapError> {
         b"P6" => parse_p5_p6_header(data, PnmFormat::Ppm),
         b"P7" => parse_p7_header(data),
         b"Pf" | b"PF" => parse_pfm_header(data),
-        b"P1" | b"P2" | b"P3" | b"P4" => Err(BitmapError::UnsupportedVariant(
-            alloc::format!("ASCII PNM ({}{}) is not supported, use binary P5/P6/P7", data[0] as char, data[1] as char),
-        )),
+        b"P1" | b"P4" => parse_pbm_header(data),
+        b"P2" => parse_p5_p6_header(data, PnmFormat::Pgm),
+        b"P3" => parse_p5_p6_header(data, PnmFormat::Ppm),
         _ => Err(BitmapError::UnrecognizedFormat),
     }
 }
@@ -78,6 +83,40 @@ fn parse_p5_p6_header(data: &[u8], format: PnmFormat) -> Result<PnmHeader, Bitma
         maxval,
         depth,
         layout,
+        pfm_scale: 0.0,
+        data_offset,
+    })
+}
+
+/// Parse P1/P4 (PBM) header. PBM has width and height but no maxval.
+fn parse_pbm_header(data: &[u8]) -> Result<PnmHeader, BitmapError> {
+    let mut pos = 2;
+
+    pos = skip_whitespace_and_comments(data, pos)?;
+    let (width, new_pos) = parse_u32(data, pos)?;
+    pos = skip_whitespace_and_comments(data, new_pos)?;
+    let (height, new_pos) = parse_u32(data, pos)?;
+
+    if width == 0 || height == 0 {
+        return Err(BitmapError::InvalidHeader(
+            "width and height must be non-zero".into(),
+        ));
+    }
+
+    // P1: single whitespace separates header from ASCII data
+    // P4: single whitespace byte separates header from binary data
+    if new_pos >= data.len() {
+        return Err(BitmapError::UnexpectedEof);
+    }
+    let data_offset = new_pos + 1;
+
+    Ok(PnmHeader {
+        format: PnmFormat::Pbm,
+        width,
+        height,
+        maxval: 1,
+        depth: 1,
+        layout: PixelLayout::Gray8,
         pfm_scale: 0.0,
         data_offset,
     })
@@ -372,6 +411,171 @@ pub(crate) fn decode_pfm(
             let val = raw * scale;
             out.extend_from_slice(&val.to_ne_bytes());
         }
+    }
+
+    Ok(out)
+}
+
+/// Decode ASCII PBM (P1): `0` = white (255), `1` = black (0).
+pub(crate) fn decode_ascii_pbm(
+    pixel_data: &[u8],
+    header: &PnmHeader,
+    stop: &dyn Stop,
+) -> Result<Vec<u8>, BitmapError> {
+    let total = (header.width as usize)
+        .checked_mul(header.height as usize)
+        .ok_or(BitmapError::DimensionsTooLarge {
+            width: header.width,
+            height: header.height,
+        })?;
+
+    let mut out = Vec::with_capacity(total);
+    let mut pos = 0;
+
+    for i in 0..total {
+        if i % (header.width as usize * 16) == 0 {
+            stop.check()?;
+        }
+        // Skip whitespace and comments
+        while pos < pixel_data.len() {
+            match pixel_data[pos] {
+                b' ' | b'\t' | b'\n' | b'\r' => pos += 1,
+                b'#' => {
+                    while pos < pixel_data.len() && pixel_data[pos] != b'\n' {
+                        pos += 1;
+                    }
+                }
+                _ => break,
+            }
+        }
+        if pos >= pixel_data.len() {
+            return Err(BitmapError::UnexpectedEof);
+        }
+        // PBM: 1 = black (0), 0 = white (255)
+        let val = match pixel_data[pos] {
+            b'0' => 255,
+            b'1' => 0,
+            c => {
+                return Err(BitmapError::InvalidData(alloc::format!(
+                    "P1: expected '0' or '1', got '{}'",
+                    c as char
+                )));
+            }
+        };
+        out.push(val);
+        pos += 1;
+    }
+
+    Ok(out)
+}
+
+/// Decode binary PBM (P4): 8 pixels per byte, MSB first.
+/// 1 = black (0), 0 = white (255). Rows are padded to byte boundaries.
+pub(crate) fn decode_p4_bitpacked(
+    pixel_data: &[u8],
+    header: &PnmHeader,
+    stop: &dyn Stop,
+) -> Result<Vec<u8>, BitmapError> {
+    let w = header.width as usize;
+    let h = header.height as usize;
+    let row_bytes = w.div_ceil(8);
+    let total_bytes = row_bytes
+        .checked_mul(h)
+        .ok_or(BitmapError::DimensionsTooLarge {
+            width: header.width,
+            height: header.height,
+        })?;
+
+    if pixel_data.len() < total_bytes {
+        return Err(BitmapError::UnexpectedEof);
+    }
+
+    let out_size = w.checked_mul(h).ok_or(BitmapError::DimensionsTooLarge {
+        width: header.width,
+        height: header.height,
+    })?;
+    let mut out = Vec::with_capacity(out_size);
+
+    for row in 0..h {
+        if row % 16 == 0 {
+            stop.check()?;
+        }
+        let row_start = row * row_bytes;
+        for col in 0..w {
+            let byte_idx = row_start + col / 8;
+            let bit_idx = 7 - (col % 8); // MSB first
+            let bit = (pixel_data[byte_idx] >> bit_idx) & 1;
+            // 1 = black (0), 0 = white (255)
+            out.push(if bit == 1 { 0 } else { 255 });
+        }
+    }
+
+    Ok(out)
+}
+
+/// Decode ASCII PGM/PPM (P2/P3): whitespace-separated decimal values.
+/// Scales to 0-255 if maxval != 255.
+pub(crate) fn decode_ascii_samples(
+    pixel_data: &[u8],
+    header: &PnmHeader,
+    stop: &dyn Stop,
+) -> Result<Vec<u8>, BitmapError> {
+    let w = header.width as usize;
+    let h = header.height as usize;
+    let depth = header.depth as usize;
+    let total = w
+        .checked_mul(h)
+        .and_then(|wh| wh.checked_mul(depth))
+        .ok_or(BitmapError::DimensionsTooLarge {
+            width: header.width,
+            height: header.height,
+        })?;
+
+    let scale = if header.maxval == 255 {
+        None
+    } else {
+        Some(255.0 / header.maxval as f32)
+    };
+
+    let mut out = Vec::with_capacity(total);
+    let mut pos = 0;
+
+    for i in 0..total {
+        if i % (w * depth * 16) == 0 {
+            stop.check()?;
+        }
+        // Skip whitespace and comments
+        while pos < pixel_data.len() {
+            match pixel_data[pos] {
+                b' ' | b'\t' | b'\n' | b'\r' => pos += 1,
+                b'#' => {
+                    while pos < pixel_data.len() && pixel_data[pos] != b'\n' {
+                        pos += 1;
+                    }
+                }
+                _ => break,
+            }
+        }
+        // Parse decimal number
+        let start = pos;
+        while pos < pixel_data.len() && pixel_data[pos].is_ascii_digit() {
+            pos += 1;
+        }
+        if pos == start {
+            return Err(BitmapError::UnexpectedEof);
+        }
+        let s = core::str::from_utf8(&pixel_data[start..pos])
+            .map_err(|_| BitmapError::InvalidData("non-UTF8 in ASCII PNM".into()))?;
+        let val: u32 = s
+            .parse()
+            .map_err(|_| BitmapError::InvalidData(alloc::format!("bad sample value: {s}")))?;
+
+        let byte = if let Some(s) = scale {
+            (val as f32 * s + 0.5) as u8
+        } else {
+            val as u8
+        };
+        out.push(byte);
     }
 
     Ok(out)

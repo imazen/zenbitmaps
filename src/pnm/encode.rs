@@ -34,6 +34,9 @@ pub(crate) fn encode_pnm(
     stop.check()?;
 
     match fmt {
+        PnmFormat::Pbm => Err(BitmapError::UnsupportedVariant(
+            "PBM encode not supported, use PGM (encode_pgm)".into(),
+        )),
         PnmFormat::Pgm => encode_pgm(pixels, width, height, w, h, layout, stop),
         PnmFormat::Ppm => encode_ppm(pixels, width, height, w, h, layout, stop),
         PnmFormat::Pam => encode_pam(pixels, width, height, w, h, layout, stop),

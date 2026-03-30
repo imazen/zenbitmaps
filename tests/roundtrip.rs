@@ -30,6 +30,156 @@ fn ppm_roundtrip_rgb8() {
     assert!(decoded.is_borrowed(), "PPM decode should be zero-copy");
 }
 
+// ── P1 (ASCII PBM) ──────────────────────────────────────────────────
+
+#[test]
+fn p1_ascii_pbm_2x2() {
+    let data = b"P1\n2 2\n1 0\n0 1\n";
+    let decoded = decode(data, Unstoppable).unwrap();
+    assert_eq!(decoded.width, 2);
+    assert_eq!(decoded.height, 2);
+    assert_eq!(decoded.layout, PixelLayout::Gray8);
+    // 1=black(0), 0=white(255)
+    assert_eq!(decoded.pixels(), &[0, 255, 255, 0]);
+}
+
+#[test]
+fn p1_ascii_pbm_with_comments() {
+    let data = b"P1\n# comment\n3 1\n1 0 1\n";
+    let decoded = decode(data, Unstoppable).unwrap();
+    assert_eq!(decoded.pixels(), &[0, 255, 0]);
+}
+
+#[test]
+fn p1_ascii_pbm_1x1() {
+    let data = b"P1\n1 1\n0\n";
+    let decoded = decode(data, Unstoppable).unwrap();
+    assert_eq!(decoded.pixels(), &[255]);
+}
+
+// ── P2 (ASCII PGM) ──────────────────────────────────────────────────
+
+#[test]
+fn p2_ascii_pgm_3x2() {
+    let data = b"P2\n3 2\n255\n0 128 255\n64 192 32\n";
+    let decoded = decode(data, Unstoppable).unwrap();
+    assert_eq!(decoded.width, 3);
+    assert_eq!(decoded.height, 2);
+    assert_eq!(decoded.layout, PixelLayout::Gray8);
+    assert_eq!(decoded.pixels(), &[0, 128, 255, 64, 192, 32]);
+}
+
+#[test]
+fn p2_ascii_pgm_maxval_scaling() {
+    // maxval=15, values scale: 0→0, 8→136, 15→255
+    let data = b"P2\n3 1\n15\n0 8 15\n";
+    let decoded = decode(data, Unstoppable).unwrap();
+    assert_eq!(decoded.pixels()[0], 0);
+    assert!(decoded.pixels()[1] > 120 && decoded.pixels()[1] < 150); // ~136
+    assert_eq!(decoded.pixels()[2], 255);
+}
+
+#[test]
+fn p2_ascii_pgm_with_comments() {
+    let data = b"P2\n# A comment\n2 1\n# maxval\n255\n100 200\n";
+    let decoded = decode(data, Unstoppable).unwrap();
+    assert_eq!(decoded.pixels(), &[100, 200]);
+}
+
+// ── P3 (ASCII PPM) ──────────────────────────────────────────────────
+
+#[test]
+fn p3_ascii_ppm_2x1() {
+    let data = b"P3\n2 1\n255\n255 0 0 0 255 0\n";
+    let decoded = decode(data, Unstoppable).unwrap();
+    assert_eq!(decoded.width, 2);
+    assert_eq!(decoded.height, 1);
+    assert_eq!(decoded.layout, PixelLayout::Rgb8);
+    assert_eq!(decoded.pixels(), &[255, 0, 0, 0, 255, 0]);
+}
+
+#[test]
+fn p3_ascii_ppm_multiline() {
+    // Values can span multiple lines
+    let data = b"P3\n1 2\n255\n10\n20\n30\n40\n50\n60\n";
+    let decoded = decode(data, Unstoppable).unwrap();
+    assert_eq!(decoded.pixels(), &[10, 20, 30, 40, 50, 60]);
+}
+
+#[test]
+fn p3_ascii_ppm_maxval_scaling() {
+    let data = b"P3\n1 1\n100\n50 100 0\n";
+    let decoded = decode(data, Unstoppable).unwrap();
+    // 50/100*255 ≈ 128, 100/100*255 = 255, 0/100*255 = 0
+    assert!(decoded.pixels()[0] > 125 && decoded.pixels()[0] < 131);
+    assert_eq!(decoded.pixels()[1], 255);
+    assert_eq!(decoded.pixels()[2], 0);
+}
+
+// ── P4 (binary PBM) ────────────────────────────────────────────────
+
+#[test]
+fn p4_binary_pbm_8x1() {
+    // 8 pixels in one byte: 0b10101010 = pixels: B,W,B,W,B,W,B,W
+    let mut data = Vec::from(&b"P4\n8 1\n"[..]);
+    data.push(0b10101010);
+    let decoded = decode(&data, Unstoppable).unwrap();
+    assert_eq!(decoded.width, 8);
+    assert_eq!(decoded.height, 1);
+    assert_eq!(decoded.pixels(), &[0, 255, 0, 255, 0, 255, 0, 255]);
+}
+
+#[test]
+fn p4_binary_pbm_3x1_padded() {
+    // 3 pixels = 3 bits used, 5 bits padding in byte
+    // 0b11100000 = pixels: B,B,B (+ 5 padding bits)
+    let mut data = Vec::from(&b"P4\n3 1\n"[..]);
+    data.push(0b11100000);
+    let decoded = decode(&data, Unstoppable).unwrap();
+    assert_eq!(decoded.width, 3);
+    assert_eq!(decoded.pixels(), &[0, 0, 0]);
+}
+
+#[test]
+fn p4_binary_pbm_2x2() {
+    // Row 1: 0b10000000 → B,W (6 padding bits)
+    // Row 2: 0b01000000 → W,B (6 padding bits)
+    let mut data = Vec::from(&b"P4\n2 2\n"[..]);
+    data.push(0b10000000);
+    data.push(0b01000000);
+    let decoded = decode(&data, Unstoppable).unwrap();
+    assert_eq!(decoded.pixels(), &[0, 255, 255, 0]);
+}
+
+#[test]
+fn p4_binary_pbm_16x1() {
+    // 16 pixels = 2 bytes, all white (0x00, 0x00)
+    let mut data = Vec::from(&b"P4\n16 1\n"[..]);
+    data.push(0x00);
+    data.push(0x00);
+    let decoded = decode(&data, Unstoppable).unwrap();
+    assert_eq!(decoded.width, 16);
+    assert!(decoded.pixels().iter().all(|&p| p == 255));
+}
+
+#[test]
+fn p4_binary_pbm_all_black() {
+    let mut data = Vec::from(&b"P4\n8 1\n"[..]);
+    data.push(0xFF);
+    let decoded = decode(&data, Unstoppable).unwrap();
+    assert!(decoded.pixels().iter().all(|&p| p == 0));
+}
+
+// ── Format detection ────────────────────────────────────────────────
+
+#[test]
+fn detect_format_p1_p4() {
+    assert_eq!(detect_format(b"P1\n1 1\n0"), Some(ImageFormat::Pnm));
+    assert_eq!(detect_format(b"P2\n1 1\n255\n0"), Some(ImageFormat::Pnm));
+    assert_eq!(detect_format(b"P3\n1 1\n255\n0 0 0"), Some(ImageFormat::Pnm));
+    assert_eq!(detect_format(b"P4\n1 1\n\x00"), Some(ImageFormat::Pnm));
+}
+
 #[test]
 fn pam_roundtrip_rgba8() {
     let pixels = vec![

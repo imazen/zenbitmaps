@@ -15,6 +15,7 @@ use enough::Stop;
 /// Which PNM sub-format to use (internal).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum PnmFormat {
+    Pbm,
     Pgm,
     Ppm,
     Pam,
@@ -45,7 +46,7 @@ pub(crate) fn decode<'a>(
 
     // Verify magic bytes
     match &data[..2] {
-        b"P5" | b"P6" | b"P7" | b"Pf" | b"PF" => {}
+        b"P1" | b"P2" | b"P3" | b"P4" | b"P5" | b"P6" | b"P7" | b"Pf" | b"PF" => {}
         _ => return Err(BitmapError::UnrecognizedFormat),
     }
 
@@ -66,6 +67,30 @@ pub(crate) fn decode<'a>(
     let depth = header.depth as usize;
 
     match header.format {
+        PnmFormat::Pbm => {
+            // P1 (ASCII) or P4 (binary bit-packed)
+            let is_ascii = data[1] == b'1';
+            let out_bytes = w
+                .checked_mul(h)
+                .ok_or(BitmapError::DimensionsTooLarge {
+                    width: header.width,
+                    height: header.height,
+                })?;
+            if let Some(limits) = limits {
+                limits.check_memory(out_bytes)?;
+            }
+            let pixels = if is_ascii {
+                decode::decode_ascii_pbm(pixel_data, &header, stop)?
+            } else {
+                decode::decode_p4_bitpacked(pixel_data, &header, stop)?
+            };
+            Ok(DecodeOutput::owned(
+                pixels,
+                header.width,
+                header.height,
+                PixelLayout::Gray8,
+            ))
+        }
         PnmFormat::Pfm => {
             let out_bytes = w
                 .checked_mul(h)
@@ -86,7 +111,75 @@ pub(crate) fn decode<'a>(
                 header.layout,
             ))
         }
-        _ => {
+        PnmFormat::Pgm | PnmFormat::Ppm => {
+            let is_ascii = matches!(data[1], b'2' | b'3');
+            if is_ascii {
+                let out_bytes = w
+                    .checked_mul(h)
+                    .and_then(|wh| wh.checked_mul(depth))
+                    .ok_or(BitmapError::DimensionsTooLarge {
+                        width: header.width,
+                        height: header.height,
+                    })?;
+                if let Some(limits) = limits {
+                    limits.check_memory(out_bytes)?;
+                }
+                let pixels =
+                    decode::decode_ascii_samples(pixel_data, &header, stop)?;
+                Ok(DecodeOutput::owned(
+                    pixels,
+                    header.width,
+                    header.height,
+                    header.layout,
+                ))
+            } else {
+                // Binary P5/P6
+                let is_16bit = header.maxval > 255;
+                let src_bps = if is_16bit { 2 } else { 1 };
+                let expected_src = w
+                    .checked_mul(h)
+                    .and_then(|wh| wh.checked_mul(depth))
+                    .and_then(|whd| whd.checked_mul(src_bps))
+                    .ok_or(BitmapError::DimensionsTooLarge {
+                        width: header.width,
+                        height: header.height,
+                    })?;
+
+                if pixel_data.len() < expected_src {
+                    return Err(BitmapError::UnexpectedEof);
+                }
+
+                if !is_16bit && header.maxval == 255 {
+                    Ok(DecodeOutput::borrowed(
+                        &pixel_data[..expected_src],
+                        header.width,
+                        header.height,
+                        header.layout,
+                    ))
+                } else {
+                    let out_bytes = w
+                        .checked_mul(h)
+                        .and_then(|wh| wh.checked_mul(depth))
+                        .ok_or(BitmapError::DimensionsTooLarge {
+                            width: header.width,
+                            height: header.height,
+                        })?;
+                    if let Some(limits) = limits {
+                        limits.check_memory(out_bytes)?;
+                    }
+                    let pixels =
+                        decode::decode_integer_transform(pixel_data, &header, expected_src, stop)?;
+                    Ok(DecodeOutput::owned(
+                        pixels,
+                        header.width,
+                        header.height,
+                        header.layout,
+                    ))
+                }
+            }
+        }
+        PnmFormat::Pam => {
+            // PAM (P7) is always binary
             let is_16bit = header.maxval > 255;
             let src_bps = if is_16bit { 2 } else { 1 };
             let expected_src = w
@@ -97,11 +190,9 @@ pub(crate) fn decode<'a>(
                     width: header.width,
                     height: header.height,
                 })?;
-
             if pixel_data.len() < expected_src {
                 return Err(BitmapError::UnexpectedEof);
             }
-
             if !is_16bit && header.maxval == 255 {
                 Ok(DecodeOutput::borrowed(
                     &pixel_data[..expected_src],
