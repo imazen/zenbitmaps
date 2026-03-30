@@ -63,9 +63,9 @@ dependencies = [
 
 [[package]]
 name = "archmage"
-version = "0.9.14"
+version = "0.9.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2c62208fadf5c29826211a799472057dd164956fe3ae3ce63f62c267ca7cd123"
+checksum = "4f603b4bae8aa53923ec4c221610fec3bb16a3cba8e002a750323a30abd25f8f"
 dependencies = [
  "archmage-macros",
  "safe_unaligned_simd",
@@ -73,9 +73,9 @@ dependencies = [
 
 [[package]]
 name = "archmage-macros"
-version = "0.9.14"
+version = "0.9.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2673bdcd233efb45ba8f8bd8e915acdb2fa413140a01a18296e4b198ff6eae1f"
+checksum = "237913c29ffeb6cda1ddc6e3a4ff21c2d2e5523e050dce04fa5889a3e8dabb99"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -779,9 +779,9 @@ dependencies = [
 
 [[package]]
 name = "zencodec"
-version = "0.1.10"
+version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ce7dbfca05c2c9f7b45d6b19012602260a3809e904177a2cb9ec7e4ffbe63fe5"
+checksum = "09ab2de1b46bc21099a7d6c7faa94131fbafe96b2314746ca08b207ee9d55a8e"
 dependencies = [
  "almost-enough",
  "enough",
