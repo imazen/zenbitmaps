@@ -173,7 +173,7 @@ fn rle_encode_channel(scanline: &[[u8; 4]], ch: usize, out: &mut Vec<u8>) {
         // Look for a run of identical values
         let val = scanline[col][ch];
         let mut run_len = 1;
-        while col + run_len < w && scanline[col + run_len][ch] == val && run_len < 128 {
+        while col + run_len < w && scanline[col + run_len][ch] == val && run_len < 127 {
             run_len += 1;
         }
 
@@ -198,7 +198,7 @@ fn rle_encode_channel(scanline: &[[u8; 4]], ch: usize, out: &mut Vec<u8>) {
                     break; // Stop literal, run follows
                 }
                 col += 1;
-                if col - lit_start >= 128 {
+                if col - lit_start >= 127 {
                     break; // Max literal length
                 }
             }

@@ -899,3 +899,23 @@ fn hdr_cancellation() {
     let result = decode_hdr(&encoded, AlreadyStopped);
     assert!(matches!(result, Err(BitmapError::Cancelled(_))));
 }
+
+#[test]
+fn hdr_1000x1000_roundtrip() {
+    let w = 1000u32;
+    let h = 1000u32;
+    let pixels: Vec<u8> = (0..w * h)
+        .flat_map(|i| {
+            let v = (i % 1000) as f32 / 1000.0;
+            let mut p = [0u8; 12];
+            p[0..4].copy_from_slice(&v.to_le_bytes());
+            p[4..8].copy_from_slice(&(v * 0.5).to_le_bytes());
+            p[8..12].copy_from_slice(&(v * 0.25).to_le_bytes());
+            p
+        })
+        .collect();
+    let encoded = encode_hdr(&pixels, w, h, PixelLayout::RgbF32, Unstoppable).unwrap();
+    let decoded = decode_hdr(&encoded, Unstoppable).unwrap();
+    assert_eq!(decoded.width, w);
+    assert_eq!(decoded.height, h);
+}

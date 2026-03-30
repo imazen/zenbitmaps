@@ -42,11 +42,11 @@ fn make_rgbf32() -> Vec<u8> {
 }
 
 zenbench::main!(|suite| {
-    let throughput_3mpx = Throughput::Bytes(W as u64 * H as u64 * 3);
+    let throughput = Throughput::Bytes(W as u64 * H as u64 * 3);
 
     // ── Decode comparison ────────────────────────────────────────────
     suite.compare("decode_1mpx", |g| {
-        g.throughput(throughput_3mpx);
+        g.throughput(Throughput::Bytes(W as u64 * H as u64 * 3));
 
         let ppm = zenbitmaps::encode_ppm(&make_rgb8(), W, H, zenbitmaps::PixelLayout::Rgb8, Unstoppable).unwrap();
         g.bench("ppm", move |b| {
@@ -81,7 +81,7 @@ zenbench::main!(|suite| {
 
     // ── Encode comparison ────────────────────────────────────────────
     suite.compare("encode_1mpx", |g| {
-        g.throughput(throughput_3mpx);
+        g.throughput(Throughput::Bytes(W as u64 * H as u64 * 3));
 
         let px = make_rgb8();
         g.bench("ppm", move |b| {
