@@ -172,6 +172,38 @@ fn p4_binary_pbm_all_black() {
 
 // ── Format detection ────────────────────────────────────────────────
 
+// ── P1-P4 error cases ───────────────────────────────────────────────
+
+#[test]
+fn p1_truncated() {
+    assert!(decode(b"P1\n2 2\n1 0\n", Unstoppable).is_err()); // only 2 of 4 pixels
+}
+
+#[test]
+fn p1_invalid_char() {
+    assert!(decode(b"P1\n1 1\n2\n", Unstoppable).is_err()); // '2' invalid for PBM
+}
+
+#[test]
+fn p2_truncated() {
+    assert!(decode(b"P2\n2 1\n255\n42\n", Unstoppable).is_err()); // 1 of 2 samples
+}
+
+#[test]
+fn p3_truncated() {
+    assert!(decode(b"P3\n1 1\n255\n10 20\n", Unstoppable).is_err()); // 2 of 3 channels
+}
+
+#[test]
+fn p4_truncated() {
+    assert!(decode(b"P4\n16 1\n\x00", Unstoppable).is_err()); // need 2 bytes, got 1
+}
+
+#[test]
+fn p2_zero_dimensions() {
+    assert!(decode(b"P2\n0 1\n255\n", Unstoppable).is_err());
+}
+
 #[test]
 fn detect_format_p1_p4() {
     assert_eq!(detect_format(b"P1\n1 1\n0"), Some(ImageFormat::Pnm));

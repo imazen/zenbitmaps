@@ -1634,4 +1634,202 @@ mod tests {
             .animation_frame_decoder(Cow::Borrowed(encoded.data()), &[]);
         assert!(result.is_err());
     }
+
+    // ── TGA zencodec trait tests ──────────────────────────────────────
+
+    #[cfg(feature = "tga")]
+    #[test]
+    fn tga_encode_decode_rgb8_roundtrip() {
+        use zencodec::decode::{Decode, DecodeJob, DecoderConfig};
+        use zencodec::encode::{EncodeJob, Encoder, EncoderConfig};
+
+        let pixels = vec![
+            rgb::Rgb { r: 255u8, g: 0, b: 0 },
+            rgb::Rgb { r: 0, g: 255, b: 0 },
+            rgb::Rgb { r: 0, g: 0, b: 255 },
+            rgb::Rgb { r: 42, g: 42, b: 42 },
+        ];
+        let img = imgref::ImgVec::new(pixels.clone(), 2, 2);
+        let encoded = TgaEncoderConfig::new()
+            .job()
+            .encoder()
+            .unwrap()
+            .encode(PixelSlice::from(img.as_ref()).erase())
+            .unwrap();
+
+        let decoded = TgaDecoderConfig::new()
+            .job()
+            .decoder(Cow::Borrowed(encoded.data()), &[])
+            .unwrap()
+            .decode()
+            .unwrap();
+        let buf = decoded.into_buffer();
+        let rgb_img = buf.try_as_imgref::<rgb::Rgb<u8>>().unwrap();
+        assert_eq!(rgb_img.buf(), &pixels);
+    }
+
+    #[cfg(feature = "tga")]
+    #[test]
+    fn tga_encode_decode_gray8_roundtrip() {
+        use zencodec::decode::{Decode, DecodeJob, DecoderConfig};
+        use zencodec::encode::{EncodeJob, Encoder, EncoderConfig};
+
+        let pixels = vec![
+            rgb::Gray::new(0u8),
+            rgb::Gray::new(128),
+            rgb::Gray::new(255),
+            rgb::Gray::new(64),
+        ];
+        let img = imgref::ImgVec::new(pixels.clone(), 2, 2);
+        let encoded = TgaEncoderConfig::new()
+            .job()
+            .encoder()
+            .unwrap()
+            .encode(PixelSlice::from(img.as_ref()).erase())
+            .unwrap();
+
+        let decoded = TgaDecoderConfig::new()
+            .job()
+            .decoder(Cow::Borrowed(encoded.data()), &[])
+            .unwrap()
+            .decode()
+            .unwrap();
+        let buf = decoded.into_buffer();
+        let gray_img = buf.try_as_imgref::<rgb::Gray<u8>>().unwrap();
+        assert_eq!(gray_img.buf(), &pixels);
+    }
+
+    #[cfg(feature = "tga")]
+    #[test]
+    fn tga_probe_extracts_info() {
+        use zencodec::decode::{DecodeJob, DecoderConfig};
+        use zencodec::encode::{EncodeJob, Encoder, EncoderConfig};
+
+        let pixels = vec![rgb::Rgba::<u8> { r: 1, g: 2, b: 3, a: 4 }; 4];
+        let img = imgref::ImgVec::new(pixels, 2, 2);
+        let encoded = TgaEncoderConfig::new()
+            .job()
+            .encoder()
+            .unwrap()
+            .encode(PixelSlice::from(img.as_ref()).erase())
+            .unwrap();
+
+        let info = TgaDecoderConfig::new()
+            .job()
+            .probe(encoded.data())
+            .unwrap();
+        assert_eq!(info.width, 2);
+        assert_eq!(info.height, 2);
+        assert!(info.has_alpha);
+        assert_eq!(info.source_color.bit_depth, Some(32));
+    }
+
+    #[cfg(feature = "tga")]
+    #[test]
+    fn tga_streaming_decode() {
+        use zencodec::decode::{DecodeJob, DecoderConfig, StreamingDecode};
+        use zencodec::encode::{EncodeJob, Encoder, EncoderConfig};
+
+        let pixels = vec![
+            rgb::Rgb { r: 10u8, g: 20, b: 30 },
+            rgb::Rgb { r: 40, g: 50, b: 60 },
+            rgb::Rgb { r: 70, g: 80, b: 90 },
+            rgb::Rgb { r: 100, g: 110, b: 120 },
+        ];
+        let img = imgref::ImgVec::new(pixels, 2, 2);
+        let encoded = TgaEncoderConfig::new()
+            .job()
+            .encoder()
+            .unwrap()
+            .encode(PixelSlice::from(img.as_ref()).erase())
+            .unwrap();
+
+        let mut stream = TgaDecoderConfig::new()
+            .job()
+            .streaming_decoder(Cow::Borrowed(encoded.data()), &[])
+            .unwrap();
+
+        assert_eq!(stream.info().width, 2);
+        assert_eq!(stream.info().height, 2);
+
+        let (y, batch) = stream.next_batch().unwrap().unwrap();
+        assert_eq!(y, 0);
+        assert_eq!(&batch.contiguous_bytes()[..], &[10, 20, 30, 40, 50, 60]);
+
+        let (y, _) = stream.next_batch().unwrap().unwrap();
+        assert_eq!(y, 1);
+
+        assert!(stream.next_batch().unwrap().is_none());
+    }
+
+    #[cfg(feature = "tga")]
+    #[test]
+    fn tga_streaming_encode_roundtrip() {
+        use zencodec::decode::{Decode, DecodeJob, DecoderConfig};
+        use zencodec::encode::{EncodeJob, Encoder, EncoderConfig};
+
+        let mut encoder = TgaEncoderConfig::new().job().encoder().unwrap();
+
+        let row0 = vec![rgb::Rgb { r: 1u8, g: 2, b: 3 }, rgb::Rgb { r: 4, g: 5, b: 6 }];
+        let img0 = imgref::ImgVec::new(row0, 2, 1);
+        encoder.push_rows(PixelSlice::from(img0.as_ref()).erase()).unwrap();
+
+        let row1 = vec![rgb::Rgb { r: 7u8, g: 8, b: 9 }, rgb::Rgb { r: 10, g: 11, b: 12 }];
+        let img1 = imgref::ImgVec::new(row1, 2, 1);
+        encoder.push_rows(PixelSlice::from(img1.as_ref()).erase()).unwrap();
+
+        let output = encoder.finish().unwrap();
+
+        let decoded = TgaDecoderConfig::new()
+            .job()
+            .decoder(Cow::Borrowed(output.data()), &[])
+            .unwrap()
+            .decode()
+            .unwrap();
+        let buf = decoded.into_buffer();
+        let result = buf.try_as_imgref::<rgb::Rgb<u8>>().unwrap();
+        assert_eq!(result.width(), 2);
+        assert_eq!(result.height(), 2);
+    }
+
+    #[cfg(feature = "tga")]
+    #[test]
+    fn tga_capabilities_correct() {
+        use zencodec::decode::DecoderConfig;
+        use zencodec::encode::EncoderConfig;
+
+        let enc_caps = TgaEncoderConfig::capabilities();
+        assert!(enc_caps.lossless());
+        assert!(enc_caps.native_alpha());
+        assert!(enc_caps.native_gray());
+        assert!(enc_caps.stop());
+
+        let dec_caps = TgaDecoderConfig::capabilities();
+        assert!(dec_caps.cheap_probe());
+        assert!(dec_caps.native_alpha());
+        assert!(dec_caps.native_gray());
+        assert!(dec_caps.streaming());
+    }
+
+    #[cfg(feature = "tga")]
+    #[test]
+    fn tga_animation_rejected() {
+        use zencodec::decode::{DecodeJob, DecoderConfig};
+        use zencodec::encode::{EncodeJob, EncoderConfig};
+
+        assert!(TgaEncoderConfig::new().job().animation_frame_encoder().is_err());
+
+        let pixels = vec![rgb::Rgb { r: 0u8, g: 0, b: 0 }; 1];
+        let img = imgref::ImgVec::new(pixels, 1, 1);
+        let encoded = TgaEncoderConfig::new()
+            .job()
+            .encoder()
+            .unwrap()
+            .encode(PixelSlice::from(img.as_ref()).erase())
+            .unwrap();
+        let result = TgaDecoderConfig::new()
+            .job()
+            .animation_frame_decoder(Cow::Borrowed(encoded.data()), &[]);
+        assert!(result.is_err());
+    }
 }
