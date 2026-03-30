@@ -262,8 +262,12 @@ pub(crate) fn rgbe_deinterleaved_to_f32(scanline_buf: &[u8], width: usize, out: 
     let mut out_pos = 0;
     for px in 0..width {
         let base = px * 4;
-        let (rf, gf, bf) =
-            rgbe_to_f32(scanline_buf[base], scanline_buf[base + 1], scanline_buf[base + 2], scanline_buf[base + 3]);
+        let (rf, gf, bf) = rgbe_to_f32(
+            scanline_buf[base],
+            scanline_buf[base + 1],
+            scanline_buf[base + 2],
+            scanline_buf[base + 3],
+        );
         out[out_pos..out_pos + 4].copy_from_slice(&rf.to_le_bytes());
         out[out_pos + 4..out_pos + 8].copy_from_slice(&gf.to_le_bytes());
         out[out_pos + 8..out_pos + 12].copy_from_slice(&bf.to_le_bytes());

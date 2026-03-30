@@ -70,12 +70,10 @@ pub(crate) fn decode<'a>(
         PnmFormat::Pbm => {
             // P1 (ASCII) or P4 (binary bit-packed)
             let is_ascii = data[1] == b'1';
-            let out_bytes = w
-                .checked_mul(h)
-                .ok_or(BitmapError::DimensionsTooLarge {
-                    width: header.width,
-                    height: header.height,
-                })?;
+            let out_bytes = w.checked_mul(h).ok_or(BitmapError::DimensionsTooLarge {
+                width: header.width,
+                height: header.height,
+            })?;
             if let Some(limits) = limits {
                 limits.check_memory(out_bytes)?;
             }
@@ -124,8 +122,7 @@ pub(crate) fn decode<'a>(
                 if let Some(limits) = limits {
                     limits.check_memory(out_bytes)?;
                 }
-                let pixels =
-                    decode::decode_ascii_samples(pixel_data, &header, stop)?;
+                let pixels = decode::decode_ascii_samples(pixel_data, &header, stop)?;
                 Ok(DecodeOutput::owned(
                     pixels,
                     header.width,

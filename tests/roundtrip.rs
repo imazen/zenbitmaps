@@ -208,7 +208,10 @@ fn p2_zero_dimensions() {
 fn detect_format_p1_p4() {
     assert_eq!(detect_format(b"P1\n1 1\n0"), Some(ImageFormat::Pnm));
     assert_eq!(detect_format(b"P2\n1 1\n255\n0"), Some(ImageFormat::Pnm));
-    assert_eq!(detect_format(b"P3\n1 1\n255\n0 0 0"), Some(ImageFormat::Pnm));
+    assert_eq!(
+        detect_format(b"P3\n1 1\n255\n0 0 0"),
+        Some(ImageFormat::Pnm)
+    );
     assert_eq!(detect_format(b"P4\n1 1\n\x00"), Some(ImageFormat::Pnm));
 }
 
@@ -737,6 +740,7 @@ fn into_owned_works() {
 
 // ── TGA tests ──────────────────────────────────────────────────────
 
+#[cfg(feature = "tga")]
 #[test]
 fn tga_roundtrip_rgb8() {
     // 3x2 checkerboard
@@ -751,6 +755,7 @@ fn tga_roundtrip_rgb8() {
     assert_eq!(decoded.pixels(), &pixels[..]);
 }
 
+#[cfg(feature = "tga")]
 #[test]
 fn tga_roundtrip_rgba8() {
     let pixels = vec![
@@ -764,6 +769,7 @@ fn tga_roundtrip_rgba8() {
     assert_eq!(decoded.pixels(), &pixels[..]);
 }
 
+#[cfg(feature = "tga")]
 #[test]
 fn tga_roundtrip_gray8() {
     let pixels = vec![0, 64, 128, 192, 255, 100];
@@ -775,6 +781,7 @@ fn tga_roundtrip_gray8() {
     assert_eq!(decoded.pixels(), &pixels[..]);
 }
 
+#[cfg(feature = "tga")]
 #[test]
 fn tga_1x1() {
     // Minimal image — single RGB pixel
@@ -787,6 +794,7 @@ fn tga_1x1() {
     assert_eq!(decoded.pixels(), &[42, 99, 200]);
 }
 
+#[cfg(feature = "tga")]
 #[test]
 fn tga_encode_bgr8() {
     // BGR input — TGA stores BGR natively, so encode is direct copy
@@ -799,6 +807,7 @@ fn tga_encode_bgr8() {
     assert_eq!(decoded.pixels(), &[30, 20, 10]);
 }
 
+#[cfg(feature = "tga")]
 #[test]
 fn tga_encode_bgra8() {
     // BGRA input — TGA stores BGRA natively
@@ -810,6 +819,7 @@ fn tga_encode_bgra8() {
     assert_eq!(decoded.pixels(), &[200, 150, 100, 255]);
 }
 
+#[cfg(feature = "tga")]
 #[test]
 fn tga_limits_reject() {
     let pixels = vec![0u8; 100 * 100 * 3];
@@ -822,12 +832,14 @@ fn tga_limits_reject() {
     assert!(matches!(result, Err(BitmapError::LimitExceeded(_))));
 }
 
+#[cfg(feature = "tga")]
 #[test]
 fn tga_decode_empty() {
     let result = decode_tga(&[], Unstoppable);
     assert!(result.is_err());
 }
 
+#[cfg(feature = "tga")]
 #[test]
 fn tga_decode_truncated() {
     // Valid-looking header but no pixel data
@@ -840,6 +852,7 @@ fn tga_decode_truncated() {
     assert!(result.is_err());
 }
 
+#[cfg(feature = "tga")]
 #[test]
 fn tga_encode_unsupported_layout() {
     let result = encode_tga(&[0u8; 12], 1, 1, PixelLayout::RgbF32, Unstoppable);
@@ -852,6 +865,7 @@ fn tga_encode_unsupported_layout() {
     assert!(matches!(result, Err(BitmapError::UnsupportedVariant(_))));
 }
 
+#[cfg(feature = "tga")]
 #[test]
 fn detect_format_tga() {
     let pixels = vec![255u8, 0, 0, 0, 255, 0];
@@ -859,6 +873,7 @@ fn detect_format_tga() {
     assert_eq!(detect_format(&encoded), Some(ImageFormat::Tga));
 }
 
+#[cfg(feature = "tga")]
 #[test]
 fn tga_auto_detect_decode() {
     let pixels = vec![255u8, 0, 0, 0, 255, 0];
@@ -872,6 +887,7 @@ fn tga_auto_detect_decode() {
 // ── HDR roundtrip tests ────────────────────────────────────────────
 
 /// Helper: build f32 RGB pixel bytes from f32 triples.
+#[cfg(feature = "hdr")]
 fn make_rgbf32_pixels(values: &[(f32, f32, f32)]) -> Vec<u8> {
     let mut out = Vec::with_capacity(values.len() * 12);
     for &(r, g, b) in values {
@@ -883,6 +899,7 @@ fn make_rgbf32_pixels(values: &[(f32, f32, f32)]) -> Vec<u8> {
 }
 
 /// Helper: read f32 RGB triples from pixel bytes.
+#[cfg(feature = "hdr")]
 fn read_rgbf32_pixels(data: &[u8]) -> Vec<(f32, f32, f32)> {
     data.chunks_exact(12)
         .map(|chunk| {
@@ -895,6 +912,7 @@ fn read_rgbf32_pixels(data: &[u8]) -> Vec<(f32, f32, f32)> {
 }
 
 /// Assert two f32 values are within RGBE precision (~1% per channel).
+#[cfg(feature = "hdr")]
 fn assert_f32_close(actual: f32, expected: f32, label: &str) {
     let eps = 0.02 * expected.abs().max(0.01);
     assert!(
@@ -903,6 +921,7 @@ fn assert_f32_close(actual: f32, expected: f32, label: &str) {
     );
 }
 
+#[cfg(feature = "hdr")]
 #[test]
 fn hdr_roundtrip_rgbf32() {
     let values = vec![
@@ -939,6 +958,7 @@ fn hdr_roundtrip_rgbf32() {
     }
 }
 
+#[cfg(feature = "hdr")]
 #[test]
 fn hdr_1x1() {
     let pixels = make_rgbf32_pixels(&[(1.0, 2.0, 3.0)]);
@@ -953,6 +973,7 @@ fn hdr_1x1() {
     assert_f32_close(result[0].2, 3.0, "B");
 }
 
+#[cfg(feature = "hdr")]
 #[test]
 fn hdr_wide_image() {
     // Width=64, height=2 -- exercises the new-style RLE path (width >= 8)
@@ -976,12 +997,14 @@ fn hdr_wide_image() {
     }
 }
 
+#[cfg(feature = "hdr")]
 #[test]
 fn hdr_decode_empty() {
     let result = decode_hdr(&[], Unstoppable);
     assert!(result.is_err());
 }
 
+#[cfg(feature = "hdr")]
 #[test]
 fn hdr_decode_truncated() {
     // Valid magic but truncated before resolution line
@@ -989,6 +1012,7 @@ fn hdr_decode_truncated() {
     assert!(result.is_err());
 }
 
+#[cfg(feature = "hdr")]
 #[test]
 fn hdr_limits_reject() {
     let pixels = make_rgbf32_pixels(&vec![(1.0, 1.0, 1.0); 100]);
@@ -1001,6 +1025,7 @@ fn hdr_limits_reject() {
     assert!(matches!(result, Err(BitmapError::LimitExceeded(_))));
 }
 
+#[cfg(feature = "hdr")]
 #[test]
 fn detect_format_hdr() {
     let pixels = make_rgbf32_pixels(&[(1.0, 1.0, 1.0)]);
@@ -1018,6 +1043,7 @@ fn detect_format_hdr() {
     );
 }
 
+#[cfg(feature = "hdr")]
 #[test]
 fn hdr_auto_detect_decode() {
     let pixels = make_rgbf32_pixels(&[(0.5, 1.0, 1.5)]);
@@ -1031,6 +1057,7 @@ fn hdr_auto_detect_decode() {
     assert_f32_close(result[0].2, 1.5, "B");
 }
 
+#[cfg(feature = "hdr")]
 #[test]
 fn hdr_encode_rgb8() {
     // Test Rgb8 -> HDR -> decode roundtrip
@@ -1056,12 +1083,14 @@ fn hdr_encode_rgb8() {
     assert_f32_close(result[2].2, 50.0 / 255.0, "px2 B");
 }
 
+#[cfg(feature = "hdr")]
 #[test]
 fn hdr_encode_unsupported_layout() {
     let result = encode_hdr(&[0u8; 4], 1, 1, PixelLayout::Rgba8, Unstoppable);
     assert!(matches!(result, Err(BitmapError::UnsupportedVariant(_))));
 }
 
+#[cfg(feature = "hdr")]
 #[test]
 fn hdr_cancellation() {
     struct AlreadyStopped;
@@ -1082,6 +1111,7 @@ fn hdr_cancellation() {
     assert!(matches!(result, Err(BitmapError::Cancelled(_))));
 }
 
+#[cfg(feature = "hdr")]
 #[test]
 fn hdr_1000x1000_roundtrip() {
     let w = 1000u32;

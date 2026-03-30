@@ -300,21 +300,27 @@ fn decode_raw(
     }
 
     // Fast path: 24-bit or 32-bit non-color-mapped — memcpy + batch swizzle
-    if !header.is_color_mapped() && !header.is_grayscale() && src_bpp == out_channels
+    if !header.is_color_mapped()
+        && !header.is_grayscale()
+        && src_bpp == out_channels
         && matches!(header.pixel_depth, 24 | 32)
     {
         out[..total_src_bytes].copy_from_slice(&pixel_data[..total_src_bytes]);
         // In-place BGR→RGB / BGRA→RGBA swizzle
         if out_channels == 3 {
             #[cfg(feature = "simd")]
-            { let _ = garb::bytes::rgb_to_bgr_inplace(out); }
+            {
+                let _ = garb::bytes::rgb_to_bgr_inplace(out);
+            }
             #[cfg(not(feature = "simd"))]
             for pixel in out.chunks_exact_mut(3) {
                 pixel.swap(0, 2);
             }
         } else {
             #[cfg(feature = "simd")]
-            { let _ = garb::bytes::rgba_to_bgra_inplace(out); }
+            {
+                let _ = garb::bytes::rgba_to_bgra_inplace(out);
+            }
             #[cfg(not(feature = "simd"))]
             for pixel in out.chunks_exact_mut(4) {
                 pixel.swap(0, 2);

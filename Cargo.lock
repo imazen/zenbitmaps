@@ -751,6 +751,8 @@ checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
 [[package]]
 name = "zenbench"
 version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "608aa467d997f62def7d8a8f206c9fc1754ec61e159423c7d374eb4db1c5b01e"
 dependencies = [
  "clap",
  "fs4",
@@ -762,7 +764,7 @@ dependencies = [
 
 [[package]]
 name = "zenbitmaps"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "archmage",
  "codec-corpus",

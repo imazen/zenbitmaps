@@ -1403,10 +1403,7 @@ mod tests {
             .encode(PixelSlice::from(img.as_ref()).erase())
             .unwrap();
 
-        let info = HdrDecoderConfig::new()
-            .job()
-            .probe(encoded.data())
-            .unwrap();
+        let info = HdrDecoderConfig::new().job().probe(encoded.data()).unwrap();
         assert_eq!(info.width, 3);
         assert_eq!(info.height, 2);
         assert_eq!(info.format, ImageFormat::Hdr);
@@ -1558,14 +1555,8 @@ mod tests {
                 got.r,
                 orig.r,
             );
-            assert!(
-                (got.g - orig.g).abs() < eps,
-                "pixel {i} g mismatch",
-            );
-            assert!(
-                (got.b - orig.b).abs() < eps,
-                "pixel {i} b mismatch",
-            );
+            assert!((got.g - orig.g).abs() < eps, "pixel {i} g mismatch",);
+            assert!((got.b - orig.b).abs() < eps, "pixel {i} b mismatch",);
         }
     }
 
@@ -1644,10 +1635,18 @@ mod tests {
         use zencodec::encode::{EncodeJob, Encoder, EncoderConfig};
 
         let pixels = vec![
-            rgb::Rgb { r: 255u8, g: 0, b: 0 },
+            rgb::Rgb {
+                r: 255u8,
+                g: 0,
+                b: 0,
+            },
             rgb::Rgb { r: 0, g: 255, b: 0 },
             rgb::Rgb { r: 0, g: 0, b: 255 },
-            rgb::Rgb { r: 42, g: 42, b: 42 },
+            rgb::Rgb {
+                r: 42,
+                g: 42,
+                b: 42,
+            },
         ];
         let img = imgref::ImgVec::new(pixels.clone(), 2, 2);
         let encoded = TgaEncoderConfig::new()
@@ -1705,7 +1704,15 @@ mod tests {
         use zencodec::decode::{DecodeJob, DecoderConfig};
         use zencodec::encode::{EncodeJob, Encoder, EncoderConfig};
 
-        let pixels = vec![rgb::Rgba::<u8> { r: 1, g: 2, b: 3, a: 4 }; 4];
+        let pixels = vec![
+            rgb::Rgba::<u8> {
+                r: 1,
+                g: 2,
+                b: 3,
+                a: 4
+            };
+            4
+        ];
         let img = imgref::ImgVec::new(pixels, 2, 2);
         let encoded = TgaEncoderConfig::new()
             .job()
@@ -1714,10 +1721,7 @@ mod tests {
             .encode(PixelSlice::from(img.as_ref()).erase())
             .unwrap();
 
-        let info = TgaDecoderConfig::new()
-            .job()
-            .probe(encoded.data())
-            .unwrap();
+        let info = TgaDecoderConfig::new().job().probe(encoded.data()).unwrap();
         assert_eq!(info.width, 2);
         assert_eq!(info.height, 2);
         assert!(info.has_alpha);
@@ -1731,10 +1735,26 @@ mod tests {
         use zencodec::encode::{EncodeJob, Encoder, EncoderConfig};
 
         let pixels = vec![
-            rgb::Rgb { r: 10u8, g: 20, b: 30 },
-            rgb::Rgb { r: 40, g: 50, b: 60 },
-            rgb::Rgb { r: 70, g: 80, b: 90 },
-            rgb::Rgb { r: 100, g: 110, b: 120 },
+            rgb::Rgb {
+                r: 10u8,
+                g: 20,
+                b: 30,
+            },
+            rgb::Rgb {
+                r: 40,
+                g: 50,
+                b: 60,
+            },
+            rgb::Rgb {
+                r: 70,
+                g: 80,
+                b: 90,
+            },
+            rgb::Rgb {
+                r: 100,
+                g: 110,
+                b: 120,
+            },
         ];
         let img = imgref::ImgVec::new(pixels, 2, 2);
         let encoded = TgaEncoderConfig::new()
@@ -1770,13 +1790,27 @@ mod tests {
 
         let mut encoder = TgaEncoderConfig::new().job().encoder().unwrap();
 
-        let row0 = vec![rgb::Rgb { r: 1u8, g: 2, b: 3 }, rgb::Rgb { r: 4, g: 5, b: 6 }];
+        let row0 = vec![
+            rgb::Rgb { r: 1u8, g: 2, b: 3 },
+            rgb::Rgb { r: 4, g: 5, b: 6 },
+        ];
         let img0 = imgref::ImgVec::new(row0, 2, 1);
-        encoder.push_rows(PixelSlice::from(img0.as_ref()).erase()).unwrap();
+        encoder
+            .push_rows(PixelSlice::from(img0.as_ref()).erase())
+            .unwrap();
 
-        let row1 = vec![rgb::Rgb { r: 7u8, g: 8, b: 9 }, rgb::Rgb { r: 10, g: 11, b: 12 }];
+        let row1 = vec![
+            rgb::Rgb { r: 7u8, g: 8, b: 9 },
+            rgb::Rgb {
+                r: 10,
+                g: 11,
+                b: 12,
+            },
+        ];
         let img1 = imgref::ImgVec::new(row1, 2, 1);
-        encoder.push_rows(PixelSlice::from(img1.as_ref()).erase()).unwrap();
+        encoder
+            .push_rows(PixelSlice::from(img1.as_ref()).erase())
+            .unwrap();
 
         let output = encoder.finish().unwrap();
 
@@ -1817,7 +1851,12 @@ mod tests {
         use zencodec::decode::{DecodeJob, DecoderConfig};
         use zencodec::encode::{EncodeJob, EncoderConfig};
 
-        assert!(TgaEncoderConfig::new().job().animation_frame_encoder().is_err());
+        assert!(
+            TgaEncoderConfig::new()
+                .job()
+                .animation_frame_encoder()
+                .is_err()
+        );
 
         let pixels = vec![rgb::Rgb { r: 0u8, g: 0, b: 0 }; 1];
         let img = imgref::ImgVec::new(pixels, 1, 1);

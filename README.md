@@ -4,7 +4,7 @@ Fast, safe bitmap format codecs. `no_std` + `alloc`, `forbid(unsafe_code)`, pani
 
 | Format | Feature | Decode | Encode | Detection |
 |--------|---------|--------|--------|-----------|
-| **PNM** (PGM/PPM/PAM/PFM) | *(default)* | 1327 GiB/s | 10.5 GiB/s | `P5`/`P6`/`P7`/`Pf`/`PF` magic |
+| **PNM** (PBM/PGM/PPM/PAM/PFM) | *(default)* | 1327 GiB/s | 10.5 GiB/s | `P1`-`P7`/`Pf`/`PF` magic |
 | **Farbfeld** | *(default)* | 3.04 GiB/s | 1.50 GiB/s | `farbfeld` magic |
 | **TGA** | `tga` | 4.85 GiB/s | 5.88 GiB/s | Header heuristic + v2 footer |
 | **BMP** | `bmp` | 4.66 GiB/s | 1.23 GiB/s | `BM` magic |
@@ -17,12 +17,12 @@ Fast, safe bitmap format codecs. `no_std` + `alloc`, `forbid(unsafe_code)`, pani
 
 ```toml
 [dependencies]
-zenbitmaps = "0.2"                                         # PNM + farbfeld
-zenbitmaps = { version = "0.2", features = ["bmp"] }       # + BMP
-zenbitmaps = { version = "0.2", features = ["qoi"] }       # + QOI (via rapid-qoi)
-zenbitmaps = { version = "0.2", features = ["tga"] }       # + TGA
-zenbitmaps = { version = "0.2", features = ["hdr"] }       # + Radiance HDR
-zenbitmaps = { version = "0.2", features = ["all"] }       # everything
+zenbitmaps = "0.1"                                         # PNM + farbfeld
+zenbitmaps = { version = "0.1", features = ["bmp"] }       # + BMP
+zenbitmaps = { version = "0.1", features = ["qoi"] }       # + QOI (via rapid-qoi)
+zenbitmaps = { version = "0.1", features = ["tga"] }       # + TGA
+zenbitmaps = { version = "0.1", features = ["hdr"] }       # + Radiance HDR
+zenbitmaps = { version = "0.1", features = ["all"] }       # everything
 ```
 
 ## Quick example
@@ -35,7 +35,7 @@ use enough::Unstoppable;
 let pixels = vec![255u8, 0, 0, 0, 255, 0]; // 2 RGB pixels
 let encoded = encode_ppm(&pixels, 2, 1, PixelLayout::Rgb8, Unstoppable)?;
 
-// Decode (auto-detects PNM/BMP/farbfeld from magic bytes)
+// Decode (auto-detects format from magic bytes)
 let decoded = decode(&encoded, Unstoppable)?;
 assert!(decoded.is_borrowed()); // zero-copy for PPM with maxval=255
 assert_eq!(decoded.pixels(), &pixels[..]);
@@ -66,11 +66,13 @@ match detect_format(&data) {
 ## Supported formats
 
 **PNM family** (always available):
-- P5 (PGM binary) — grayscale, 8-bit and 16-bit
-- P6 (PPM binary) — RGB, 8-bit and 16-bit
+- P1 (PBM ASCII), P4 (PBM binary) — 1-bit black/white
+- P2 (PGM ASCII), P5 (PGM binary) — grayscale, 8-bit and 16-bit
+- P3 (PPM ASCII), P6 (PPM binary) — RGB, 8-bit and 16-bit
 - P7 (PAM) — arbitrary channels (grayscale, RGB, RGBA), 8-bit and 16-bit
 - PFM — floating-point grayscale and RGB (32-bit per channel)
-- Magic: `P5`/`P6`/`P7`/`Pf`/`PF`
+- Decode: all 9 variants. Encode: P5/P6/P7/PFM (binary)
+- Magic: `P1`-`P7`/`Pf`/`PF`
 
 **Farbfeld** (always available):
 - RGBA 16-bit per channel, big-endian
@@ -193,7 +195,7 @@ let decoded = decode_with_limits(&data, &limits, Unstoppable)?;
 
 | Feature | What it adds |
 |---------|-------------|
-| *(default)* | PNM (P5/P6/P7/PFM) + farbfeld decode/encode |
+| *(default)* | PNM (P1-P7/PFM) + farbfeld decode/encode |
 | `bmp` | BMP decode/encode (all bit depths, RLE, bitfields, palettes) |
 | `qoi` | QOI decode/encode via rapid-qoi (streaming, lossless) |
 | `tga` | TGA decode/encode (truecolor, grayscale, color-mapped, RLE) |
@@ -201,7 +203,7 @@ let decoded = decode_with_limits(&data, &limits, Unstoppable)?;
 | `simd` | SIMD-accelerated BGR↔RGB swizzle via [garb](https://lib.rs/crates/garb) |
 | `rgb` | Typed pixel API (`RGB8`, `RGBA8`, `as_pixels()`, `encode_*_pixels()`) |
 | `imgref` | 2D buffer API (`ImgVec`/`ImgRef`, `as_imgref()`, `decode_into()`) — implies `rgb` |
-| `zencodec` | zencodec trait integration (implies `rgb` + `imgref`) |
+| `zencodec` | zencodec trait integration: streaming decode/encode, probe, CICP (implies `rgb` + `imgref`) |
 | `std` | Enable `std` support (not required — `no_std` + `alloc` by default) |
 | `all` | All format + pixel API features |
 
@@ -222,6 +224,7 @@ All public functions are flat, one-shot calls at crate root.
 - `decode_qoi` / `decode_qoi_with_limits` (`qoi`)
 - `decode_tga` / `decode_tga_with_limits` (`tga`)
 - `decode_hdr` / `decode_hdr_with_limits` (`hdr`)
+- `probe_bmp(data)` — BMP metadata without decode (`bmp`)
 
 **Encode (raw bytes):**
 - `encode_ppm`, `encode_pgm`, `encode_pam`, `encode_pfm` — PNM family
@@ -245,11 +248,16 @@ All public functions are flat, one-shot calls at crate root.
 
 ## Performance
 
+1000x1000 RGB8, single-threaded, default target (no `-C target-cpu=native`):
+
+| | PPM | TGA | BMP | Farbfeld | QOI | HDR |
+|---|---|---|---|---|---|---|
+| **Decode** | 1327 GiB/s | 4.85 GiB/s | 4.66 GiB/s | 3.04 GiB/s | 1.32 GiB/s | 1.05 GiB/s |
+| **Encode** | 10.5 GiB/s | 5.88 GiB/s | 1.23 GiB/s | 1.50 GiB/s | 870 MiB/s | 361 MiB/s |
+
+PPM decode is zero-copy (returns a borrowed slice — no allocation). TGA decode uses memcpy + batch BGR swizzle for 24/32-bit uncompressed images. The `simd` feature accelerates BGR↔RGB swizzle via [garb](https://lib.rs/crates/garb) for TGA and QOI encode paths.
+
 Run: `cargo bench --bench codecs --all-features`
-
-Benchmarks measured at 1000x1000 pixels, single-threaded, default target (no `-C target-cpu=native`). PPM decode is zero-copy (returns a borrowed slice). TGA decode uses a fast memcpy + batch BGR swizzle path for 24/32-bit uncompressed images. The `simd` feature enables garb's SIMD-accelerated swizzle for TGA and QOI encode.
-
-TGA detection uses header heuristics since TGA has no magic bytes. False positive rate is approximately 1 in 11 million on random data. When the full file is available, the TGA v2 footer (`TRUEVISION-XFILE.\0`) is checked first as a definitive signal.
 
 ## Credits
 

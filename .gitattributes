@@ -1,0 +1,9 @@
+# Binary test fixtures — prevent CRLF conversion
+tests/fixtures/*.pbm binary
+tests/fixtures/*.pgm binary
+tests/fixtures/*.ppm binary
+tests/fixtures/*.bmp binary
+tests/fixtures/*.tga binary
+tests/fixtures/*.hdr binary
+tests/fixtures/*.ff binary
+tests/fixtures/*.qoi binary

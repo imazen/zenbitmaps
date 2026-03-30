@@ -20,10 +20,8 @@ static HDR_DECODE_CAPS: DecodeCapabilities = DecodeCapabilities::new()
     .with_enforces_max_memory(true)
     .with_enforces_max_input_bytes(true);
 
-static HDR_ENCODE_DESCRIPTORS: &[PixelDescriptor] = &[
-    PixelDescriptor::RGBF32_LINEAR,
-    PixelDescriptor::RGB8_SRGB,
-];
+static HDR_ENCODE_DESCRIPTORS: &[PixelDescriptor] =
+    &[PixelDescriptor::RGBF32_LINEAR, PixelDescriptor::RGB8_SRGB];
 
 static HDR_DECODE_DESCRIPTORS: &[PixelDescriptor] = &[PixelDescriptor::RGBF32_LINEAR];
 
@@ -164,9 +162,7 @@ impl HdrEncoder {
     }
 }
 
-fn pixel_slice_to_hdr_layout(
-    desc: PixelDescriptor,
-) -> Result<crate::PixelLayout, BitmapError> {
+fn pixel_slice_to_hdr_layout(desc: PixelDescriptor) -> Result<crate::PixelLayout, BitmapError> {
     match (desc.channel_type(), desc.layout()) {
         (ChannelType::F32, ChannelLayout::Rgb) => Ok(crate::PixelLayout::RgbF32),
         (ChannelType::U8, ChannelLayout::Rgb) => Ok(crate::PixelLayout::Rgb8),
@@ -239,8 +235,7 @@ impl zencodec::encode::Encoder for HdrEncoder {
             None => &enough::Unstoppable,
         };
 
-        let encoded =
-            crate::hdr::encode(&acc.data, acc.width, acc.total_rows, acc.layout, stop)?;
+        let encoded = crate::hdr::encode(&acc.data, acc.width, acc.total_rows, acc.layout, stop)?;
         Ok(EncodeOutput::new(encoded, ImageFormat::Hdr))
     }
 }
@@ -339,8 +334,10 @@ impl<'a> zencodec::decode::DecodeJob<'a> for HdrDecodeJob {
 
     fn output_info(&self, data: &[u8]) -> Result<OutputInfo, BitmapError> {
         let (width, height, _offset) = crate::hdr::decode::parse_header(data)?;
-        Ok(OutputInfo::full_decode(width, height, PixelDescriptor::RGBF32_LINEAR)
-            .with_alpha(false))
+        Ok(
+            OutputInfo::full_decode(width, height, PixelDescriptor::RGBF32_LINEAR)
+                .with_alpha(false),
+        )
     }
 
     fn decoder(
@@ -497,9 +494,14 @@ impl zencodec::decode::StreamingDecode for HdrStreamingDecoder {
         let offset = (y as usize) * self.row_bytes;
         let row_data = &self.decoded_bytes[offset..offset + self.row_bytes];
 
-        let slice =
-            PixelSlice::new(row_data, self.width, 1, self.row_bytes, PixelDescriptor::RGBF32_LINEAR)
-                .map_err(|e| BitmapError::InvalidData(e.to_string()))?;
+        let slice = PixelSlice::new(
+            row_data,
+            self.width,
+            1,
+            self.row_bytes,
+            PixelDescriptor::RGBF32_LINEAR,
+        )
+        .map_err(|e| BitmapError::InvalidData(e.to_string()))?;
 
         self.current_row += 1;
         Ok(Some((y, slice)))

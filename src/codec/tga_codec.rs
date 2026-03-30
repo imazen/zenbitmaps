@@ -341,12 +341,14 @@ impl<'a> zencodec::decode::DecodeJob<'a> for TgaDecodeJob {
         } else {
             3
         };
-        Ok(ImageInfo::new(header.width as u32, header.height as u32, ImageFormat::Tga)
-            .with_alpha(has_alpha)
-            .with_bit_depth(header.pixel_depth)
-            .with_channel_count(channel_count)
-            .with_cicp(zencodec::Cicp::SRGB)
-            .with_source_encoding_details(BitmapSourceEncoding))
+        Ok(
+            ImageInfo::new(header.width as u32, header.height as u32, ImageFormat::Tga)
+                .with_alpha(has_alpha)
+                .with_bit_depth(header.pixel_depth)
+                .with_channel_count(channel_count)
+                .with_cicp(zencodec::Cicp::SRGB)
+                .with_source_encoding_details(BitmapSourceEncoding),
+        )
     }
 
     fn output_info(&self, data: &[u8]) -> Result<OutputInfo, BitmapError> {
@@ -361,8 +363,10 @@ impl<'a> zencodec::decode::DecodeJob<'a> for TgaDecodeJob {
         } else {
             PixelDescriptor::RGB8_SRGB
         };
-        Ok(OutputInfo::full_decode(header.width as u32, header.height as u32, desc)
-            .with_alpha(has_alpha))
+        Ok(
+            OutputInfo::full_decode(header.width as u32, header.height as u32, desc)
+                .with_alpha(has_alpha),
+        )
     }
 
     fn decoder(

@@ -1,3 +1,4 @@
+#![cfg(feature = "hdr")]
 //! Comprehensive Radiance HDR conformance tests.
 //!
 //! Tests header parsing, RGBE conversion precision, RLE edge cases,
@@ -46,16 +47,18 @@ fn f32_to_rgbe(r: f32, g: f32, b: f32) -> [u8; 4] {
         return [0, 0, 0, 0];
     }
     let scale = f32::from_bits((scale_exp as u32) << 23);
-    [(r * scale) as u8, (g * scale) as u8, (b * scale) as u8, (raw_exp + 128) as u8]
+    [
+        (r * scale) as u8,
+        (g * scale) as u8,
+        (b * scale) as u8,
+        (raw_exp + 128) as u8,
+    ]
 }
 
 /// Assert two f32 values are within relative tolerance.
 fn assert_f32_close(actual: f32, expected: f32, tol: f32, label: &str) {
     if expected.abs() < 1e-6 {
-        assert!(
-            actual.abs() < tol,
-            "{label}: expected ~0, got {actual}"
-        );
+        assert!(actual.abs() < tol, "{label}: expected ~0, got {actual}");
     } else {
         let rel = (actual - expected).abs() / expected.abs();
         assert!(
@@ -69,7 +72,12 @@ fn assert_f32_close(actual: f32, expected: f32, tol: f32, label: &str) {
 fn pixel_f32(data: &[u8], idx: usize) -> (f32, f32, f32) {
     let base = idx * 12;
     let r = f32::from_le_bytes([data[base], data[base + 1], data[base + 2], data[base + 3]]);
-    let g = f32::from_le_bytes([data[base + 4], data[base + 5], data[base + 6], data[base + 7]]);
+    let g = f32::from_le_bytes([
+        data[base + 4],
+        data[base + 5],
+        data[base + 6],
+        data[base + 7],
+    ]);
     let b = f32::from_le_bytes([
         data[base + 8],
         data[base + 9],

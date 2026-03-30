@@ -1,3 +1,4 @@
+#![cfg(feature = "tga")]
 //! Comprehensive TGA conformance tests.
 //!
 //! Tests all TGA image types, pixel depths, origins, RLE edge cases,
@@ -424,7 +425,15 @@ fn with_max_image_id() {
 
 #[test]
 fn roundtrip_rgb8_10x10() {
-    let pixels: Vec<u8> = (0..10 * 10).flat_map(|i| [(i * 7 % 256) as u8, (i * 13 % 256) as u8, (i * 19 % 256) as u8]).collect();
+    let pixels: Vec<u8> = (0..10 * 10)
+        .flat_map(|i| {
+            [
+                (i * 7 % 256) as u8,
+                (i * 13 % 256) as u8,
+                (i * 19 % 256) as u8,
+            ]
+        })
+        .collect();
     let encoded = encode_tga(&pixels, 10, 10, PixelLayout::Rgb8, Unstoppable).unwrap();
     let decoded = decode_tga(&encoded, Unstoppable).unwrap();
     assert_eq!(decoded.pixels(), &pixels[..]);
@@ -433,7 +442,14 @@ fn roundtrip_rgb8_10x10() {
 #[test]
 fn roundtrip_rgba8_large() {
     let pixels: Vec<u8> = (0..50 * 30)
-        .flat_map(|i| [(i % 256) as u8, ((i * 3) % 256) as u8, ((i * 7) % 256) as u8, 255])
+        .flat_map(|i| {
+            [
+                (i % 256) as u8,
+                ((i * 3) % 256) as u8,
+                ((i * 7) % 256) as u8,
+                255,
+            ]
+        })
         .collect();
     let encoded = encode_tga(&pixels, 50, 30, PixelLayout::Rgba8, Unstoppable).unwrap();
     let decoded = decode_tga(&encoded, Unstoppable).unwrap();
@@ -569,9 +585,7 @@ fn cancellation_decode_tga() {
         }
     }
 
-    let pixels: Vec<u8> = (0..10 * 32)
-        .flat_map(|i| [(i % 256) as u8, 0, 0])
-        .collect();
+    let pixels: Vec<u8> = (0..10 * 32).flat_map(|i| [(i % 256) as u8, 0, 0]).collect();
     let encoded = encode_tga(&pixels, 10, 32, PixelLayout::Rgb8, Unstoppable).unwrap();
     assert!(matches!(
         decode_tga(&encoded, AlreadyStopped),
