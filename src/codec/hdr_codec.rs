@@ -1,36 +1,8 @@
 use super::*;
-use zencodec::ImageFormatDefinition;
 
 // ══════════════════════════════════════════════════════════════════════
-// HDR format definition and capabilities
+// HDR capabilities and descriptors
 // ══════════════════════════════════════════════════════════════════════
-
-fn detect_hdr(data: &[u8]) -> bool {
-    (data.len() >= 10 && data.starts_with(b"#?RADIANCE"))
-        || (data.len() >= 6 && data.starts_with(b"#?RGBE"))
-}
-
-/// Radiance HDR custom format definition for zencodec.
-pub static HDR_FORMAT_DEF: ImageFormatDefinition = ImageFormatDefinition::new(
-    "hdr",
-    None,
-    "Radiance HDR",
-    "hdr",
-    &["hdr", "rgbe", "pic"],
-    "image/vnd.radiance",
-    &["image/vnd.radiance", "image/x-hdr"],
-    false,  // supports_alpha
-    false,  // supports_animation
-    false,  // supports_lossless (RGBE shared exponent is lossy)
-    true,   // supports_lossy
-    10,     // magic_bytes_needed
-    detect_hdr,
-);
-
-/// The [`ImageFormat`] for Radiance HDR files.
-pub const HDR_IMAGE_FORMAT: ImageFormat = ImageFormat::Custom(&HDR_FORMAT_DEF);
-
-static HDR_FORMATS: &[ImageFormat] = &[HDR_IMAGE_FORMAT];
 
 static HDR_ENCODE_CAPS: EncodeCapabilities = EncodeCapabilities::new()
     .with_hdr(true)
@@ -89,7 +61,7 @@ impl zencodec::encode::EncoderConfig for HdrEncoderConfig {
     type Job = HdrEncodeJob;
 
     fn format() -> ImageFormat {
-        HDR_IMAGE_FORMAT
+        ImageFormat::Hdr
     }
 
     fn supported_descriptors() -> &'static [PixelDescriptor] {
@@ -230,7 +202,7 @@ impl zencodec::encode::Encoder for HdrEncoder {
         let layout = pixel_slice_to_hdr_layout(pixels.descriptor())?;
         let bytes = pixels.contiguous_bytes();
         let encoded = crate::hdr::encode(&bytes, w, h, layout, stop)?;
-        Ok(EncodeOutput::new(encoded, HDR_IMAGE_FORMAT))
+        Ok(EncodeOutput::new(encoded, ImageFormat::Hdr))
     }
 
     fn push_rows(&mut self, rows: PixelSlice<'_>) -> Result<(), BitmapError> {
@@ -269,7 +241,7 @@ impl zencodec::encode::Encoder for HdrEncoder {
 
         let encoded =
             crate::hdr::encode(&acc.data, acc.width, acc.total_rows, acc.layout, stop)?;
-        Ok(EncodeOutput::new(encoded, HDR_IMAGE_FORMAT))
+        Ok(EncodeOutput::new(encoded, ImageFormat::Hdr))
     }
 }
 
@@ -299,7 +271,7 @@ impl zencodec::decode::DecoderConfig for HdrDecoderConfig {
     type Job<'a> = HdrDecodeJob;
 
     fn formats() -> &'static [ImageFormat] {
-        HDR_FORMATS
+        &[ImageFormat::Hdr]
     }
 
     fn supported_descriptors() -> &'static [PixelDescriptor] {
@@ -356,8 +328,8 @@ impl<'a> zencodec::decode::DecodeJob<'a> for HdrDecodeJob {
 
     fn probe(&self, data: &[u8]) -> Result<ImageInfo, BitmapError> {
         let (width, height, _offset) = crate::hdr::decode::parse_header(data)?;
-        let cicp = zencodec::Cicp::new(1, 8, 0, true); // BT.709 primaries, Linear transfer
-        Ok(ImageInfo::new(width, height, HDR_IMAGE_FORMAT)
+        let cicp = zencodec::Cicp::new(1, 8, 0, true);
+        Ok(ImageInfo::new(width, height, ImageFormat::Hdr)
             .with_alpha(false)
             .with_bit_depth(32)
             .with_channel_count(3)
@@ -424,7 +396,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for HdrDecodeJob {
         }
 
         let row_bytes = (width as usize)
-            .checked_mul(12) // 3 × f32
+            .checked_mul(12)
             .ok_or(BitmapError::DimensionsTooLarge { width, height })?;
 
         let total_bytes = row_bytes
@@ -436,14 +408,13 @@ impl<'a> zencodec::decode::DecodeJob<'a> for HdrDecodeJob {
         }
 
         let cicp = zencodec::Cicp::new(1, 8, 0, true);
-        let info = ImageInfo::new(width, height, HDR_IMAGE_FORMAT)
+        let info = ImageInfo::new(width, height, ImageFormat::Hdr)
             .with_alpha(false)
             .with_bit_depth(32)
             .with_channel_count(3)
             .with_cicp(cicp)
             .with_source_encoding_details(BitmapSourceEncoding);
 
-        // Buffer-and-yield: decode the full image, then yield rows from next_batch()
         let stop: &dyn Stop = match &self.stop {
             Some(s) => s,
             None => &enough::Unstoppable,
@@ -498,18 +469,13 @@ impl zencodec::decode::Decode for HdrDecoder<'_> {
             None => &enough::Unstoppable,
         };
         let decoded = crate::hdr::decode(&self.data, limits, stop)?;
-        // HDR decodes to RgbF32 — build output using the shared helper
-        // which promotes RgbF32 → RgbaF32 PixelBuffer
-        decode_output_from_internal(&decoded, HDR_IMAGE_FORMAT)
+        decode_output_from_internal(&decoded, ImageFormat::Hdr)
     }
 }
 
 // ── HdrStreamingDecoder ──────────────────────────────────────────
 
 /// Streaming scanline-batch HDR decoder.
-///
-/// Decodes the full image eagerly, then yields one row at a time
-/// via `next_batch()`. Each row is `width * 12` bytes of f32 RGB data.
 pub struct HdrStreamingDecoder {
     info: ImageInfo,
     width: u32,

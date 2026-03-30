@@ -211,13 +211,11 @@ pub use codec::{
 #[cfg(all(feature = "zencodec", feature = "hdr"))]
 pub use codec::{
     HdrDecodeJob, HdrDecoder, HdrDecoderConfig, HdrEncodeJob, HdrEncoder, HdrEncoderConfig,
-    HDR_FORMAT_DEF, HDR_IMAGE_FORMAT,
 };
 
 #[cfg(all(feature = "zencodec", feature = "tga"))]
 pub use codec::{
     TgaDecodeJob, TgaDecoder, TgaDecoderConfig, TgaEncodeJob, TgaEncoder, TgaEncoderConfig,
-    TGA_FORMAT_DEF, TGA_IMAGE_FORMAT,
 };
 
 // Re-export rgb pixel types for convenience

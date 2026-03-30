@@ -21,7 +21,7 @@ rapid-qoi = { version = "0.6.1", default-features = false, features = ["alloc"],
 imgref = { version = "1.12", default-features = false, optional = true }
 rgb = { version = "0.8", default-features = false, features = ["as-bytes"], optional = true }
 thiserror = { version = "2.0", default-features = false }
-zencodec = { version = "0.1.8", optional = true }
+zencodec = { version = "0.1.10", optional = true }
 # zennode is not yet published; uncomment when it's on crates.io
 # zennode = { path = "../zennode/zennode", default-features = false, features = ["derive"], optional = true }
 zenpixels = { version = "0.2.1", default-features = false, features = ["imgref"], optional = true }

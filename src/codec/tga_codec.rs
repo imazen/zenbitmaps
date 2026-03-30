@@ -1,55 +1,8 @@
 use super::*;
-use zencodec::ImageFormatDefinition;
 
 // ══════════════════════════════════════════════════════════════════════
-// TGA format definition and capabilities
+// TGA capabilities and descriptors
 // ══════════════════════════════════════════════════════════════════════
-
-fn detect_tga(data: &[u8]) -> bool {
-    if data.len() < 18 {
-        return false;
-    }
-    let image_type = data[2];
-    if !matches!(image_type, 1 | 2 | 3 | 9 | 10 | 11) {
-        return false;
-    }
-    let color_map_type = data[1];
-    if color_map_type > 1 {
-        return false;
-    }
-    if matches!(image_type, 1 | 9) && color_map_type == 0 {
-        return false;
-    }
-    let pixel_depth = data[16];
-    if !matches!(pixel_depth, 8 | 15 | 16 | 24 | 32) {
-        return false;
-    }
-    let width = u16::from_le_bytes([data[12], data[13]]);
-    let height = u16::from_le_bytes([data[14], data[15]]);
-    width > 0 && height > 0
-}
-
-/// TGA custom format definition for zencodec.
-pub static TGA_FORMAT_DEF: ImageFormatDefinition = ImageFormatDefinition::new(
-    "tga",
-    None,
-    "TGA",
-    "tga",
-    &["tga", "targa", "icb", "vda", "vst"],
-    "image/x-tga",
-    &["image/x-tga", "image/x-targa"],
-    true,  // supports_alpha
-    false, // supports_animation
-    true,  // supports_lossless
-    false, // supports_lossy
-    18,    // magic_bytes_needed (header heuristic)
-    detect_tga,
-);
-
-/// The [`ImageFormat`] for TGA files.
-pub const TGA_IMAGE_FORMAT: ImageFormat = ImageFormat::Custom(&TGA_FORMAT_DEF);
-
-static TGA_FORMATS: &[ImageFormat] = &[TGA_IMAGE_FORMAT];
 
 static TGA_ENCODE_CAPS: EncodeCapabilities = EncodeCapabilities::new()
     .with_lossless(true)
@@ -113,7 +66,7 @@ impl zencodec::encode::EncoderConfig for TgaEncoderConfig {
     type Job = TgaEncodeJob;
 
     fn format() -> ImageFormat {
-        TGA_IMAGE_FORMAT
+        ImageFormat::Tga
     }
 
     fn supported_descriptors() -> &'static [PixelDescriptor] {
@@ -253,7 +206,7 @@ impl zencodec::encode::Encoder for TgaEncoder {
         let layout = pixel_slice_to_tga_layout(pixels.descriptor())?;
         let bytes = pixels.contiguous_bytes();
         let encoded = crate::tga::encode(&bytes, w, h, layout, stop)?;
-        Ok(EncodeOutput::new(encoded, TGA_IMAGE_FORMAT))
+        Ok(EncodeOutput::new(encoded, ImageFormat::Tga))
     }
 
     fn push_rows(&mut self, rows: PixelSlice<'_>) -> Result<(), BitmapError> {
@@ -291,7 +244,7 @@ impl zencodec::encode::Encoder for TgaEncoder {
         };
 
         let encoded = crate::tga::encode(&acc.data, acc.width, acc.total_rows, acc.layout, stop)?;
-        Ok(EncodeOutput::new(encoded, TGA_IMAGE_FORMAT))
+        Ok(EncodeOutput::new(encoded, ImageFormat::Tga))
     }
 }
 
@@ -321,7 +274,7 @@ impl zencodec::decode::DecoderConfig for TgaDecoderConfig {
     type Job<'a> = TgaDecodeJob;
 
     fn formats() -> &'static [ImageFormat] {
-        TGA_FORMATS
+        &[ImageFormat::Tga]
     }
 
     fn supported_descriptors() -> &'static [PixelDescriptor] {
@@ -388,7 +341,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for TgaDecodeJob {
         } else {
             3
         };
-        Ok(ImageInfo::new(header.width as u32, header.height as u32, TGA_IMAGE_FORMAT)
+        Ok(ImageInfo::new(header.width as u32, header.height as u32, ImageFormat::Tga)
             .with_alpha(has_alpha)
             .with_bit_depth(header.pixel_depth)
             .with_channel_count(channel_count)
@@ -475,7 +428,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for TgaDecodeJob {
 
         let descriptor = layout_to_descriptor(layout);
         let has_alpha = matches!(layout, crate::PixelLayout::Rgba8);
-        let info = ImageInfo::new(width, height, TGA_IMAGE_FORMAT)
+        let info = ImageInfo::new(width, height, ImageFormat::Tga)
             .with_alpha(has_alpha)
             .with_bit_depth(8)
             .with_channel_count(out_channels as u8)
@@ -532,7 +485,7 @@ impl zencodec::decode::Decode for TgaDecoder<'_> {
             None => &enough::Unstoppable,
         };
         let decoded = crate::tga::decode(&self.data, limits, stop)?;
-        decode_output_from_internal(&decoded, TGA_IMAGE_FORMAT)
+        decode_output_from_internal(&decoded, ImageFormat::Tga)
     }
 }
 

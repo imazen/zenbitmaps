@@ -1335,7 +1335,7 @@ mod tests {
             .unwrap()
             .encode(PixelSlice::from(img.as_ref()).erase())
             .unwrap();
-        assert_eq!(encoded.format(), HDR_IMAGE_FORMAT);
+        assert_eq!(encoded.format(), ImageFormat::Hdr);
 
         let decoded = HdrDecoderConfig::new()
             .job()
@@ -1409,7 +1409,7 @@ mod tests {
             .unwrap();
         assert_eq!(info.width, 3);
         assert_eq!(info.height, 2);
-        assert_eq!(info.format, HDR_IMAGE_FORMAT);
+        assert_eq!(info.format, ImageFormat::Hdr);
         assert!(!info.has_alpha);
         assert_eq!(info.source_color.bit_depth, Some(32));
         assert_eq!(info.source_color.channel_count, Some(3));
@@ -1532,7 +1532,7 @@ mod tests {
             .unwrap();
 
         let output = encoder.finish().unwrap();
-        assert_eq!(output.format(), HDR_IMAGE_FORMAT);
+        assert_eq!(output.format(), ImageFormat::Hdr);
 
         // Decode and verify
         let decoded = HdrDecoderConfig::new()
@@ -1599,8 +1599,8 @@ mod tests {
     fn hdr_format_is_hdr() {
         use zencodec::decode::DecoderConfig;
         use zencodec::encode::EncoderConfig;
-        assert_eq!(HdrEncoderConfig::format(), HDR_IMAGE_FORMAT);
-        assert_eq!(HdrDecoderConfig::formats(), &[HDR_IMAGE_FORMAT]);
+        assert_eq!(HdrEncoderConfig::format(), ImageFormat::Hdr);
+        assert_eq!(HdrDecoderConfig::formats(), &[ImageFormat::Hdr]);
     }
 
     #[cfg(feature = "hdr")]
