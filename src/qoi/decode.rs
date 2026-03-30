@@ -20,7 +20,7 @@ pub(crate) struct QoiHeaderInfo {
 /// Parse QOI header, returning dimensions, alpha, and colorspace.
 pub(crate) fn parse_header(data: &[u8]) -> Result<QoiHeaderInfo, BitmapError> {
     let qoi = rapid_qoi::Qoi::decode_header(data)
-        .map_err(|e| BitmapError::InvalidHeader(e.to_string()))?;
+        .map_err(|e| BitmapError::InvalidHeader(alloc::format!("{e:?}")))?;
 
     if qoi.width == 0 {
         return Err(BitmapError::InvalidHeader("QOI width is zero".into()));
@@ -79,7 +79,7 @@ pub(crate) fn decode_pixels(
                 &encoded[offset..],
                 &mut output[row_start..row_end],
             )
-            .map_err(|e| BitmapError::InvalidData(e.to_string()))?;
+            .map_err(|e| BitmapError::InvalidData(alloc::format!("{e:?}")))?;
             offset += consumed;
         }
     } else {
@@ -101,7 +101,7 @@ pub(crate) fn decode_pixels(
                 &encoded[offset..],
                 &mut output[row_start..row_end],
             )
-            .map_err(|e| BitmapError::InvalidData(e.to_string()))?;
+            .map_err(|e| BitmapError::InvalidData(alloc::format!("{e:?}")))?;
             offset += consumed;
         }
     }

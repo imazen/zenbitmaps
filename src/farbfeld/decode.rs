@@ -52,11 +52,25 @@ pub(crate) fn decode_pixels(
 
     // Convert each u16 from big-endian to native endian
     let samples_per_row = width as usize * 4;
-    for (row_idx, chunk) in pixel_data.chunks_exact(samples_per_row * 2).enumerate() {
+    let row_bytes = samples_per_row * 2;
+    for (row_idx, chunk) in pixel_data.chunks_exact(row_bytes).enumerate() {
         if row_idx % 16 == 0 {
             stop.check()?;
         }
-        for pair in chunk.chunks_exact(2) {
+        // Process 4 u16s (8 bytes) at a time for better throughput
+        let mut remaining = chunk;
+        while remaining.len() >= 8 {
+            let a = u16::from_be_bytes([remaining[0], remaining[1]]);
+            let b = u16::from_be_bytes([remaining[2], remaining[3]]);
+            let c = u16::from_be_bytes([remaining[4], remaining[5]]);
+            let d = u16::from_be_bytes([remaining[6], remaining[7]]);
+            out.extend_from_slice(&a.to_ne_bytes());
+            out.extend_from_slice(&b.to_ne_bytes());
+            out.extend_from_slice(&c.to_ne_bytes());
+            out.extend_from_slice(&d.to_ne_bytes());
+            remaining = &remaining[8..];
+        }
+        for pair in remaining.chunks_exact(2) {
             let val = u16::from_be_bytes([pair[0], pair[1]]);
             out.extend_from_slice(&val.to_ne_bytes());
         }

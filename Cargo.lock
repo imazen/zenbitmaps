@@ -123,6 +123,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "garb"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "61ee8d8f5e43a45183480ea077c4e046e43ab9604928c87d6ad2080e666dc519"
+dependencies = [
+ "archmage",
+ "bytemuck",
+]
+
+[[package]]
 name = "getrandom"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -376,6 +386,7 @@ dependencies = [
  "archmage",
  "codec-corpus",
  "enough",
+ "garb",
  "imgref",
  "rapid-qoi",
  "rgb",

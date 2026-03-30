@@ -40,36 +40,45 @@ pub(crate) fn encode_qoi(
         PixelLayout::Rgba8 => (None, rapid_qoi::Colors::SrgbLinA),
         PixelLayout::Bgr8 => {
             // Swizzle BGR → RGB
-            let mut rgb = Vec::with_capacity(expected);
-            for (row_idx, row) in pixels[..expected].chunks_exact(w * 3).enumerate() {
-                if row_idx % 16 == 0 {
-                    stop.check()?;
-                }
-                for pixel in row.chunks_exact(3) {
-                    rgb.push(pixel[2]);
-                    rgb.push(pixel[1]);
-                    rgb.push(pixel[0]);
-                }
+            stop.check()?;
+            let mut rgb = pixels[..expected].to_vec();
+            #[cfg(feature = "simd")]
+            {
+                let _ = garb::bytes::rgb_to_bgr_inplace(&mut rgb);
+            }
+            #[cfg(not(feature = "simd"))]
+            for pixel in rgb.chunks_exact_mut(3) {
+                pixel.swap(0, 2);
             }
             (Some(rgb), rapid_qoi::Colors::Srgb)
         }
-        PixelLayout::Bgra8 | PixelLayout::Bgrx8 => {
+        PixelLayout::Bgra8 => {
             // Swizzle BGRA → RGBA
-            let mut rgba = Vec::with_capacity(w * h * 4);
-            for (row_idx, row) in pixels[..expected].chunks_exact(w * 4).enumerate() {
-                if row_idx % 16 == 0 {
-                    stop.check()?;
-                }
-                for pixel in row.chunks_exact(4) {
-                    rgba.push(pixel[2]);
-                    rgba.push(pixel[1]);
-                    rgba.push(pixel[0]);
-                    rgba.push(if matches!(layout, PixelLayout::Bgrx8) {
-                        255
-                    } else {
-                        pixel[3]
-                    });
-                }
+            stop.check()?;
+            let mut rgba = pixels[..expected].to_vec();
+            #[cfg(feature = "simd")]
+            {
+                let _ = garb::bytes::rgba_to_bgra_inplace(&mut rgba);
+            }
+            #[cfg(not(feature = "simd"))]
+            for pixel in rgba.chunks_exact_mut(4) {
+                pixel.swap(0, 2);
+            }
+            (Some(rgba), rapid_qoi::Colors::SrgbLinA)
+        }
+        PixelLayout::Bgrx8 => {
+            // Swizzle BGRX → RGBA (set alpha=255)
+            stop.check()?;
+            let mut rgba = pixels[..expected].to_vec();
+            #[cfg(feature = "simd")]
+            {
+                let _ = garb::bytes::rgba_to_bgra_inplace(&mut rgba);
+                let _ = garb::bytes::fill_alpha_rgba(&mut rgba);
+            }
+            #[cfg(not(feature = "simd"))]
+            for pixel in rgba.chunks_exact_mut(4) {
+                pixel.swap(0, 2);
+                pixel[3] = 255;
             }
             (Some(rgba), rapid_qoi::Colors::SrgbLinA)
         }
@@ -89,7 +98,7 @@ pub(crate) fn encode_qoi(
     let encode_data = qoi_pixels.as_deref().unwrap_or(&pixels[..expected]);
     let encoded = qoi
         .encode_alloc(encode_data)
-        .map_err(|e| BitmapError::InvalidData(e.to_string()))?;
+        .map_err(|e| BitmapError::InvalidData(alloc::format!("{e:?}")))?;
 
     Ok(encoded)
 }

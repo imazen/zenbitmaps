@@ -97,6 +97,13 @@ pub(crate) fn encode_tga(
             }
             PixelLayout::Rgb8 => {
                 // RGB → BGR
+                #[cfg(feature = "simd")]
+                {
+                    let start = out.len();
+                    out.extend_from_slice(&pixels[row_start..row_start + w * 3]);
+                    let _ = garb::bytes::rgb_to_bgr_inplace(&mut out[start..]);
+                }
+                #[cfg(not(feature = "simd"))]
                 for x in 0..w {
                     let off = row_start + x * 3;
                     out.push(pixels[off + 2]); // B
@@ -106,6 +113,13 @@ pub(crate) fn encode_tga(
             }
             PixelLayout::Rgba8 => {
                 // RGBA → BGRA
+                #[cfg(feature = "simd")]
+                {
+                    let start = out.len();
+                    out.extend_from_slice(&pixels[row_start..row_start + w * 4]);
+                    let _ = garb::bytes::rgba_to_bgra_inplace(&mut out[start..]);
+                }
+                #[cfg(not(feature = "simd"))]
                 for x in 0..w {
                     let off = row_start + x * 4;
                     out.push(pixels[off + 2]); // B

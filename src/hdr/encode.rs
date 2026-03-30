@@ -215,6 +215,7 @@ fn rle_encode_channel(scanline: &[[u8; 4]], ch: usize, out: &mut Vec<u8>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec;
 
     #[test]
     fn f32_to_rgbe_zero() {

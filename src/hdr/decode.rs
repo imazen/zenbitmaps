@@ -112,7 +112,8 @@ pub(crate) fn decode_pixels(
         .and_then(|px| px.checked_mul(12)) // 3 channels × 4 bytes per f32
         .ok_or(BitmapError::DimensionsTooLarge { width, height })?;
 
-    let mut out = Vec::with_capacity(out_bytes);
+    let mut out = alloc::vec![0u8; out_bytes];
+    let mut out_pos = 0;
     let mut pos = offset;
 
     // Scanline buffer for new-style RLE (4 channels × width)
@@ -191,16 +192,17 @@ pub(crate) fn decode_pixels(
                 }
             }
 
-            // Convert RGBE to f32 and append
+            // Convert RGBE to f32 and write directly into output
             for px in 0..w {
                 let r = scanline_buf[px * 4];
                 let g = scanline_buf[px * 4 + 1];
                 let b = scanline_buf[px * 4 + 2];
                 let e = scanline_buf[px * 4 + 3];
                 let (rf, gf, bf) = rgbe_to_f32(r, g, b, e);
-                out.extend_from_slice(&rf.to_le_bytes());
-                out.extend_from_slice(&gf.to_le_bytes());
-                out.extend_from_slice(&bf.to_le_bytes());
+                out[out_pos..out_pos + 4].copy_from_slice(&rf.to_le_bytes());
+                out[out_pos + 4..out_pos + 8].copy_from_slice(&gf.to_le_bytes());
+                out[out_pos + 8..out_pos + 12].copy_from_slice(&bf.to_le_bytes());
+                out_pos += 12;
             }
         } else {
             // Uncompressed: read flat RGBE quads
@@ -215,9 +217,10 @@ pub(crate) fn decode_pixels(
                 let b = data[base + 2];
                 let e = data[base + 3];
                 let (rf, gf, bf) = rgbe_to_f32(r, g, b, e);
-                out.extend_from_slice(&rf.to_le_bytes());
-                out.extend_from_slice(&gf.to_le_bytes());
-                out.extend_from_slice(&bf.to_le_bytes());
+                out[out_pos..out_pos + 4].copy_from_slice(&rf.to_le_bytes());
+                out[out_pos + 4..out_pos + 8].copy_from_slice(&gf.to_le_bytes());
+                out[out_pos + 8..out_pos + 12].copy_from_slice(&bf.to_le_bytes());
+                out_pos += 12;
             }
             pos += needed;
         }
