@@ -275,10 +275,13 @@ pub fn detect_format(data: &[u8]) -> Option<ImageFormat> {
     if data.len() >= 6 && data.starts_with(b"#?RGBE") {
         return Some(ImageFormat::Hdr);
     }
-    // PNM magic: P followed by 5, 6, 7, f, or F
+    // PNM magic: P followed by 1-7 (ASCII/binary PBM/PGM/PPM/PAM) or f/F (PFM).
+    // Matches zencodec's PNM detection. We only decode P5-P7 and PFM but
+    // detect all variants so the error message is "unsupported PNM variant"
+    // rather than "unrecognized format".
     if data.len() >= 2 && data[0] == b'P' {
         match data[1] {
-            b'5' | b'6' | b'7' | b'f' | b'F' => return Some(ImageFormat::Pnm),
+            b'1'..=b'7' | b'f' | b'F' => return Some(ImageFormat::Pnm),
             _ => {}
         }
     }

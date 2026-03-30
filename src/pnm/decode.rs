@@ -21,6 +21,9 @@ pub(crate) fn parse_header(data: &[u8]) -> Result<PnmHeader, BitmapError> {
         b"P6" => parse_p5_p6_header(data, PnmFormat::Ppm),
         b"P7" => parse_p7_header(data),
         b"Pf" | b"PF" => parse_pfm_header(data),
+        b"P1" | b"P2" | b"P3" | b"P4" => Err(BitmapError::UnsupportedVariant(
+            alloc::format!("ASCII PNM ({}{}) is not supported, use binary P5/P6/P7", data[0] as char, data[1] as char),
+        )),
         _ => Err(BitmapError::UnrecognizedFormat),
     }
 }
