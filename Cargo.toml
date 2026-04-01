@@ -28,7 +28,7 @@ zenpixels = { version = "0.2.2", default-features = false, features = ["imgref"]
 
 [dev-dependencies]
 archmage = { version = "0.9.15", features = ["std"] }
-zenbench = "0.1.2"
+zenbench = { version = "0.1.2"}
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 codec-corpus = "1"
