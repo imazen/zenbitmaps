@@ -63,9 +63,9 @@ dependencies = [
 
 [[package]]
 name = "archmage"
-version = "0.9.15"
+version = "0.9.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4f603b4bae8aa53923ec4c221610fec3bb16a3cba8e002a750323a30abd25f8f"
+checksum = "906d90739870dc217c19bac4b3d11541817679e875bc3ae03e66458f44ccac6b"
 dependencies = [
  "archmage-macros",
  "safe_unaligned_simd",
@@ -73,9 +73,9 @@ dependencies = [
 
 [[package]]
 name = "archmage-macros"
-version = "0.9.15"
+version = "0.9.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "237913c29ffeb6cda1ddc6e3a4ff21c2d2e5523e050dce04fa5889a3e8dabb99"
+checksum = "e2377968d27d15b6e6117b60026a12a76de7e79a40e1ac664158e2bc562d6d95"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -275,9 +275,9 @@ checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 
 [[package]]
 name = "libc"
-version = "0.2.183"
+version = "0.2.184"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b5b646652bf6661599e1da8901b3b9522896f01e736bad5f723fe7a3a27f899d"
+checksum = "48f5d2a454e16a5ea0f4ced81bd44e4cfc7bd3a507b61887c99fd3538b28e4af"
 
 [[package]]
 name = "libredox"
@@ -764,7 +764,7 @@ dependencies = [
 
 [[package]]
 name = "zenbitmaps"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "archmage",
  "codec-corpus",
@@ -793,9 +793,9 @@ dependencies = [
 
 [[package]]
 name = "zenpixels"
-version = "0.2.1"
+version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4705187b555bc476109a2113ca007282fdf327bcc9edb4c692ae1e4d489bc9b2"
+checksum = "e6671ce2ea4d3110e2aef9514cc48267291f50fab7b7eead43b36e7c887fb740"
 dependencies = [
  "bytemuck",
  "imgref",

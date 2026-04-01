@@ -414,9 +414,9 @@ fn rle_all_runs() {
     // RLE marker
     pixel_data.extend_from_slice(&[2, 2, 0, 8]); // width=8
     // Each channel: run of 8 identical values
-    for ch in 0..4 {
+    for &val in &rgbe {
         pixel_data.push(128 + 8); // run of 8
-        pixel_data.push(rgbe[ch]);
+        pixel_data.push(val);
     }
     let hdr = build_hdr(8, 1, &pixel_data);
     let decoded = decode_hdr(&hdr, Unstoppable).unwrap();
@@ -548,7 +548,7 @@ fn encode_rgb8_roundtrip() {
     assert_f32_close(r, 1.0, 0.02, "red R");
     assert_f32_close(g, 0.0, 0.02, "red G");
     assert_f32_close(b, 0.0, 0.02, "red B");
-    let (r, g, b) = pixel_f32(decoded.pixels(), 1);
+    let (r, g, _b) = pixel_f32(decoded.pixels(), 1);
     assert_f32_close(r, 0.0, 0.02, "green R");
     assert_f32_close(g, 1.0, 0.02, "green G");
 }
@@ -590,7 +590,7 @@ fn limits_max_height_hdr() {
 
 #[test]
 fn limits_max_memory_hdr() {
-    let hdr = build_hdr_from_f32(3, 3, &vec![(1.0, 1.0, 1.0); 9]);
+    let hdr = build_hdr_from_f32(3, 3, &[(1.0, 1.0, 1.0); 9]);
     let limits = Limits {
         max_memory_bytes: Some(10), // 9 pixels * 12 bytes = 108, way over 10
         ..Default::default()

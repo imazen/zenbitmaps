@@ -48,7 +48,7 @@ fn make_rgbf32() -> Vec<u8> {
 }
 
 zenbench::main!(|suite| {
-    let throughput = Throughput::Bytes(W as u64 * H as u64 * 3);
+    let _throughput = Throughput::Bytes(W as u64 * H as u64 * 3);
 
     // ── Decode comparison ────────────────────────────────────────────
     suite.compare("decode_1mpx", |g| {

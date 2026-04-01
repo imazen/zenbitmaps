@@ -8,6 +8,7 @@ use enough::Unstoppable;
 use zenbitmaps::*;
 
 /// Helper: build a minimal TGA file from parts.
+#[allow(clippy::too_many_arguments)]
 fn build_tga(
     image_type: u8,
     width: u16,
