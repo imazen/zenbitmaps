@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.1.3 — 2026-04-01
+
+### Changed
+
+- Bump zencodec to 0.1.12
+- Bump zenpixels/zenpixels-convert to 0.2.2
+- Bump archmage, magetypes, enough, whereat, linear-srgb dependencies
+
 ## 0.1.0 — 2026-03-28
 
 Initial release.
