@@ -8,7 +8,7 @@ mod encode;
 
 use crate::decode::DecodeOutput;
 use crate::error::BitmapError;
-use crate::limits::Limits;
+use crate::limits::{self, Limits};
 use crate::pixel::PixelLayout;
 use enough::Stop;
 
@@ -74,9 +74,7 @@ pub(crate) fn decode<'a>(
                 width: header.width,
                 height: header.height,
             })?;
-            if let Some(limits) = limits {
-                limits.check_memory(out_bytes)?;
-            }
+            limits::check_output_size(out_bytes, limits)?;
             let pixels = if is_ascii {
                 decode::decode_ascii_pbm(pixel_data, &header, stop)?
             } else {
@@ -98,9 +96,7 @@ pub(crate) fn decode<'a>(
                     width: header.width,
                     height: header.height,
                 })?;
-            if let Some(limits) = limits {
-                limits.check_memory(out_bytes)?;
-            }
+            limits::check_output_size(out_bytes, limits)?;
             let pixels = decode::decode_pfm(pixel_data, &header, stop)?;
             Ok(DecodeOutput::owned(
                 pixels,
@@ -119,9 +115,7 @@ pub(crate) fn decode<'a>(
                         width: header.width,
                         height: header.height,
                     })?;
-                if let Some(limits) = limits {
-                    limits.check_memory(out_bytes)?;
-                }
+                limits::check_output_size(out_bytes, limits)?;
                 let pixels = decode::decode_ascii_samples(pixel_data, &header, stop)?;
                 Ok(DecodeOutput::owned(
                     pixels,
@@ -161,9 +155,7 @@ pub(crate) fn decode<'a>(
                             width: header.width,
                             height: header.height,
                         })?;
-                    if let Some(limits) = limits {
-                        limits.check_memory(out_bytes)?;
-                    }
+                    limits::check_output_size(out_bytes, limits)?;
                     let pixels =
                         decode::decode_integer_transform(pixel_data, &header, expected_src, stop)?;
                     Ok(DecodeOutput::owned(
@@ -205,9 +197,7 @@ pub(crate) fn decode<'a>(
                         width: header.width,
                         height: header.height,
                     })?;
-                if let Some(limits) = limits {
-                    limits.check_memory(out_bytes)?;
-                }
+                limits::check_output_size(out_bytes, limits)?;
                 let pixels =
                     decode::decode_integer_transform(pixel_data, &header, expected_src, stop)?;
                 Ok(DecodeOutput::owned(

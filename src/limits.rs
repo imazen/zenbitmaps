@@ -1,3 +1,9 @@
+/// Hard cap on output buffer allocation (1 GiB).
+///
+/// Applied unconditionally by all decoders, even when no user [`Limits`] are set.
+/// Prevents OOM from crafted headers declaring enormous dimensions.
+const HARD_MAX_OUTPUT_BYTES: usize = 1024 * 1024 * 1024;
+
 /// Resource limits for decode/encode operations.
 ///
 /// All fields default to `None` (no limit).
@@ -50,4 +56,24 @@ impl Limits {
         }
         Ok(())
     }
+}
+
+/// Check output buffer size against the 1 GiB hard cap and optional user limits.
+///
+/// Every decoder must call this before allocating the output buffer.
+/// The hard cap prevents OOM from crafted input regardless of whether
+/// user-provided [`Limits`] are set.
+pub(crate) fn check_output_size(
+    bytes: usize,
+    limits: Option<&Limits>,
+) -> Result<(), crate::BitmapError> {
+    if bytes > HARD_MAX_OUTPUT_BYTES {
+        return Err(crate::BitmapError::LimitExceeded(alloc::format!(
+            "output size {bytes} bytes exceeds hard limit of {HARD_MAX_OUTPUT_BYTES} bytes"
+        )));
+    }
+    if let Some(limits) = limits {
+        limits.check_memory(bytes)?;
+    }
+    Ok(())
 }

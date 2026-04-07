@@ -9,7 +9,7 @@ mod encode;
 
 use crate::decode::DecodeOutput;
 use crate::error::BitmapError;
-use crate::limits::Limits;
+use crate::limits::{self, Limits};
 use crate::pixel::PixelLayout;
 use alloc::vec::Vec;
 use enough::Stop;
@@ -43,9 +43,7 @@ pub(crate) fn decode<'a>(
         .checked_mul(height as usize)
         .and_then(|px| px.checked_mul(out_channels))
         .ok_or_else(|| BitmapError::LimitExceeded("output size overflows usize".into()))?;
-    if let Some(limits) = limits {
-        limits.check_memory(out_bytes)?;
-    }
+    limits::check_output_size(out_bytes, limits)?;
 
     stop.check()?;
 
