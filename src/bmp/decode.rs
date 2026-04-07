@@ -445,6 +445,7 @@ impl<'a> BmpDecoderState<'a> {
         }
 
         let (width, height, planes, bpp, compression);
+        let mut color_used: u32 = 0;
         match ihsize {
             12 => {
                 // OS/2 BMPv1
@@ -478,7 +479,7 @@ impl<'a> BmpDecoderState<'a> {
                     let y_pixels = self.bytes.get_u32_le_err()?;
                     self.x_pels_per_meter = x_pixels;
                     self.y_pels_per_meter = y_pixels;
-                    let _color_used = self.bytes.get_u32_le_err()?;
+                    color_used = self.bytes.get_u32_le_err()?;
                     let _important_colors = self.bytes.get_u32_le_err()?;
 
                     // Strict: validate DPI and image data size fields
@@ -599,14 +600,14 @@ impl<'a> BmpDecoderState<'a> {
                 }
             }
             8 => {
-                if hsize.wrapping_sub(ihsize).wrapping_sub(14) > 0 {
+                if hsize.wrapping_sub(ihsize).wrapping_sub(14) > 0 || color_used > 0 {
                     self.pix_fmt = BmpPixelFormat::Pal8;
                 } else {
                     self.pix_fmt = BmpPixelFormat::Gray8;
                 }
             }
             1 | 2 | 4 => {
-                if hsize.wrapping_sub(ihsize).wrapping_sub(14) > 0 {
+                if hsize.wrapping_sub(ihsize).wrapping_sub(14) > 0 || color_used > 0 {
                     self.pix_fmt = BmpPixelFormat::Pal8;
                 } else {
                     return Err(BitmapError::UnsupportedVariant(alloc::format!(
@@ -689,7 +690,10 @@ impl<'a> BmpDecoderState<'a> {
         self.depth = bpp;
         self.ihsize = ihsize;
         self.hsize = hsize;
-        self.bytes.set_position(hsize as usize)?;
+        // Pixel data starts at the data offset (hsize), or after the palette
+        // if the data offset is too small (malformed BMP with wrong bfOffBits).
+        let pixel_data_start = (hsize as usize).max(self.bytes.pos);
+        self.bytes.set_position(pixel_data_start)?;
         self.decoded_headers = true;
 
         Ok(())

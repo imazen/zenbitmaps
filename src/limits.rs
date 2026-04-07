@@ -46,7 +46,6 @@ impl Limits {
         }
         Ok(())
     }
-
 }
 
 /// Check output buffer size against limits (user-provided or default 1 GiB cap).
