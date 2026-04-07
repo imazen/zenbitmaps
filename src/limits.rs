@@ -1,12 +1,13 @@
-/// Hard cap on output buffer allocation (1 GiB).
+/// Default memory cap when no explicit `max_memory_bytes` is set (1 GiB).
 ///
-/// Applied unconditionally by all decoders, even when no user [`Limits`] are set.
 /// Prevents OOM from crafted headers declaring enormous dimensions.
-const HARD_MAX_OUTPUT_BYTES: usize = 1024 * 1024 * 1024;
+/// Override by setting `Limits { max_memory_bytes: Some(your_cap), .. }`.
+pub const DEFAULT_MAX_MEMORY_BYTES: u64 = 1024 * 1024 * 1024;
 
 /// Resource limits for decode/encode operations.
 ///
-/// All fields default to `None` (no limit).
+/// When no limits are provided, decoders apply [`DEFAULT_MAX_MEMORY_BYTES`]
+/// (1 GiB). Set `max_memory_bytes` explicitly to raise or lower this.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Limits {
     pub max_width: Option<u64>,
@@ -14,6 +15,7 @@ pub struct Limits {
     /// Maximum pixel count (width * height).
     pub max_pixels: Option<u64>,
     /// Maximum memory bytes for output buffer allocation.
+    /// Defaults to [`DEFAULT_MAX_MEMORY_BYTES`] (1 GiB) when `None`.
     pub max_memory_bytes: Option<u64>,
 }
 
@@ -45,35 +47,23 @@ impl Limits {
         Ok(())
     }
 
-    /// Check that an allocation size is within memory limits.
-    pub(crate) fn check_memory(&self, bytes: usize) -> Result<(), crate::BitmapError> {
-        if let Some(max_mem) = self.max_memory_bytes
-            && bytes as u64 > max_mem
-        {
-            return Err(crate::BitmapError::LimitExceeded(alloc::format!(
-                "allocation {bytes} bytes exceeds memory limit {max_mem}"
-            )));
-        }
-        Ok(())
-    }
 }
 
-/// Check output buffer size against the 1 GiB hard cap and optional user limits.
+/// Check output buffer size against limits (user-provided or default 1 GiB cap).
 ///
 /// Every decoder must call this before allocating the output buffer.
-/// The hard cap prevents OOM from crafted input regardless of whether
-/// user-provided [`Limits`] are set.
+/// When `limits` is `None`, applies [`DEFAULT_MAX_MEMORY_BYTES`].
 pub(crate) fn check_output_size(
     bytes: usize,
     limits: Option<&Limits>,
 ) -> Result<(), crate::BitmapError> {
-    if bytes > HARD_MAX_OUTPUT_BYTES {
+    let max = limits
+        .and_then(|l| l.max_memory_bytes)
+        .unwrap_or(DEFAULT_MAX_MEMORY_BYTES);
+    if bytes as u64 > max {
         return Err(crate::BitmapError::LimitExceeded(alloc::format!(
-            "output size {bytes} bytes exceeds hard limit of {HARD_MAX_OUTPUT_BYTES} bytes"
+            "output size {bytes} bytes exceeds memory limit {max}"
         )));
-    }
-    if let Some(limits) = limits {
-        limits.check_memory(bytes)?;
     }
     Ok(())
 }
