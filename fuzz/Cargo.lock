@@ -28,9 +28,9 @@ checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
 name = "enough"
-version = "0.3.1"
+version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "65641ff0923e45cf34a4cb0115080cb7fc8bf4fd419c2207670d5722bab4c581"
+checksum = "521236efef7dcf4a95af2976e34b5b10780e8747eb78fa4742aa65b2ee189222"
 
 [[package]]
 name = "find-msvc-tools"
@@ -159,18 +159,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d7249219f66ced02969388cf2bb044a09756a083d0fab1e566056b04d9fbcaa5"
 
 [[package]]
-name = "zenpnm"
-version = "0.1.0"
+name = "zenbitmaps"
+version = "0.1.3"
 dependencies = [
  "enough",
  "thiserror",
 ]
 
 [[package]]
-name = "zenpnm-fuzz"
+name = "zenbitmaps-fuzz"
 version = "0.0.0"
 dependencies = [
  "enough",
  "libfuzzer-sys",
- "zenpnm",
+ "zenbitmaps",
 ]

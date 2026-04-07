@@ -108,9 +108,7 @@ fn check_limits(
         .checked_mul(height as usize)
         .and_then(|px| px.checked_mul(layout.bytes_per_pixel()))
         .ok_or_else(|| BitmapError::LimitExceeded("output size overflows usize".into()))?;
-    if let Some(limits) = limits {
-        limits.check_memory(out_bytes)?;
-    }
+    crate::limits::check_output_size(out_bytes, limits)?;
     Ok(())
 }
 

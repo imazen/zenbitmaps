@@ -438,9 +438,10 @@ impl<'a> zencodec::decode::DecodeJob<'a> for QoiDecodeJob {
             .checked_mul(channels)
             .ok_or(BitmapError::DimensionsTooLarge { width, height })?;
 
-        if let Some(ref lim) = limits {
-            lim.check_memory(row_bytes.saturating_mul(height as usize))?;
-        }
+        crate::limits::check_output_size(
+            row_bytes.saturating_mul(height as usize),
+            limits.as_ref(),
+        )?;
 
         let descriptor = if has_alpha {
             PixelDescriptor::RGBA8_SRGB

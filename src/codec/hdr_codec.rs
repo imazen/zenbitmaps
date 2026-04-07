@@ -400,9 +400,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for HdrDecodeJob {
             .checked_mul(height as usize)
             .ok_or(BitmapError::DimensionsTooLarge { width, height })?;
 
-        if let Some(ref lim) = limits {
-            lim.check_memory(total_bytes)?;
-        }
+        crate::limits::check_output_size(total_bytes, limits.as_ref())?;
 
         let cicp = zencodec::Cicp::new(1, 8, 0, true);
         let info = ImageInfo::new(width, height, ImageFormat::Hdr)
