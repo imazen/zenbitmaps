@@ -29,6 +29,10 @@ pub(crate) fn encode_bmp(
 
     stop.check()?;
 
+    if layout == PixelLayout::Gray8 && !alpha {
+        return encode_8bit_gray(pixels, width, height, w, h, stop);
+    }
+
     if alpha {
         encode_32bit(pixels, width, height, w, h, layout, stop)
     } else {
@@ -127,6 +131,64 @@ fn encode_32bit(
                 out.push(a);
             }
         }
+    }
+
+    Ok(out)
+}
+
+fn encode_8bit_gray(
+    pixels: &[u8],
+    width: u32,
+    height: u32,
+    w: usize,
+    h: usize,
+    stop: &dyn Stop,
+) -> Result<Vec<u8>, BitmapError> {
+    // Row stride for 8bpp must be a multiple of 4 bytes
+    let row_stride = w
+        .checked_add(3)
+        .map(|r| r & !3)
+        .ok_or(BitmapError::DimensionsTooLarge { width, height })?;
+    let pixel_data_size = row_stride
+        .checked_mul(h)
+        .ok_or(BitmapError::DimensionsTooLarge { width, height })?;
+    // No palette: data_offset = 14 (file header) + 40 (DIB header) = 54
+    // The decoder recognizes 8bpp with no palette space as Gray8.
+    let data_offset: usize = 54;
+    let file_size = pixel_data_size
+        .checked_add(data_offset)
+        .ok_or(BitmapError::DimensionsTooLarge { width, height })?;
+
+    let mut out = Vec::with_capacity(file_size);
+
+    // File header (14 bytes)
+    out.extend_from_slice(b"BM");
+    out.extend_from_slice(&(file_size as u32).to_le_bytes());
+    out.extend_from_slice(&[0u8; 4]); // reserved
+    out.extend_from_slice(&(data_offset as u32).to_le_bytes());
+
+    // DIB header (BITMAPINFOHEADER, 40 bytes)
+    out.extend_from_slice(&40u32.to_le_bytes());
+    out.extend_from_slice(&(width as i32).to_le_bytes());
+    out.extend_from_slice(&(height as i32).to_le_bytes()); // positive = bottom-up
+    out.extend_from_slice(&1u16.to_le_bytes()); // planes
+    out.extend_from_slice(&8u16.to_le_bytes()); // bits per pixel
+    out.extend_from_slice(&0u32.to_le_bytes()); // compression
+    out.extend_from_slice(&(pixel_data_size as u32).to_le_bytes());
+    out.extend_from_slice(&2835u32.to_le_bytes()); // h resolution (72 DPI)
+    out.extend_from_slice(&2835u32.to_le_bytes()); // v resolution
+    out.extend_from_slice(&0u32.to_le_bytes()); // colors used
+    out.extend_from_slice(&0u32.to_le_bytes()); // important colors
+
+    // Pixel data: 1 byte per pixel, bottom-up, padded rows
+    let pad_bytes = row_stride - w;
+    for row in (0..h).rev() {
+        if row % 16 == 0 {
+            stop.check()?;
+        }
+        let row_start = row * w;
+        out.extend_from_slice(&pixels[row_start..row_start + w]);
+        out.extend(core::iter::repeat_n(0u8, pad_bytes));
     }
 
     Ok(out)
