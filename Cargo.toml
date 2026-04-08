@@ -1,12 +1,12 @@
 [package]
 name = "zenbitmaps"
-version = "0.1.3"
+version = "0.1.0"
 edition = "2024"
 rust-version = "1.93"
 license = "MIT OR Apache-2.0"
-description = "PNM/PAM/PFM, BMP, farbfeld, QOI, TGA, and Radiance HDR image codec"
+description = "PNM/PAM/PFM, BMP, and farbfeld image format decoder and encoder"
 categories = ["multimedia::images"]
-keywords = ["image", "pnm", "bmp", "tga", "qoi"]
+keywords = ["image", "pnm", "bmp", "farbfeld", "pam"]
 repository = "https://github.com/imazen/zenbitmaps"
 documentation = "https://docs.rs/zenbitmaps"
 readme = "README.md"
@@ -14,21 +14,17 @@ exclude = ["tests/bmp-fixtures/", "CLAUDE.md", "FEEDBACK.md", "justfile", "api-f
 
 [dependencies]
 # Core (always available)
-enough = "0.4.3"
-garb = { version = "0.2.5", default-features = false, optional = true }
-archmage = { version = "0.9.15", default-features = false, optional = true }
-rapid-qoi = { version = "0.6.1", default-features = false, features = ["alloc"], optional = true }
+enough = "0.4.2"
 imgref = { version = "1.12", default-features = false, optional = true }
 rgb = { version = "0.8", default-features = false, features = ["as-bytes"], optional = true }
 thiserror = { version = "2.0", default-features = false }
-zencodec = { version = "0.1.12", optional = true }
+zencodec = { version = "0.1.13", optional = true }
 # zennode is not yet published; uncomment when it's on crates.io
 # zennode = { path = "../zennode/zennode", default-features = false, features = ["derive"], optional = true }
-zenpixels = { version = "0.2.2", default-features = false, features = ["imgref"], optional = true }
+zenpixels = { version = "0.2.1", default-features = false, features = ["imgref"], optional = true }
 
 [dev-dependencies]
-archmage = { version = "0.9.15", features = ["std"] }
-zenbench = { version = "0.1.2"}
+archmage = { version = "0.9.14", features = ["std"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 codec-corpus = "1"
@@ -37,12 +33,8 @@ codec-corpus = "1"
 default = []
 std = []
 
-# Format groups (PNM and farbfeld are always available)
-bmp = []   # BMP (all bit depths, RLE, bitfields, palettes)
-qoi = ["dep:rapid-qoi"]  # QOI (Quite OK Image) lossless format
-tga = []   # TGA (Targa) truecolor, grayscale, color-mapped, RLE
-hdr = []   # Radiance HDR (RGBE, RLE)
-simd = ["dep:garb", "dep:archmage"]  # SIMD-accelerated pixel swizzle and batch conversion
+# Format groups
+bmp = []   # Full BMP support (all bit depths, RLE, bitfields, palettes)
 
 # Typed pixel support
 rgb = ["dep:rgb"]              # RGB8, RGBA8 etc. typed pixel encode/decode
@@ -56,9 +48,4 @@ zencodec = ["dep:zencodec", "dep:zenpixels", "imgref", "rgb"]
 # zennode = ["dep:zennode"]
 
 # All optional features
-all = ["bmp", "qoi", "tga", "hdr", "simd", "rgb", "imgref"]
-
-[[bench]]
-name = "codecs"
-harness = false
-required-features = ["bmp", "qoi", "tga", "hdr"]
+all = ["bmp", "rgb", "imgref"]
