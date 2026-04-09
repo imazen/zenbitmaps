@@ -694,6 +694,44 @@ impl<'a> BmpDecoderState<'a> {
         // if the data offset is too small (malformed BMP with wrong bfOffBits).
         let pixel_data_start = (hsize as usize).max(self.bytes.pos);
         self.bytes.set_position(pixel_data_start)?;
+
+        // For non-RLE (uncompressed) formats, validate that the available
+        // pixel data is sufficient for the claimed dimensions. Without this,
+        // a tiny file claiming millions of pixels causes a huge allocation
+        // and an extremely slow iteration over zero-padded rows.
+        if !matches!(compression, BmpCompression::Rle4 | BmpCompression::Rle8) {
+            let available_bytes = self.bytes.data.len().saturating_sub(self.bytes.pos);
+            let bytes_per_row = (self.width * usize::from(bpp)).div_ceil(8);
+
+            if bytes_per_row > 0 && available_bytes < bytes_per_row {
+                // Not enough data for even a single scanline
+                if !is_permissive {
+                    return Err(BitmapError::InvalidData(alloc::format!(
+                        "BMP pixel data too short: {available_bytes} bytes available, \
+                         need at least {bytes_per_row} for one row of {}×{} @ {bpp}bpp",
+                        self.width, self.height
+                    )));
+                }
+            }
+
+            // Cap: output size must not exceed 1024× the available input data.
+            // Uncompressed BMP expands at most ~4× (1bpp → 3 bytes RGB) per
+            // input byte; 1024× is extremely generous and only catches
+            // pathological headers on tiny inputs.
+            let output_size = self
+                .width
+                .saturating_mul(self.height)
+                .saturating_mul(self.pix_fmt.num_components());
+            let max_reasonable = available_bytes.saturating_mul(1024);
+            if output_size > max_reasonable && available_bytes < 1024 * 1024 {
+                return Err(BitmapError::InvalidData(alloc::format!(
+                    "BMP claims {}×{} @ {bpp}bpp ({output_size} output bytes) \
+                     but only {available_bytes} bytes of pixel data available",
+                    self.width, self.height
+                )));
+            }
+        }
+
         self.decoded_headers = true;
 
         Ok(())
