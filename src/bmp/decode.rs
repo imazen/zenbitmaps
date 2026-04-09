@@ -709,7 +709,8 @@ impl<'a> BmpDecoderState<'a> {
                     return Err(BitmapError::InvalidData(alloc::format!(
                         "BMP pixel data too short: {available_bytes} bytes available, \
                          need at least {bytes_per_row} for one row of {}×{} @ {bpp}bpp",
-                        self.width, self.height
+                        self.width,
+                        self.height
                     )));
                 }
             }
@@ -727,7 +728,8 @@ impl<'a> BmpDecoderState<'a> {
                 return Err(BitmapError::InvalidData(alloc::format!(
                     "BMP claims {}×{} @ {bpp}bpp ({output_size} output bytes) \
                      but only {available_bytes} bytes of pixel data available",
-                    self.width, self.height
+                    self.width,
+                    self.height
                 )));
             }
         }
