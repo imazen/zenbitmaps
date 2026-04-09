@@ -10,7 +10,7 @@ keywords = ["image", "pnm", "bmp", "farbfeld", "pam"]
 repository = "https://github.com/imazen/zenbitmaps"
 documentation = "https://docs.rs/zenbitmaps"
 readme = "README.md"
-exclude = ["tests/bmp-fixtures/", "CLAUDE.md", "FEEDBACK.md", "justfile", "api-feedback.md"]
+exclude = ["tests/bmp-fixtures/", "CLAUDE.md", "CONTEXT-HANDOFF.md", "FEEDBACK.md", ".claude/", ".superwork/", ".zenbench/", "copter-report/", ".github/", "Cross.toml", "justfile", "Cargo.toml.original.txt", "api-feedback.md", "fuzz/"]
 
 [dependencies]
 # Core (always available)

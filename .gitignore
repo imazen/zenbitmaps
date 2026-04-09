@@ -7,6 +7,18 @@ target/
 # Fuzz build artifacts and crashes
 fuzz/target/
 fuzz/artifacts/
+fuzz/corpus/
+fuzz/coverage/
+fuzz-*.log
+*.profraw
+*.profdata
+
+# libFuzzer crash/leak/oom/timeout artifacts dropped in the working directory
+crash-*
+leak-*
+oom-*
+timeout-*
+slow-unit-*
 
 # Profiling
 perf.data
@@ -45,3 +57,12 @@ Thumbs.db
 .vscode/
 *.iml
 !fuzz/Cargo.lock
+
+# Tooling noise
+.superwork/
+.claude/
+copter-report/
+.zenbench/
+.external-cache/
+Cargo.toml.original.txt
+*.rs.local
