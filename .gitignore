@@ -9,6 +9,7 @@ fuzz/target/
 fuzz/artifacts/
 fuzz/corpus/
 fuzz/coverage/
+fuzz/regression/
 fuzz-*.log
 *.profraw
 *.profdata
