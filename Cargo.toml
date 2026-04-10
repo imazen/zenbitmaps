@@ -4,9 +4,9 @@ version = "0.1.4"
 edition = "2024"
 rust-version = "1.93"
 license = "MIT OR Apache-2.0"
-description = "PNM/PAM/PFM, BMP, and farbfeld image format decoder and encoder"
+description = "PNM/PAM/PFM, BMP, farbfeld, QOI, TGA, and Radiance HDR image codec"
 categories = ["multimedia::images"]
-keywords = ["image", "pnm", "bmp", "farbfeld", "pam"]
+keywords = ["image", "pnm", "bmp", "tga", "qoi"]
 repository = "https://github.com/imazen/zenbitmaps"
 documentation = "https://docs.rs/zenbitmaps"
 readme = "README.md"
@@ -14,14 +14,19 @@ exclude = ["tests/bmp-fixtures/", "CLAUDE.md", "CONTEXT-HANDOFF.md", "FEEDBACK.m
 
 [dependencies]
 # Core (always available)
-enough = "0.4.2"
+enough = "0.4.3"
 imgref = { version = "1.12", default-features = false, optional = true }
 rgb = { version = "0.8", default-features = false, features = ["as-bytes"], optional = true }
 thiserror = { version = "2.0", default-features = false }
 zencodec = { version = "0.1.13", optional = true }
 # zennode is not yet published; uncomment when it's on crates.io
 # zennode = { path = "../zennode/zennode", default-features = false, features = ["derive"], optional = true }
-zenpixels = { version = "0.2.1", default-features = false, features = ["imgref"], optional = true }
+zenpixels = { version = "0.2.2", default-features = false, features = ["imgref"], optional = true }
+# QOI codec
+rapid-qoi = { version = "0.6.1", default-features = false, features = ["alloc"], optional = true }
+# SIMD acceleration
+archmage = { version = "0.9.15", default-features = false, optional = true }
+garb = { version = "0.2.5", default-features = false, optional = true }
 
 [dev-dependencies]
 archmage = { version = "0.9.14", features = ["std"] }
@@ -38,6 +43,8 @@ std = []
 bmp = []   # Full BMP support (all bit depths, RLE, bitfields, palettes)
 hdr = []   # Radiance HDR/RGBE format support
 tga = []   # TGA (Targa) format support
+qoi = ["dep:rapid-qoi"]  # QOI codec via rapid-qoi
+simd = ["dep:garb", "dep:archmage"]  # SIMD acceleration
 
 # Typed pixel support
 rgb = ["dep:rgb"]              # RGB8, RGBA8 etc. typed pixel encode/decode
@@ -51,15 +58,10 @@ zencodec = ["dep:zencodec", "dep:zenpixels", "imgref", "rgb"]
 # zennode = ["dep:zennode"]
 
 # All optional features
-all = ["bmp", "hdr", "tga", "rgb", "imgref"]
+all = ["bmp", "qoi", "tga", "hdr", "simd", "rgb", "imgref"]
 
 [[bench]]
 name = "codecs"
 harness = false
-required-features = ["bmp", "hdr", "tga"]
+required-features = ["bmp", "qoi", "tga", "hdr"]
 
-[lints.rust]
-# "qoi" and "simd" are planned features with code gated behind cfg(feature = "...")
-# but not yet compilable (qoi needs rapid_qoi dep, simd is aspirational).
-# Declare them here so clippy doesn't flag unexpected_cfgs.
-unexpected_cfgs = { level = "allow", check-cfg = ['cfg(feature, values("qoi", "simd"))'] }

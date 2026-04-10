@@ -14,6 +14,7 @@ pub(crate) struct QoiHeaderInfo {
     pub height: u32,
     pub has_alpha: bool,
     /// True if the QOI colorspace field signals linear (not sRGB).
+    #[allow(dead_code)]
     pub is_linear: bool,
 }
 

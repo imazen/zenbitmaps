@@ -229,6 +229,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "garb"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "61ee8d8f5e43a45183480ea077c4e046e43ab9604928c87d6ad2080e666dc519"
+dependencies = [
+ "archmage",
+ "bytemuck",
+]
+
+[[package]]
 name = "getrandom"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -346,6 +356,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "41f2619966050689382d2b44f664f4bc593e129785a36d6ee376ddf37259b924"
 dependencies = [
  "proc-macro2",
+]
+
+[[package]]
+name = "rapid-qoi"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "965d4fa3abc71547be1527fa00e08c1114f972d3d2b9209563b420d301a257ac"
+dependencies = [
+ "bytemuck",
 ]
 
 [[package]]
@@ -752,12 +771,14 @@ dependencies = [
 
 [[package]]
 name = "zenbitmaps"
-version = "0.1.0"
+version = "0.1.4"
 dependencies = [
  "archmage",
  "codec-corpus",
  "enough",
+ "garb",
  "imgref",
+ "rapid-qoi",
  "rgb",
  "thiserror",
  "zenbench",
