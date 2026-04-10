@@ -96,19 +96,22 @@ zenbench::main!(|suite| {
             })
         });
 
-        let qoi = zenbitmaps::encode_qoi(
-            &make_rgb8(),
-            W,
-            H,
-            zenbitmaps::PixelLayout::Rgb8,
-            Unstoppable,
-        )
-        .unwrap();
-        g.bench("qoi", move |b| {
-            b.iter(|| {
-                let _ = black_box(zenbitmaps::decode_qoi(&qoi, Unstoppable).unwrap());
-            })
-        });
+        #[cfg(feature = "qoi")]
+        {
+            let qoi = zenbitmaps::encode_qoi(
+                &make_rgb8(),
+                W,
+                H,
+                zenbitmaps::PixelLayout::Rgb8,
+                Unstoppable,
+            )
+            .unwrap();
+            g.bench("qoi", move |b| {
+                b.iter(|| {
+                    let _ = black_box(zenbitmaps::decode_qoi(&qoi, Unstoppable).unwrap());
+                })
+            });
+        }
 
         let tga = zenbitmaps::encode_tga(
             &make_rgb8(),
@@ -179,15 +182,24 @@ zenbench::main!(|suite| {
             })
         });
 
-        let px = make_rgb8();
-        g.bench("qoi", move |b| {
-            b.iter(|| {
-                black_box(
-                    zenbitmaps::encode_qoi(&px, W, H, zenbitmaps::PixelLayout::Rgb8, Unstoppable)
+        #[cfg(feature = "qoi")]
+        {
+            let px = make_rgb8();
+            g.bench("qoi", move |b| {
+                b.iter(|| {
+                    black_box(
+                        zenbitmaps::encode_qoi(
+                            &px,
+                            W,
+                            H,
+                            zenbitmaps::PixelLayout::Rgb8,
+                            Unstoppable,
+                        )
                         .unwrap(),
-                )
-            })
-        });
+                    )
+                })
+            });
+        }
 
         let px = make_rgb8();
         g.bench("tga", move |b| {

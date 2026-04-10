@@ -25,6 +25,7 @@ zenpixels = { version = "0.2.1", default-features = false, features = ["imgref"]
 
 [dev-dependencies]
 archmage = { version = "0.9.14", features = ["std"] }
+zenbench = "0.1.4"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 codec-corpus = "1"
@@ -35,6 +36,8 @@ std = []
 
 # Format groups
 bmp = []   # Full BMP support (all bit depths, RLE, bitfields, palettes)
+hdr = []   # Radiance HDR/RGBE format support
+tga = []   # TGA (Targa) format support
 
 # Typed pixel support
 rgb = ["dep:rgb"]              # RGB8, RGBA8 etc. typed pixel encode/decode
@@ -48,4 +51,15 @@ zencodec = ["dep:zencodec", "dep:zenpixels", "imgref", "rgb"]
 # zennode = ["dep:zennode"]
 
 # All optional features
-all = ["bmp", "rgb", "imgref"]
+all = ["bmp", "hdr", "tga", "rgb", "imgref"]
+
+[[bench]]
+name = "codecs"
+harness = false
+required-features = ["bmp", "hdr", "tga"]
+
+[lints.rust]
+# "qoi" and "simd" are planned features with code gated behind cfg(feature = "...")
+# but not yet compilable (qoi needs rapid_qoi dep, simd is aspirational).
+# Declare them here so clippy doesn't flag unexpected_cfgs.
+unexpected_cfgs = { level = "allow", check-cfg = ['cfg(feature, values("qoi", "simd"))'] }
