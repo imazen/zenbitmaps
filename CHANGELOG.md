@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+## [0.1.4] - 2026-04-10
+
+### Added
+
+- Nightly fuzz workflow: 60s smoke on push, 5 min nightly (f4de1bf)
+- Fuzz dictionary for BMP/PNM targets (ccea1c4)
+- BMP roundtrip fuzz crash regression seed (cf3c0ad)
+- Declare `hdr` and `tga` features, add zenbench dev-dep (022a599)
+
+### Changed
+
+- Bump zencodec to 0.1.13 (2085784)
+
+### Fixed
+
+- Restore `qoi` and `simd` features and deps for semver compatibility (a08c0bc)
+- Reject BMP decompression bombs with insufficient pixel data (5455574)
+- Correct BMP paletted row padding and palette handling (#3) (2c8f5d2, 2f587b3)
+- Make memory cap configurable and remove dead code (8f64f60)
+- Replace nonexistent `Limits::check_memory` with `check_output_size` (eeca252)
+- Reject oversized dimensions to prevent OOM from crafted input (79014dc)
+
 ## 0.1.3 — 2026-04-01
 
 ### Changed
