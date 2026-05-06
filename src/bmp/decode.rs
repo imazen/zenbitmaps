@@ -1255,7 +1255,20 @@ impl<'a> BmpDecoderState<'a> {
                 } else if p2 == 2 {
                     let dx = self.bytes.read_u8();
                     let dy = self.bytes.read_u8();
-                    *pos += usize::from(dx);
+                    // Use checked_add to prevent usize wrap on 32-bit targets:
+                    // a maliciously crafted RLE stream that issues many "delta"
+                    // escapes can otherwise accumulate `*pos` past usize::MAX.
+                    *pos = match pos.checked_add(usize::from(dx)) {
+                        Some(v) => v,
+                        None => {
+                            if self.permissiveness == BmpPermissiveness::Permissive {
+                                return Ok(());
+                            }
+                            return Err(BitmapError::InvalidData(
+                                "RLE delta column overflow".into(),
+                            ));
+                        }
+                    };
                     *line -= i32::from(dy);
                     if *line < 0 {
                         if self.permissiveness == BmpPermissiveness::Permissive {
