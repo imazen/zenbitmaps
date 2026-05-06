@@ -934,17 +934,13 @@ impl<'a> BmpDecoderState<'a> {
                             "bit depths < 8 must have a palette".into(),
                         ));
                     }
-                    let width_bytes = self
-                        .width
-                        .checked_add(7)
-                        .map(|v| (v >> 3) << 3)
-                        .ok_or(BitmapError::DimensionsTooLarge {
+                    let width_bytes = self.width.checked_add(7).map(|v| (v >> 3) << 3).ok_or(
+                        BitmapError::DimensionsTooLarge {
                             width: self.width as u32,
                             height: self.height as u32,
-                        })?;
-                    let in_width_bytes = self
-                        .width_times(usize::from(self.depth))?
-                        .div_ceil(8);
+                        },
+                    )?;
+                    let in_width_bytes = self.width_times(usize::from(self.depth))?.div_ceil(8);
                     let mut in_width_buf = vec![0u8; in_width_bytes];
                     let scanline_size = width_bytes * 3;
                     let mut scanline_bytes = vec![0u8; scanline_size];

@@ -800,9 +800,9 @@ dependencies = [
 
 [[package]]
 name = "zenpixels"
-version = "0.2.9"
+version = "0.2.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f5b1f3d117906a196be9b5cfcddb7dd6d79e81e521d2258c31a55a51ea198abe"
+checksum = "37ca9800adc8a4f4c5f270deb961f92eefe9755196058e169a2301b333d2fd45"
 dependencies = [
  "bytemuck",
  "imgref",
