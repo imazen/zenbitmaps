@@ -701,7 +701,18 @@ impl<'a> BmpDecoderState<'a> {
         // and an extremely slow iteration over zero-padded rows.
         if !matches!(compression, BmpCompression::Rle4 | BmpCompression::Rle8) {
             let available_bytes = self.bytes.data.len().saturating_sub(self.bytes.pos);
-            let bytes_per_row = (self.width * usize::from(bpp)).div_ceil(8);
+            // Width is read as u32 from the header; on 32-bit usize platforms
+            // `width * bpp` can overflow even though `width * height * channels`
+            // is later capped via `output_buf_size`. Use checked_mul to
+            // restore the panic-free contract on 32-bit.
+            let bytes_per_row = self
+                .width
+                .checked_mul(usize::from(bpp))
+                .map(|v| v.div_ceil(8))
+                .ok_or(BitmapError::DimensionsTooLarge {
+                    width: self.width as u32,
+                    height: self.height as u32,
+                })?;
 
             if bytes_per_row > 0 && available_bytes < bytes_per_row {
                 // Not enough data for even a single scanline
@@ -750,6 +761,18 @@ impl<'a> BmpDecoderState<'a> {
             })
     }
 
+    /// `self.width * factor`, returning `DimensionsTooLarge` on usize overflow.
+    /// Header-parsed width is u32; on 32-bit usize platforms even modest
+    /// per-row factors (e.g. `bpp=32`) can overflow without this check.
+    fn width_times(&self, factor: usize) -> Result<usize, BitmapError> {
+        self.width
+            .checked_mul(factor)
+            .ok_or(BitmapError::DimensionsTooLarge {
+                width: self.width as u32,
+                height: self.height as u32,
+            })
+    }
+
     fn decode_into<const PRESERVE_BGRA: bool>(
         &mut self,
         buf: &mut [u8],
@@ -777,7 +800,7 @@ impl<'a> BmpDecoderState<'a> {
                         self.expand_palette_from_remaining_bytes(buf, true)?;
                         self.flip_vertically ^= true;
                     } else if self.depth == 32 || self.depth == 16 {
-                        let pad_size = self.width * self.pix_fmt.num_components();
+                        let pad_size = self.width_times(self.pix_fmt.num_components())?;
 
                         if (self.rgb_bitfields == [0; 4] || self.comp != BmpCompression::Bitfields)
                             && self.depth == 16
@@ -849,7 +872,14 @@ impl<'a> BmpDecoderState<'a> {
                                 self.image_in_bgra = true;
                             } else if self.depth == 16 {
                                 let num_components = self.pix_fmt.num_components();
-                                let in_row_bytes = (self.width * 2).div_ceil(4) * 4;
+                                let in_row_bytes = self
+                                    .width_times(2)?
+                                    .checked_add(3)
+                                    .map(|v| v & !3usize)
+                                    .ok_or(BitmapError::DimensionsTooLarge {
+                                        width: self.width as u32,
+                                        height: self.height as u32,
+                                    })?;
 
                                 for (row_idx, out) in buf.rchunks_exact_mut(pad_size).enumerate() {
                                     if row_idx % 16 == 0 {
@@ -872,8 +902,15 @@ impl<'a> BmpDecoderState<'a> {
                         self.flip_vertically ^= true;
                     } else {
                         // 24-bit path
-                        let out_width = self.width * self.pix_fmt.num_components();
-                        let in_width = ((self.width * usize::from(self.depth) + 31) / 8) & !3;
+                        let out_width = self.width_times(self.pix_fmt.num_components())?;
+                        let in_width = self
+                            .width_times(usize::from(self.depth))?
+                            .checked_add(31)
+                            .map(|v| (v / 8) & !3usize)
+                            .ok_or(BitmapError::DimensionsTooLarge {
+                                width: self.width as u32,
+                                height: self.height as u32,
+                            })?;
 
                         for (row_idx, out) in buf.rchunks_exact_mut(out_width).enumerate() {
                             if row_idx % 16 == 0 {
@@ -897,8 +934,17 @@ impl<'a> BmpDecoderState<'a> {
                             "bit depths < 8 must have a palette".into(),
                         ));
                     }
-                    let width_bytes = ((self.width + 7) >> 3) << 3;
-                    let in_width_bytes = (self.width * usize::from(self.depth)).div_ceil(8);
+                    let width_bytes = self
+                        .width
+                        .checked_add(7)
+                        .map(|v| (v >> 3) << 3)
+                        .ok_or(BitmapError::DimensionsTooLarge {
+                            width: self.width as u32,
+                            height: self.height as u32,
+                        })?;
+                    let in_width_bytes = self
+                        .width_times(usize::from(self.depth))?
+                        .div_ceil(8);
                     let mut in_width_buf = vec![0u8; in_width_bytes];
                     let scanline_size = width_bytes * 3;
                     let mut scanline_bytes = vec![0u8; scanline_size];
@@ -929,7 +975,7 @@ impl<'a> BmpDecoderState<'a> {
 
         // Flip if needed
         if self.flip_vertically {
-            let length = self.width * self.pix_fmt.num_components();
+            let length = self.width_times(self.pix_fmt.num_components())?;
             let mut scanline = vec![0u8; length];
             let mid = buf.len() / 2;
             let (in_img_top, in_img_bottom) = buf.split_at_mut(mid);
