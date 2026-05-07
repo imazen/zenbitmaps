@@ -251,6 +251,18 @@ fn parse_pfm_header(data: &[u8]) -> Result<PnmHeader, BitmapError> {
         .parse()
         .map_err(|_| BitmapError::InvalidHeader(alloc::format!("bad scale: {scale_str}")))?;
 
+    // The PFM specification (Pat Hanrahan, "PFM image format") defines the
+    // scale as a non-zero finite number whose sign communicates byte order
+    // and whose magnitude is a linear scale factor. Reject NaN, +Inf, -Inf,
+    // and zero — any of which would corrupt downstream pixel math (NaN
+    // poisons subsequent products; ±Inf saturates; zero is meaningless as
+    // a scale factor and is excluded by spec).
+    if !scale.is_finite() || scale == 0.0 {
+        return Err(BitmapError::InvalidHeader(alloc::format!(
+            "PFM scale must be a non-zero finite value, got: {scale_str}"
+        )));
+    }
+
     if width == 0 || height == 0 {
         return Err(BitmapError::InvalidHeader(
             "width and height must be non-zero".into(),
@@ -617,4 +629,59 @@ fn parse_u32(data: &[u8], pos: usize) -> Result<(u32, usize), BitmapError> {
         .parse()
         .map_err(|_| BitmapError::InvalidHeader(alloc::format!("number too large: {s}")))?;
     Ok((val, end))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pfm_header_with_scale(scale_text: &str) -> Vec<u8> {
+        // Minimal PF (color) header: "PF\n2 2\n<scale>\n"
+        let mut v = Vec::new();
+        v.extend_from_slice(b"PF\n2 2\n");
+        v.extend_from_slice(scale_text.as_bytes());
+        v.push(b'\n');
+        v
+    }
+
+    fn assert_pfm_invalid(scale_text: &str) {
+        let data = pfm_header_with_scale(scale_text);
+        match parse_pfm_header(&data) {
+            Ok(_) => panic!("expected InvalidHeader for scale {scale_text:?}"),
+            Err(BitmapError::InvalidHeader(_)) => {}
+            Err(e) => panic!("expected InvalidHeader for scale {scale_text:?}, got {e}"),
+        }
+    }
+
+    #[test]
+    fn pfm_rejects_nan_scale() {
+        assert_pfm_invalid("NaN");
+        assert_pfm_invalid("nan");
+    }
+
+    #[test]
+    fn pfm_rejects_inf_scale() {
+        for s in ["inf", "Infinity", "-inf", "-Infinity"] {
+            assert_pfm_invalid(s);
+        }
+    }
+
+    #[test]
+    fn pfm_rejects_zero_scale() {
+        for s in ["0", "0.0", "-0", "-0.0"] {
+            assert_pfm_invalid(s);
+        }
+    }
+
+    #[test]
+    fn pfm_accepts_normal_scale() {
+        let data = pfm_header_with_scale("-1.0");
+        let h = match parse_pfm_header(&data) {
+            Ok(h) => h,
+            Err(e) => panic!("expected valid PFM header, got {e}"),
+        };
+        assert_eq!(h.width, 2);
+        assert_eq!(h.height, 2);
+        assert_eq!(h.pfm_scale, -1.0);
+    }
 }
