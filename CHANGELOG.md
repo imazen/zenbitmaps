@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- `tests/fuzz_regression.rs` regression-harness template ported from
+  zenwebp (DEDUP-J). Walks `fuzz/regression/` (incl. per-target subdirs)
+  and runs every seed through `decode`, `decode_bmp` (gated on `bmp`),
+  `decode_farbfeld`, and the `encode_pam`/`encode_bmp[_rgba]` roundtrip
+  on the stable toolchain — no nightly required.
+
 ## [0.1.5] - 2026-04-17
 
 ### Changed
