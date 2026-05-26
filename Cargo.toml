@@ -37,6 +37,7 @@ garb = { version = "0.2.5", default-features = false, optional = true }
 
 [dev-dependencies]
 archmage = { version = "0.9.14", features = ["std"] }
+zen-fuzz-regress = { path = "../zen-fuzz-regress", version = "0.1.0" }
 zenbench = "0.1.4"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
