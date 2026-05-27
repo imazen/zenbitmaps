@@ -504,8 +504,8 @@ impl zencodec::decode::Decode for QoiDecoder<'_> {
 
 /// Streaming scanline-batch QOI decoder.
 ///
-/// Yields one row at a time via `next_batch()`, using `rapid_qoi::Qoi::decode_range`
-/// to carry decode state across rows.
+/// Yields one row at a time via `next_batch()`, carrying decode state across
+/// rows via the native [`crate::qoi::run_decode::QoiDecodeState`].
 pub struct QoiStreamingDecoder<'a> {
     data: Cow<'a, [u8]>,
     info: ImageInfo,
@@ -516,13 +516,10 @@ pub struct QoiStreamingDecoder<'a> {
     row_buf: Vec<u8>,
     current_row: u32,
     byte_offset: usize,
-    // State for 3-channel decode
-    index_rgb: [[u8; 3]; 64],
-    px_rgb: [u8; 3],
-    // State for 4-channel decode
-    index_rgba: [[u8; 4]; 64],
-    px_rgba: [u8; 4],
-    run: usize,
+    // Native spec-compliant decode state (runs are clamped and carried across
+    // rows — see `crate::qoi::run_decode`).
+    state_rgb: crate::qoi::run_decode::QoiDecodeState<3>,
+    state_rgba: crate::qoi::run_decode::QoiDecodeState<4>,
     stop: Option<zencodec::StopToken>,
 }
 
@@ -538,7 +535,6 @@ impl<'a> QoiStreamingDecoder<'a> {
         row_bytes: usize,
         stop: Option<zencodec::StopToken>,
     ) -> Result<Self, BitmapError> {
-        use rapid_qoi::Pixel;
         Ok(Self {
             data,
             info,
@@ -549,11 +545,8 @@ impl<'a> QoiStreamingDecoder<'a> {
             row_buf: alloc::vec![0u8; row_bytes],
             current_row: 0,
             byte_offset: 14, // skip QOI header
-            index_rgb: [<[u8; 3]>::new(); 64],
-            px_rgb: <[u8; 3]>::new(),
-            index_rgba: [<[u8; 4]>::new_opaque(); 64],
-            px_rgba: <[u8; 4]>::new_opaque(),
-            run: 0,
+            state_rgb: crate::qoi::run_decode::QoiDecodeState::<3>::new(),
+            state_rgba: crate::qoi::run_decode::QoiDecodeState::<4>::new(),
             stop,
         })
     }
@@ -577,24 +570,16 @@ impl zencodec::decode::StreamingDecode for QoiStreamingDecoder<'_> {
             .ok_or(BitmapError::UnexpectedEof)?;
 
         if self.has_alpha {
-            let consumed = rapid_qoi::Qoi::decode_range::<4>(
-                &mut self.index_rgba,
-                &mut self.px_rgba,
-                &mut self.run,
-                encoded,
-                &mut self.row_buf,
-            )
-            .map_err(|e| BitmapError::InvalidData(e.to_string()))?;
+            let consumed = self
+                .state_rgba
+                .decode_into(encoded, &mut self.row_buf)
+                .map_err(|()| BitmapError::UnexpectedEof)?;
             self.byte_offset += consumed;
         } else {
-            let consumed = rapid_qoi::Qoi::decode_range::<3>(
-                &mut self.index_rgb,
-                &mut self.px_rgb,
-                &mut self.run,
-                encoded,
-                &mut self.row_buf,
-            )
-            .map_err(|e| BitmapError::InvalidData(e.to_string()))?;
+            let consumed = self
+                .state_rgb
+                .decode_into(encoded, &mut self.row_buf)
+                .map_err(|()| BitmapError::UnexpectedEof)?;
             self.byte_offset += consumed;
         }
 

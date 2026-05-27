@@ -1,7 +1,7 @@
 //! Replay seed inputs from `fuzz/regression/` through every fuzz target
 //! entry point. Shared scaffolding lives in `zen-fuzz-regress`.
 
-use zen_fuzz_regress::RegressionSuite;
+use zenutils_fuzz::RegressionSuite;
 
 #[test]
 fn fuzz_regression() {
@@ -27,7 +27,7 @@ fn fuzz_regression() {
             }
             #[cfg(feature = "bmp")]
             {
-                use zenbitmaps::{decode_bmp, encode_bmp, encode_bmp_rgba, PixelLayout};
+                use zenbitmaps::{PixelLayout, decode_bmp, encode_bmp, encode_bmp_rgba};
                 if let Ok(decoded) = decode_bmp(input, enough::Unstoppable) {
                     if decoded.layout == PixelLayout::Rgba8 {
                         let _ = encode_bmp_rgba(

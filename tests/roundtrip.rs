@@ -472,6 +472,94 @@ fn qoi_limits_reject() {
     assert!(matches!(result, Err(BitmapError::LimitExceeded(_))));
 }
 
+// ── QOI_OP_RUN run-clamp regression ──────────────────────────────────
+//
+// Regression for a decode panic ("mid > len") on spec-valid QOI files: a
+// `QOI_OP_RUN` chunk whose run-length extends past the end of the output
+// slice handed to the per-row decoder. zenbitmaps decodes one row at a time,
+// so any run that legitimately crosses a row boundary used to panic. See
+// `src/qoi/run_decode.rs`. The byte fixtures below are tiny synthetic QOI
+// images (each <32 bytes), validated against the independent `qoi` crate;
+// they are NOT corpus data.
+
+// 4x4 solid red RGB: QOI_OP_RGB then one QOI_OP_RUN of 15 reaching the buffer
+// edge (run starts at pixel 1 and spans rows 0..3). 27 bytes.
+#[cfg(feature = "qoi")]
+const QOI_RUN_RGB_4X4: &[u8] = &[
+    0x71, 0x6f, 0x69, 0x66, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x04, 0x03, 0x00, 0xfe, 0xc8,
+    0x1e, 0x1e, 0xce, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+];
+
+// 4x4 solid RGBA (semi-transparent): QOI_OP_RGBA then QOI_OP_RUN of 15. 28 bytes.
+#[cfg(feature = "qoi")]
+const QOI_RUN_RGBA_4X4: &[u8] = &[
+    0x71, 0x6f, 0x69, 0x66, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x04, 0x04, 0x00, 0xff, 0x0a,
+    0x78, 0xf0, 0x80, 0xce, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+];
+
+// 5x3 solid RGB encoded by the `qoi` crate (RGB chunk + run). 27 bytes.
+#[cfg(feature = "qoi")]
+const QOI_RUN_RGB_5X3: &[u8] = &[
+    0x71, 0x6f, 0x69, 0x66, 0x00, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00, 0x03, 0x03, 0x00, 0xfe, 0x0c,
+    0xc8, 0x40, 0xcd, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+];
+
+#[cfg(feature = "qoi")]
+#[test]
+fn qoi_decode_run_to_edge_rgb_no_panic() {
+    // Previously panicked with "mid > len" in rapid-qoi's decode_range.
+    let decoded = decode_qoi(QOI_RUN_RGB_4X4, Unstoppable).expect("must decode without panic");
+    assert_eq!(decoded.width, 4);
+    assert_eq!(decoded.height, 4);
+    assert_eq!(decoded.layout, PixelLayout::Rgb8);
+    let expected: Vec<u8> = std::iter::repeat_n([200u8, 30, 30], 16).flatten().collect();
+    assert_eq!(decoded.pixels(), &expected[..]);
+
+    // Auto-detect path must also be correct.
+    let auto = decode(QOI_RUN_RGB_4X4, Unstoppable).unwrap();
+    assert_eq!(auto.pixels(), &expected[..]);
+}
+
+#[cfg(feature = "qoi")]
+#[test]
+fn qoi_decode_run_to_edge_rgba_no_panic() {
+    let decoded = decode_qoi(QOI_RUN_RGBA_4X4, Unstoppable).expect("must decode without panic");
+    assert_eq!(decoded.width, 4);
+    assert_eq!(decoded.height, 4);
+    assert_eq!(decoded.layout, PixelLayout::Rgba8);
+    let expected: Vec<u8> = std::iter::repeat_n([10u8, 120, 240, 128], 16)
+        .flatten()
+        .collect();
+    assert_eq!(decoded.pixels(), &expected[..]);
+}
+
+#[cfg(feature = "qoi")]
+#[test]
+fn qoi_decode_run_spans_rows_rgb() {
+    // 5x3 image where a run crosses multiple row boundaries.
+    let decoded = decode_qoi(QOI_RUN_RGB_5X3, Unstoppable).expect("must decode without panic");
+    assert_eq!(decoded.width, 5);
+    assert_eq!(decoded.height, 3);
+    let expected: Vec<u8> = std::iter::repeat_n([12u8, 200, 64], 15).flatten().collect();
+    assert_eq!(decoded.pixels(), &expected[..]);
+}
+
+#[cfg(feature = "qoi")]
+#[test]
+fn qoi_roundtrip_solid_run_heavy() {
+    // Encode -> decode of a run-heavy (solid color) image: exercises the
+    // encoder's run emission and the decoder's run clamping together.
+    let (w, h) = (7u32, 5u32);
+    let pixels: Vec<u8> = std::iter::repeat_n([42u8, 99, 200], (w * h) as usize)
+        .flatten()
+        .collect();
+    let encoded = encode_qoi(&pixels, w, h, PixelLayout::Rgb8, Unstoppable).unwrap();
+    let decoded = decode_qoi(&encoded, Unstoppable).unwrap();
+    assert_eq!(decoded.width, w);
+    assert_eq!(decoded.height, h);
+    assert_eq!(decoded.pixels(), &pixels[..]);
+}
+
 #[cfg(feature = "qoi")]
 #[test]
 fn detect_format_qoi() {

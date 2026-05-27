@@ -1,6 +1,9 @@
 //! QOI decoder.
 //!
-//! Uses [rapid-qoi](https://github.com/zakarumych/rapid-qoi) for decoding.
+//! Headers are parsed via [rapid-qoi](https://github.com/zakarumych/rapid-qoi);
+//! pixel chunks are decoded by the native, spec-compliant
+//! [`super::run_decode`] kernel (runs are clamped to the output and carried
+//! across rows).
 
 use alloc::vec;
 use alloc::vec::Vec;
@@ -58,13 +61,13 @@ pub(crate) fn decode_pixels(
 
     let mut output = vec![0u8; total_bytes];
 
-    // Use decode_range for row-level streaming with cancellation checks
+    // Row-level streaming decode with cancellation checks, using our native
+    // spec-compliant chunk decoder (runs are clamped to the remaining output
+    // and carried across rows — see `super::run_decode`).
     let encoded = data.get(14..).ok_or(BitmapError::UnexpectedEof)?;
 
     if has_alpha {
-        let mut index = [<[u8; 4]>::new_opaque(); 64];
-        let mut px = <[u8; 4]>::new_opaque();
-        let mut run = 0usize;
+        let mut state = QoiDecodeState::<4>::new();
         let mut offset = 0;
 
         for row_idx in 0..height as usize {
@@ -73,20 +76,13 @@ pub(crate) fn decode_pixels(
             }
             let row_start = row_idx * row_bytes;
             let row_end = row_start + row_bytes;
-            let consumed = rapid_qoi::Qoi::decode_range::<4>(
-                &mut index,
-                &mut px,
-                &mut run,
-                &encoded[offset..],
-                &mut output[row_start..row_end],
-            )
-            .map_err(|e| BitmapError::InvalidData(alloc::format!("{e:?}")))?;
+            let consumed = state
+                .decode_into(&encoded[offset..], &mut output[row_start..row_end])
+                .map_err(|()| BitmapError::UnexpectedEof)?;
             offset += consumed;
         }
     } else {
-        let mut index = [<[u8; 3]>::new(); 64];
-        let mut px = <[u8; 3]>::new();
-        let mut run = 0usize;
+        let mut state = QoiDecodeState::<3>::new();
         let mut offset = 0;
 
         for row_idx in 0..height as usize {
@@ -95,14 +91,9 @@ pub(crate) fn decode_pixels(
             }
             let row_start = row_idx * row_bytes;
             let row_end = row_start + row_bytes;
-            let consumed = rapid_qoi::Qoi::decode_range::<3>(
-                &mut index,
-                &mut px,
-                &mut run,
-                &encoded[offset..],
-                &mut output[row_start..row_end],
-            )
-            .map_err(|e| BitmapError::InvalidData(alloc::format!("{e:?}")))?;
+            let consumed = state
+                .decode_into(&encoded[offset..], &mut output[row_start..row_end])
+                .map_err(|()| BitmapError::UnexpectedEof)?;
             offset += consumed;
         }
     }
@@ -110,4 +101,4 @@ pub(crate) fn decode_pixels(
     Ok(output)
 }
 
-use rapid_qoi::Pixel;
+use super::run_decode::QoiDecodeState;
