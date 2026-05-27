@@ -27,7 +27,7 @@ fn fuzz_regression() {
             }
             #[cfg(feature = "bmp")]
             {
-                use zenbitmaps::{decode_bmp, encode_bmp, encode_bmp_rgba, PixelLayout};
+                use zenbitmaps::{PixelLayout, decode_bmp, encode_bmp, encode_bmp_rgba};
                 if let Ok(decoded) = decode_bmp(input, enough::Unstoppable) {
                     if decoded.layout == PixelLayout::Rgba8 {
                         let _ = encode_bmp_rgba(

@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- QOI decode no longer panics (`mid > len`) on spec-valid files where a
+  `QOI_OP_RUN` chunk's run-length reaches the output-buffer edge / crosses a
+  row boundary. The per-row decode previously delegated to
+  `rapid_qoi::Qoi::decode_range`, whose `QOI_OP_RUN` arm split the output at
+  the unclamped run length; replaced with a native spec-compliant chunk
+  decoder (`src/qoi/run_decode.rs`) that clamps runs and carries the leftover
+  across rows. Decoded pixels verified byte-identical to the reference `qoi`
+  crate across the corpus. Regression tests added in `tests/roundtrip.rs`
+  (a15fe87, #6, fixes #5).
+
 ### Changed
 
 - `tests/fuzz_regression.rs` now uses the shared `zen-fuzz-regress`
