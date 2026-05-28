@@ -54,7 +54,15 @@ Same as other zen* codecs — see codec-design/README.md. Key points:
 
 ## Known Bugs
 
-(none yet)
+- **BMP roundtrip pixel mismatch (fuzz, pre-existing).** `fuzz_roundtrip`
+  (`fuzz/fuzz_targets/fuzz_roundtrip.rs:56`) asserts `decode_bmp` →
+  `encode_bmp`/`encode_bmp_rgba` → `decode_bmp` is pixel-identical, and a
+  fuzz input fails that assertion ("BMP roundtrip pixel mismatch"). Surfaced
+  by CI run 26546560011 (2026-05-28). NOT related to QOI — `decode_bmp`/
+  `encode_bmp` only. Crash artifact uploaded by that run as
+  `crash-f38ce8cfe9f7f562ad08c4fcb629b5a1c9cd52e4`. Reproduce:
+  `cargo fuzz run fuzz_roundtrip <artifact>`. Likely a BMP encode/decode
+  path divergence (palette/bitfield/origin handling) — needs investigation.
 
 ## User Feedback Log
 
