@@ -901,8 +901,13 @@ impl<'a> BmpDecoderState<'a> {
                         }
                         self.flip_vertically ^= true;
                     } else {
-                        // 24-bit path
-                        let out_width = self.width_times(self.pix_fmt.num_components())?;
+                        // 8-bit grayscale (num_components == 1) and 24-bit RGB
+                        // (num_components == 3) share this scanline reader. The
+                        // BGR->RGB channel swap below applies only to 24-bit RGB:
+                        // Gray8 is a single channel and must not be swizzled, or
+                        // its scanlines get scrambled in 3-byte groups.
+                        let num_components = self.pix_fmt.num_components();
+                        let out_width = self.width_times(num_components)?;
                         let in_width = self
                             .width_times(usize::from(self.depth))?
                             .checked_add(31)
@@ -912,17 +917,22 @@ impl<'a> BmpDecoderState<'a> {
                                 height: self.height as u32,
                             })?;
 
+                        let swap_channels = !PRESERVE_BGRA && num_components == 3;
                         for (row_idx, out) in buf.rchunks_exact_mut(out_width).enumerate() {
                             if row_idx % 16 == 0 {
                                 stop.check()?;
                             }
                             self.bytes.read_exact_bytes(out)?;
                             let _ = self.bytes.skip(in_width.saturating_sub(out_width));
-                            if !PRESERVE_BGRA {
+                            if swap_channels {
                                 for pix_pair in out.chunks_exact_mut(3) {
                                     pix_pair.swap(0, 2);
                                 }
                             }
+                        }
+                        // Only RGB data is now in BGR order awaiting the final
+                        // swizzle; Gray8 has no channel order to track.
+                        if num_components == 3 {
                             self.image_in_bgra = true;
                         }
                         self.flip_vertically ^= true;

@@ -23,6 +23,17 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- BMP 8-bit grayscale (Gray8) decode is now byte-for-byte lossless on
+  decode→encode→decode roundtrips. The 8bpp scanline reader shared the 24-bit
+  RGB code path and wrongly applied the BGR↔RGB channel swap
+  (`chunks_exact_mut(3).swap(0, 2)`) to single-channel Gray8 rows, scrambling
+  pixels in 3-byte groups and dropping the trailing remainder on odd widths.
+  The swap is now gated on `num_components == 3`, so Gray8 passes through
+  untouched while 24-bit RGB behaviour is unchanged. This fixes the long-open
+  `Fuzz (fuzz_roundtrip)` failure on 8bpp BMPs (the no-palette Gray8 crash and
+  the paletted finding-#1 class). Encoders were already correct; the bug was
+  purely in decode. Regression tests in `tests/roundtrip.rs` cover odd/even
+  width Gray8 and odd-width paletted 8bpp (319cfe18).
 - QOI decode no longer panics (`mid > len`) on spec-valid files where a
   `QOI_OP_RUN` chunk's run-length reaches the output-buffer edge / crosses a
   row boundary. The vendored `decode_range` clamps the run to the remaining

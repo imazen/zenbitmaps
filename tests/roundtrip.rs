@@ -270,6 +270,162 @@ fn bmp_roundtrip_rgba8() {
     assert_eq!(decoded.pixels(), &pixels[..]);
 }
 
+// ── 8bpp Gray8 roundtrip regression ─────────────────────────────────
+//
+// Regression for a decode bug where the 8-bit-grayscale scanline reader
+// shared the 24-bit RGB code path and incorrectly applied the BGR<->RGB
+// channel swap (`chunks_exact_mut(3).swap(0, 2)`) to single-channel Gray8
+// rows, scrambling pixels in 3-byte groups (and dropping the trailing
+// remainder for odd widths). The encoders were always correct; decode did
+// not invert a well-formed bottom-up 8bpp encode. See the BMP entry in
+// CHANGELOG.md / Known Bugs. The roundtrip must be byte-for-byte lossless.
+
+#[cfg(feature = "bmp")]
+fn bmp_gray8_roundtrip(w: u32, h: u32) {
+    // Non-symmetric content so any spurious flip/scramble is detectable.
+    let pixels: Vec<u8> = (0..w * h).map(|i| (i % 251) as u8).collect();
+    let encoded = encode_bmp(&pixels, w, h, PixelLayout::Gray8, Unstoppable).unwrap();
+
+    let decoded = decode_bmp(&encoded, Unstoppable).unwrap();
+    assert_eq!(decoded.layout, PixelLayout::Gray8);
+    assert_eq!(decoded.width, w);
+    assert_eq!(decoded.height, h);
+    // Known-value check: decode must reproduce the exact top-down pixels we
+    // encoded — proves decode is fixed, not merely self-consistent.
+    assert_eq!(
+        decoded.pixels(),
+        &pixels[..],
+        "Gray8 {w}x{h} decode did not reproduce encoded pixels"
+    );
+
+    // Lossless roundtrip: decode(encode(decode(x))) == decode(x).
+    let p1: Vec<u8> = decoded.pixels().to_vec();
+    let re = encode_bmp(&p1, w, h, PixelLayout::Gray8, Unstoppable).unwrap();
+    let d2 = decode_bmp(&re, Unstoppable).unwrap();
+    assert_eq!(d2.pixels(), &p1[..], "Gray8 {w}x{h} roundtrip not lossless");
+}
+
+#[cfg(feature = "bmp")]
+#[test]
+fn bmp_roundtrip_gray8_odd_width_tall() {
+    // Mirrors the fuzz crash input class: odd width, bottom-up, no palette.
+    bmp_gray8_roundtrip(127, 64);
+}
+
+#[cfg(feature = "bmp")]
+#[test]
+fn bmp_roundtrip_gray8_even_width() {
+    bmp_gray8_roundtrip(128, 64);
+}
+
+#[cfg(feature = "bmp")]
+#[test]
+fn bmp_roundtrip_gray8_tiny_odd() {
+    // Tiny odd width exercises the 3-byte-group remainder that the old swap
+    // silently dropped.
+    bmp_gray8_roundtrip(5, 3);
+}
+
+#[cfg(feature = "bmp")]
+#[test]
+fn bmp_roundtrip_gray8_short_wide() {
+    bmp_gray8_roundtrip(31, 2);
+}
+
+// ── 8bpp paletted roundtrip regression ──────────────────────────────
+//
+// Finding #1 class: a valid paletted 8bpp BMP with an odd width. zenbitmaps
+// decodes paletted BMPs to Rgb8; the re-encode is 24-bit, so this exercises
+// the paletted decode and the shared 8/24-bit scanline reader together.
+
+#[cfg(feature = "bmp")]
+fn make_paletted_bmp(indices: &[u8], w: u32, h: u32, palette: &[[u8; 3]]) -> Vec<u8> {
+    let wu = w as usize;
+    let hu = h as usize;
+    let ncolors = palette.len();
+    let row_stride = (wu + 3) & !3;
+    let pixel_data_size = row_stride * hu;
+    let palette_bytes = ncolors * 4;
+    let data_offset = 14 + 40 + palette_bytes;
+    let file_size = data_offset + pixel_data_size;
+
+    let mut out = Vec::with_capacity(file_size);
+    out.extend_from_slice(b"BM");
+    out.extend_from_slice(&(file_size as u32).to_le_bytes());
+    out.extend_from_slice(&[0u8; 4]);
+    out.extend_from_slice(&(data_offset as u32).to_le_bytes());
+    out.extend_from_slice(&40u32.to_le_bytes());
+    out.extend_from_slice(&(w as i32).to_le_bytes());
+    out.extend_from_slice(&(h as i32).to_le_bytes()); // positive = bottom-up
+    out.extend_from_slice(&1u16.to_le_bytes());
+    out.extend_from_slice(&8u16.to_le_bytes());
+    out.extend_from_slice(&0u32.to_le_bytes()); // BI_RGB
+    out.extend_from_slice(&(pixel_data_size as u32).to_le_bytes());
+    out.extend_from_slice(&2835u32.to_le_bytes());
+    out.extend_from_slice(&2835u32.to_le_bytes());
+    out.extend_from_slice(&(ncolors as u32).to_le_bytes());
+    out.extend_from_slice(&0u32.to_le_bytes());
+    // Palette: B, G, R, reserved per entry.
+    for c in palette {
+        out.push(c[2]);
+        out.push(c[1]);
+        out.push(c[0]);
+        out.push(0);
+    }
+    // Pixel data: bottom-up, rows padded to a multiple of 4 bytes.
+    let pad = row_stride - wu;
+    for row in (0..hu).rev() {
+        let start = row * wu;
+        out.extend_from_slice(&indices[start..start + wu]);
+        out.extend(core::iter::repeat_n(0u8, pad));
+    }
+    out
+}
+
+#[cfg(feature = "bmp")]
+#[test]
+fn bmp_roundtrip_paletted8_odd_width() {
+    let (w, h) = (127u32, 64u32);
+    // 252-entry palette (matches the finding #1 input class).
+    let palette: Vec<[u8; 3]> = (0..252u16)
+        .map(|i| {
+            [
+                (i % 256) as u8,
+                ((i * 3) % 256) as u8,
+                ((i * 7) % 256) as u8,
+            ]
+        })
+        .collect();
+    let indices: Vec<u8> = (0..w * h).map(|i| (i % 252) as u8).collect();
+    let bmp = make_paletted_bmp(&indices, w, h, &palette);
+
+    // Expected top-down RGB pixels.
+    let mut expected = Vec::with_capacity(indices.len() * 3);
+    for &i in &indices {
+        expected.extend_from_slice(&palette[i as usize]);
+    }
+
+    let decoded = decode_bmp(&bmp, Unstoppable).unwrap();
+    assert_eq!(decoded.layout, PixelLayout::Rgb8);
+    assert_eq!(decoded.width, w);
+    assert_eq!(decoded.height, h);
+    assert_eq!(
+        decoded.pixels(),
+        &expected[..],
+        "paletted8 {w}x{h} decode did not reproduce expected RGB"
+    );
+
+    // Lossless roundtrip via Rgb8 -> 24bpp -> Rgb8.
+    let p1: Vec<u8> = decoded.pixels().to_vec();
+    let re = encode_bmp(&p1, w, h, PixelLayout::Rgb8, Unstoppable).unwrap();
+    let d2 = decode_bmp(&re, Unstoppable).unwrap();
+    assert_eq!(
+        d2.pixels(),
+        &p1[..],
+        "paletted8 {w}x{h} roundtrip not lossless"
+    );
+}
+
 #[test]
 fn crafted_p3_oversized_dimensions_returns_error() {
     // Fuzz-found crash artifact: P3 header with width=424011, causing OOM

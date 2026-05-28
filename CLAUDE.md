@@ -54,15 +54,23 @@ Same as other zen* codecs — see codec-design/README.md. Key points:
 
 ## Known Bugs
 
-- **BMP roundtrip pixel mismatch (fuzz, pre-existing).** `fuzz_roundtrip`
-  (`fuzz/fuzz_targets/fuzz_roundtrip.rs:56`) asserts `decode_bmp` →
-  `encode_bmp`/`encode_bmp_rgba` → `decode_bmp` is pixel-identical, and a
-  fuzz input fails that assertion ("BMP roundtrip pixel mismatch"). Surfaced
-  by CI run 26546560011 (2026-05-28). NOT related to QOI — `decode_bmp`/
-  `encode_bmp` only. Crash artifact uploaded by that run as
-  `crash-f38ce8cfe9f7f562ad08c4fcb629b5a1c9cd52e4`. Reproduce:
-  `cargo fuzz run fuzz_roundtrip <artifact>`. Likely a BMP encode/decode
-  path divergence (palette/bitfield/origin handling) — needs investigation.
+(none currently open)
+
+### Fixed
+
+- **BMP 8bpp decode roundtrip pixel corruption (fuzz).** `fuzz_roundtrip`
+  (`fuzz/fuzz_targets/fuzz_roundtrip.rs:56`) asserted `decode_bmp` →
+  `encode_bmp`/`encode_bmp_rgba` → `decode_bmp` is pixel-identical and failed
+  on 8bpp BMPs. **Root cause:** the 8-bit-grayscale (Gray8) scanline reader in
+  `src/bmp/decode.rs` shared the 24-bit RGB code path and applied the BGR↔RGB
+  channel swap (`chunks_exact_mut(3).swap(0, 2)`) to single-channel Gray8 rows,
+  scrambling pixels in 3-byte groups and dropping the trailing remainder on odd
+  widths. Encoders (`encode_8bit_gray`, `encode_24bit`) were always correct;
+  the defect was purely in decode. **Fix:** gate the channel swap on
+  `num_components == 3` so Gray8 passes through untouched. Covered the
+  no-palette Gray8 crash (`crash-760b7c45…`) and the paletted finding-#1 class
+  (`crash-f38ce8cf…`, CI run 26546560011). Fixed 319cfe18, regression tests in
+  `tests/roundtrip.rs` (`bmp_roundtrip_gray8_*`, `bmp_roundtrip_paletted8_odd_width`).
 
 ## User Feedback Log
 
