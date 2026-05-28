@@ -477,10 +477,11 @@ fn qoi_limits_reject() {
 // Regression for a decode panic ("mid > len") on spec-valid QOI files: a
 // `QOI_OP_RUN` chunk whose run-length extends past the end of the output
 // slice handed to the per-row decoder. zenbitmaps decodes one row at a time,
-// so any run that legitimately crosses a row boundary used to panic. See
-// `src/qoi/run_decode.rs`. The byte fixtures below are tiny synthetic QOI
-// images (each <32 bytes), validated against the independent `qoi` crate;
-// they are NOT corpus data.
+// so any run that legitimately crosses a row boundary used to panic. The fix
+// is the `QOI_OP_RUN` clamp in the vendored `src/qoi/rapid_qoi/decode.rs`
+// kernel. The byte fixtures below are tiny synthetic QOI images (each <32
+// bytes), validated against the independent `qoi` crate; they are NOT corpus
+// data.
 
 // 4x4 solid red RGB: QOI_OP_RGB then one QOI_OP_RUN of 15 reaching the buffer
 // edge (run starts at pixel 1 and spans rows 0..3). 27 bytes.

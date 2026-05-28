@@ -4,17 +4,30 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- Vendored the QOI codec core (descriptor, pixel traits, encode/decode kernels)
+  from `rapid-qoi` v0.6.x into `src/qoi/rapid_qoi/`, and dropped the external
+  `rapid-qoi` Cargo dependency (the `qoi` feature is now self-contained). The
+  vendored kernel carries the `QOI_OP_RUN` clamp fix at the source, so both the
+  whole-image and the streaming/row-by-row decode paths share one unified,
+  clamped implementation; the previous native workaround
+  (`src/qoi/run_decode.rs`) was retired and replaced by a thin
+  `QoiDecodeState` wrapper over the vendored `decode_range`. Upstream's
+  `bytemuck` slice casts were replaced with safe `<[u8]>::as_chunks` so the
+  crate stays `#![forbid(unsafe_code)]`-clean with no new direct dependency.
+  Attribution preserved in each vendored file (© zakarumych, MIT OR
+  Apache-2.0). Decoded pixels verified byte-identical to the reference `qoi`
+  crate (0.4.1) across the corpus + synthetic run-heavy/run-at-edge images,
+  both whole-image and row-by-row (e580b5e).
+
 ### Fixed
 
 - QOI decode no longer panics (`mid > len`) on spec-valid files where a
   `QOI_OP_RUN` chunk's run-length reaches the output-buffer edge / crosses a
-  row boundary. The per-row decode previously delegated to
-  `rapid_qoi::Qoi::decode_range`, whose `QOI_OP_RUN` arm split the output at
-  the unclamped run length; replaced with a native spec-compliant chunk
-  decoder (`src/qoi/run_decode.rs`) that clamps runs and carries the leftover
-  across rows. Decoded pixels verified byte-identical to the reference `qoi`
-  crate across the corpus. Regression tests added in `tests/roundtrip.rs`
-  (a15fe87, #6, fixes #5).
+  row boundary. The vendored `decode_range` clamps the run to the remaining
+  output and carries the leftover across rows. Regression tests in
+  `tests/roundtrip.rs` (a15fe87, #6, fixes #5).
 
 ### Changed
 

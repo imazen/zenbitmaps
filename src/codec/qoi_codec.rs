@@ -257,11 +257,11 @@ impl zencodec::encode::Encoder for QoiEncoder {
             .ok_or_else(|| BitmapError::InvalidData("finish() without push_rows()".into()))?;
 
         let colors = if acc.channels == 4 {
-            rapid_qoi::Colors::SrgbLinA
+            crate::qoi::rapid_qoi::Colors::SrgbLinA
         } else {
-            rapid_qoi::Colors::Srgb
+            crate::qoi::rapid_qoi::Colors::Srgb
         };
-        let qoi = rapid_qoi::Qoi {
+        let qoi = crate::qoi::rapid_qoi::Qoi {
             width: acc.width,
             height: acc.total_rows,
             colors,
@@ -505,7 +505,7 @@ impl zencodec::decode::Decode for QoiDecoder<'_> {
 /// Streaming scanline-batch QOI decoder.
 ///
 /// Yields one row at a time via `next_batch()`, carrying decode state across
-/// rows via the native [`crate::qoi::run_decode::QoiDecodeState`].
+/// rows via the vendored-kernel wrapper [`crate::qoi::decode::QoiDecodeState`].
 pub struct QoiStreamingDecoder<'a> {
     data: Cow<'a, [u8]>,
     info: ImageInfo,
@@ -516,10 +516,10 @@ pub struct QoiStreamingDecoder<'a> {
     row_buf: Vec<u8>,
     current_row: u32,
     byte_offset: usize,
-    // Native spec-compliant decode state (runs are clamped and carried across
-    // rows — see `crate::qoi::run_decode`).
-    state_rgb: crate::qoi::run_decode::QoiDecodeState<3>,
-    state_rgba: crate::qoi::run_decode::QoiDecodeState<4>,
+    // Streaming decode state over the vendored kernel (runs are clamped and
+    // carried across rows — see `crate::qoi::decode::QoiDecodeState`).
+    state_rgb: crate::qoi::decode::QoiDecodeState<3>,
+    state_rgba: crate::qoi::decode::QoiDecodeState<4>,
     stop: Option<zencodec::StopToken>,
 }
 
@@ -545,8 +545,8 @@ impl<'a> QoiStreamingDecoder<'a> {
             row_buf: alloc::vec![0u8; row_bytes],
             current_row: 0,
             byte_offset: 14, // skip QOI header
-            state_rgb: crate::qoi::run_decode::QoiDecodeState::<3>::new(),
-            state_rgba: crate::qoi::run_decode::QoiDecodeState::<4>::new(),
+            state_rgb: crate::qoi::decode::QoiDecodeState::<3>::new(),
+            state_rgba: crate::qoi::decode::QoiDecodeState::<4>::new(),
             stop,
         })
     }

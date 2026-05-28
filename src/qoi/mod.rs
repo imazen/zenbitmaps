@@ -1,13 +1,15 @@
 //! QOI (Quite OK Image) format decoder and encoder (internal).
 //!
 //! QOI is a fast, lossless image format supporting RGB and RGBA at 8-bit depth.
-//! Encoding uses [rapid-qoi](https://github.com/zakarumych/rapid-qoi); decoding
-//! uses a native, spec-compliant chunk decoder (see [`run_decode`]) with
-//! row-level cancellation.
+//! Both encoding and decoding use the vendored QOI core in [`rapid_qoi`]
+//! (vendored from rapid-qoi, with the local `QOI_OP_RUN` clamp fix); decoding
+//! wraps the vendored `decode_range` in a small streaming state
+//! ([`decode::QoiDecodeState`]) for row-level cancellation and runs that cross
+//! row boundaries.
 
 pub(crate) mod decode;
 mod encode;
-pub(crate) mod run_decode;
+pub(crate) mod rapid_qoi;
 
 use crate::decode::DecodeOutput;
 use crate::error::BitmapError;

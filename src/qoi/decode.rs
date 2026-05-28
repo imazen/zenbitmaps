@@ -1,15 +1,15 @@
 //! QOI decoder.
 //!
-//! Headers are parsed via [rapid-qoi](https://github.com/zakarumych/rapid-qoi);
-//! pixel chunks are decoded by the native, spec-compliant
-//! [`super::run_decode`] kernel (runs are clamped to the output and carried
-//! across rows).
+//! Headers are parsed via the vendored QOI core ([`crate::qoi::rapid_qoi`]);
+//! pixel chunks are decoded by the same vendored `decode_range` kernel (runs
+//! are clamped to the output and carried across rows via [`QoiDecodeState`]).
 
 use alloc::vec;
 use alloc::vec::Vec;
 use enough::Stop;
 
 use crate::error::BitmapError;
+use crate::qoi::rapid_qoi;
 
 /// Parsed QOI header info.
 pub(crate) struct QoiHeaderInfo {
@@ -61,9 +61,9 @@ pub(crate) fn decode_pixels(
 
     let mut output = vec![0u8; total_bytes];
 
-    // Row-level streaming decode with cancellation checks, using our native
-    // spec-compliant chunk decoder (runs are clamped to the remaining output
-    // and carried across rows — see `super::run_decode`).
+    // Row-level streaming decode with cancellation checks, using the vendored
+    // QOI kernel via `QoiDecodeState` (runs are clamped to the remaining output
+    // and carried across rows).
     let encoded = data.get(14..).ok_or(BitmapError::UnexpectedEof)?;
 
     if has_alpha {
@@ -101,4 +101,51 @@ pub(crate) fn decode_pixels(
     Ok(output)
 }
 
-use super::run_decode::QoiDecodeState;
+/// Streaming QOI decode state carried across output chunks (rows).
+///
+/// `N` is the number of channels (3 for RGB, 4 for RGBA). This is a thin
+/// wrapper around the vendored [`rapid_qoi::Qoi::decode_range`] kernel: it owns
+/// the running index array, the previous pixel, and any run-length left over
+/// from a `QOI_OP_RUN` that did not fit in the previous output chunk. The
+/// vendored kernel clamps runs to the remaining output and reports the unfilled
+/// remainder, so a run that spans multiple rows decodes correctly.
+pub(crate) struct QoiDecodeState<const N: usize> {
+    /// Running array of previously seen pixels, indexed by the QOI hash.
+    index: [[u8; N]; 64],
+    /// Previous pixel value.
+    px: [u8; N],
+    /// Run-length remaining from a `QOI_OP_RUN` that did not fit in the
+    /// previous output chunk.
+    run: usize,
+}
+
+impl<const N: usize> QoiDecodeState<N>
+where
+    [u8; N]: rapid_qoi::Pixel,
+{
+    /// Create fresh decode state per the QOI spec: the running index array is
+    /// zero-initialized and the previous pixel starts at opaque black
+    /// `{0,0,0,255}` (alpha implicit for RGB).
+    #[inline]
+    pub(crate) fn new() -> Self {
+        Self {
+            index: [<[u8; N] as rapid_qoi::Pixel>::new(); 64],
+            px: <[u8; N] as rapid_qoi::Pixel>::new_opaque(),
+            run: 0,
+        }
+    }
+
+    /// Decode QOI chunks from `bytes` into `out`, filling exactly `out.len()`
+    /// bytes (which must be a whole multiple of `N`).
+    ///
+    /// Returns the number of bytes consumed from `bytes`. Decode state
+    /// (`index`, `px`, `run`) is carried in `self` so the next call resumes
+    /// where this one left off.
+    ///
+    /// Returns `Err(())` on truncated input (a chunk that needs more bytes than
+    /// are available).
+    pub(crate) fn decode_into(&mut self, bytes: &[u8], out: &mut [u8]) -> Result<usize, ()> {
+        rapid_qoi::Qoi::decode_range::<N>(&mut self.index, &mut self.px, &mut self.run, bytes, out)
+            .map_err(|_| ())
+    }
+}

@@ -1,12 +1,13 @@
 //! QOI encoder.
 //!
-//! Uses [rapid-qoi](https://github.com/zakarumych/rapid-qoi) for encoding.
+//! Uses the vendored QOI core ([`crate::qoi::rapid_qoi`]) for encoding.
 
 use alloc::vec::Vec;
 use enough::Stop;
 
 use crate::error::BitmapError;
 use crate::pixel::PixelLayout;
+use crate::qoi::rapid_qoi;
 
 /// Encode pixels as QOI format.
 ///
