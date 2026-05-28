@@ -33,7 +33,7 @@ All notable changes to this project will be documented in this file.
   `Fuzz (fuzz_roundtrip)` failure on 8bpp BMPs (the no-palette Gray8 crash and
   the paletted finding-#1 class). Encoders were already correct; the bug was
   purely in decode. Regression tests in `tests/roundtrip.rs` cover odd/even
-  width Gray8 and odd-width paletted 8bpp (319cfe18).
+  width Gray8 and odd-width paletted 8bpp (bc497d28).
 - QOI decode no longer panics (`mid > len`) on spec-valid files where a
   `QOI_OP_RUN` chunk's run-length reaches the output-buffer edge / crosses a
   row boundary. The vendored `decode_range` clamps the run to the remaining

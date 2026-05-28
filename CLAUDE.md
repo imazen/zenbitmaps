@@ -69,7 +69,7 @@ Same as other zen* codecs — see codec-design/README.md. Key points:
   the defect was purely in decode. **Fix:** gate the channel swap on
   `num_components == 3` so Gray8 passes through untouched. Covered the
   no-palette Gray8 crash (`crash-760b7c45…`) and the paletted finding-#1 class
-  (`crash-f38ce8cf…`, CI run 26546560011). Fixed 319cfe18, regression tests in
+  (`crash-f38ce8cf…`, CI run 26546560011). Fixed bc497d28, regression tests in
   `tests/roundtrip.rs` (`bmp_roundtrip_gray8_*`, `bmp_roundtrip_paletted8_odd_width`).
 
 ## User Feedback Log
