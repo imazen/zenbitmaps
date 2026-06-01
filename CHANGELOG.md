@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Removed `tests/` and `benches/` from the published package `include` list; downstream consumers no longer receive ~444 KB of test fixtures and bench sources (local build/test/bench unaffected).
 - Vendored the QOI codec core (descriptor, pixel traits, encode/decode kernels)
   from `rapid-qoi` v0.6.x into `src/qoi/rapid_qoi/`, and dropped the external
   `rapid-qoi` Cargo dependency (the `qoi` feature is now self-contained). The
