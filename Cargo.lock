@@ -842,7 +842,6 @@ dependencies = [
  "garb",
  "imgref",
  "rgb",
- "serde_json",
  "thiserror",
  "zenbench",
  "zencodec",

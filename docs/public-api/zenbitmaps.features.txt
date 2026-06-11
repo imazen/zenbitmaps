@@ -1,0 +1,215 @@
+# zenbitmaps public API — additions from non-default features
+# features: all,bmp,hdr,imgref,qoi,rgb,simd,std,tga,zencodec
+# (regenerated on every `cargo test` by zenutils-apidoc; ZEN_API_DOC=check verifies, =off skips).
+# Encodings: crate-name prefix stripped; auto traits collapse to a
+# count + exceptions; trait impls collapse to one roster line per
+# type (method signatures live at the trait definition); blanket
+# impls omitted; re-export duplicates annotated `[also: path]`.
+# DO NOT EDIT BY HAND — commit regenerated changes with the code.
+
+## summary
+#
+#   pub types (struct/enum/trait/alias)        44
+#   free functions                             40
+#   inherent methods                           17
+#   struct fields                               6
+#   enum variants                               4
+#   re-exports                                  4
+#   trait roster entries (type × trait)        89
+#   auto-trait-complete types                  14
+#   auto-trait exceptions                      24
+#
+# per-module pub lines:
+#   (root)                          115
+
+## items (115 lines)
+
+pub use Bgr
+pub use Bgra
+pub use Rgb
+pub use Rgba
+pub BitmapError::UnsupportedOperation(zencodec::capabilities::UnsupportedOperation)
+pub enum BmpPermissiveness
+pub BmpPermissiveness::Permissive
+pub BmpPermissiveness::Standard
+pub BmpPermissiveness::Strict
+pub struct BmpDecodeJob
+pub struct BmpDecoder<'a>
+pub struct BmpDecoderConfig
+pub fn BmpDecoderConfig::new() -> Self
+pub struct BmpEncodeJob
+pub struct BmpEncoder
+pub struct BmpEncoderConfig
+pub fn BmpEncoderConfig::new() -> Self
+#[non_exhaustive] pub struct BmpMetadata
+pub BmpMetadata::color_table: core::option::Option<alloc::vec::Vec<[u8; 4]>>
+pub BmpMetadata::dpi_x: core::option::Option<f32>
+pub BmpMetadata::dpi_y: core::option::Option<f32>
+pub BmpMetadata::height: u32
+pub BmpMetadata::layout: PixelLayout
+pub BmpMetadata::width: u32
+pub fn DecodeOutput<'a>::as_imgref<P: DecodePixel>(&self) -> core::result::Result<imgref::ImgRef<'_, P>, BitmapError> where [u8]: rgb::legacy::internal::convert::AsPixels<P>
+pub fn DecodeOutput<'a>::as_pixels<P: DecodePixel>(&self) -> core::result::Result<&[P], BitmapError> where [u8]: rgb::legacy::internal::convert::AsPixels<P>
+pub fn DecodeOutput<'a>::to_imgvec<P: DecodePixel>(&self) -> core::result::Result<imgref::ImgVec<P>, BitmapError> where [u8]: rgb::legacy::internal::convert::AsPixels<P>
+pub struct FarbfeldDecodeJob
+pub struct FarbfeldDecoder<'a>
+pub struct FarbfeldDecoderConfig
+pub fn FarbfeldDecoderConfig::new() -> Self
+pub struct FarbfeldEncodeJob
+pub struct FarbfeldEncoder
+pub struct FarbfeldEncoderConfig
+pub fn FarbfeldEncoderConfig::new() -> Self
+pub struct HdrDecodeJob
+pub struct HdrDecoder<'a>
+pub struct HdrDecoderConfig
+pub fn HdrDecoderConfig::new() -> Self
+pub struct HdrEncodeJob
+pub struct HdrEncoder
+pub struct HdrEncoderConfig
+pub fn HdrEncoderConfig::new() -> Self
+pub struct PnmDecodeJob
+pub struct PnmDecoder<'a>
+pub struct PnmDecoderConfig
+pub fn PnmDecoderConfig::new() -> Self
+pub struct PnmEncodeJob
+pub struct PnmEncoder
+pub struct PnmEncoderConfig
+pub fn PnmEncoderConfig::new() -> Self
+pub struct QoiDecodeJob
+pub struct QoiDecoder<'a>
+pub struct QoiDecoderConfig
+pub fn QoiDecoderConfig::new() -> Self
+pub struct QoiEncodeJob
+pub struct QoiEncoder
+pub struct QoiEncoderConfig
+pub fn QoiEncoderConfig::new() -> Self
+pub struct TgaDecodeJob
+pub struct TgaDecoder<'a>
+pub struct TgaDecoderConfig
+pub fn TgaDecoderConfig::new() -> Self
+pub struct TgaEncodeJob
+pub struct TgaEncoder
+pub struct TgaEncoderConfig
+pub fn TgaEncoderConfig::new() -> Self
+pub trait DecodePixel: core::marker::Copy + 'static + pixel_traits::private::Sealed
+pub fn DecodePixel::layout() -> PixelLayout
+pub trait EncodePixel: core::marker::Copy + 'static + pixel_traits::private::Sealed
+pub fn EncodePixel::layout() -> PixelLayout
+pub fn decode_bmp(&[u8], impl enough::Stop) -> core::result::Result<DecodeOutput<'_>, BitmapError>
+pub fn decode_bmp_img<P: DecodePixel>(&[u8], impl enough::Stop) -> core::result::Result<imgref::ImgVec<P>, BitmapError> where [u8]: rgb::legacy::internal::convert::AsPixels<P>
+pub fn decode_bmp_img_with_limits<P: DecodePixel>(&[u8], &Limits, impl enough::Stop) -> core::result::Result<imgref::ImgVec<P>, BitmapError> where [u8]: rgb::legacy::internal::convert::AsPixels<P>
+pub fn decode_bmp_into<P: DecodePixel>(&[u8], imgref::ImgRefMut<'_, P>, impl enough::Stop) -> core::result::Result<(), BitmapError> where [u8]: rgb::legacy::internal::convert::AsPixels<P>
+pub fn decode_bmp_native(&[u8], impl enough::Stop) -> core::result::Result<DecodeOutput<'_>, BitmapError>
+pub fn decode_bmp_native_with_limits<'a>(&'a [u8], &'a Limits, impl enough::Stop) -> core::result::Result<DecodeOutput<'a>, BitmapError>
+pub fn decode_bmp_permissive(&[u8], BmpPermissiveness, impl enough::Stop) -> core::result::Result<DecodeOutput<'_>, BitmapError>
+pub fn decode_bmp_permissive_with_limits<'a>(&'a [u8], BmpPermissiveness, &'a Limits, impl enough::Stop) -> core::result::Result<DecodeOutput<'a>, BitmapError>
+pub fn decode_bmp_pixels<P: DecodePixel>(&[u8], impl enough::Stop) -> core::result::Result<(alloc::vec::Vec<P>, u32, u32), BitmapError> where [u8]: rgb::legacy::internal::convert::AsPixels<P>
+pub fn decode_bmp_pixels_with_limits<P: DecodePixel>(&[u8], &Limits, impl enough::Stop) -> core::result::Result<(alloc::vec::Vec<P>, u32, u32), BitmapError> where [u8]: rgb::legacy::internal::convert::AsPixels<P>
+pub fn decode_bmp_with_limits<'a>(&'a [u8], &'a Limits, impl enough::Stop) -> core::result::Result<DecodeOutput<'a>, BitmapError>
+pub fn decode_hdr(&[u8], impl enough::Stop) -> core::result::Result<DecodeOutput<'_>, BitmapError>
+pub fn decode_hdr_with_limits<'a>(&'a [u8], &'a Limits, impl enough::Stop) -> core::result::Result<DecodeOutput<'a>, BitmapError>
+pub fn decode_img<P: DecodePixel>(&[u8], impl enough::Stop) -> core::result::Result<imgref::ImgVec<P>, BitmapError> where [u8]: rgb::legacy::internal::convert::AsPixels<P>
+pub fn decode_img_with_limits<P: DecodePixel>(&[u8], &Limits, impl enough::Stop) -> core::result::Result<imgref::ImgVec<P>, BitmapError> where [u8]: rgb::legacy::internal::convert::AsPixels<P>
+pub fn decode_into<P: DecodePixel>(&[u8], imgref::ImgRefMut<'_, P>, impl enough::Stop) -> core::result::Result<(), BitmapError> where [u8]: rgb::legacy::internal::convert::AsPixels<P>
+pub fn decode_pixels<P: DecodePixel>(&[u8], impl enough::Stop) -> core::result::Result<(alloc::vec::Vec<P>, u32, u32), BitmapError> where [u8]: rgb::legacy::internal::convert::AsPixels<P>
+pub fn decode_pixels_with_limits<P: DecodePixel>(&[u8], &Limits, impl enough::Stop) -> core::result::Result<(alloc::vec::Vec<P>, u32, u32), BitmapError> where [u8]: rgb::legacy::internal::convert::AsPixels<P>
+pub fn decode_qoi(&[u8], impl enough::Stop) -> core::result::Result<DecodeOutput<'_>, BitmapError>
+pub fn decode_qoi_with_limits<'a>(&'a [u8], &'a Limits, impl enough::Stop) -> core::result::Result<DecodeOutput<'a>, BitmapError>
+pub fn decode_tga(&[u8], impl enough::Stop) -> core::result::Result<DecodeOutput<'_>, BitmapError>
+pub fn decode_tga_with_limits<'a>(&'a [u8], &'a Limits, impl enough::Stop) -> core::result::Result<DecodeOutput<'a>, BitmapError>
+pub fn encode_bmp(&[u8], u32, u32, PixelLayout, impl enough::Stop) -> core::result::Result<alloc::vec::Vec<u8>, BitmapError>
+pub fn encode_bmp_img<P: EncodePixel>(imgref::ImgRef<'_, P>, impl enough::Stop) -> core::result::Result<alloc::vec::Vec<u8>, BitmapError> where [P]: rgb::legacy::internal::pixel::ComponentBytes<u8>
+pub fn encode_bmp_pixels<P: EncodePixel>(&[P], u32, u32, impl enough::Stop) -> core::result::Result<alloc::vec::Vec<u8>, BitmapError> where [P]: rgb::legacy::internal::pixel::ComponentBytes<u8>
+pub fn encode_bmp_rgba(&[u8], u32, u32, PixelLayout, impl enough::Stop) -> core::result::Result<alloc::vec::Vec<u8>, BitmapError>
+pub fn encode_bmp_rgba_img<P: EncodePixel>(imgref::ImgRef<'_, P>, impl enough::Stop) -> core::result::Result<alloc::vec::Vec<u8>, BitmapError> where [P]: rgb::legacy::internal::pixel::ComponentBytes<u8>
+pub fn encode_bmp_rgba_pixels<P: EncodePixel>(&[P], u32, u32, impl enough::Stop) -> core::result::Result<alloc::vec::Vec<u8>, BitmapError> where [P]: rgb::legacy::internal::pixel::ComponentBytes<u8>
+pub fn encode_hdr(&[u8], u32, u32, PixelLayout, impl enough::Stop) -> core::result::Result<alloc::vec::Vec<u8>, BitmapError>
+pub fn encode_pam_img<P: EncodePixel>(imgref::ImgRef<'_, P>, impl enough::Stop) -> core::result::Result<alloc::vec::Vec<u8>, BitmapError> where [P]: rgb::legacy::internal::pixel::ComponentBytes<u8>
+pub fn encode_pam_pixels<P: EncodePixel>(&[P], u32, u32, impl enough::Stop) -> core::result::Result<alloc::vec::Vec<u8>, BitmapError> where [P]: rgb::legacy::internal::pixel::ComponentBytes<u8>
+pub fn encode_pfm_img<P: EncodePixel>(imgref::ImgRef<'_, P>, impl enough::Stop) -> core::result::Result<alloc::vec::Vec<u8>, BitmapError> where [P]: rgb::legacy::internal::pixel::ComponentBytes<u8>
+pub fn encode_pfm_pixels<P: EncodePixel>(&[P], u32, u32, impl enough::Stop) -> core::result::Result<alloc::vec::Vec<u8>, BitmapError> where [P]: rgb::legacy::internal::pixel::ComponentBytes<u8>
+pub fn encode_pgm_img<P: EncodePixel>(imgref::ImgRef<'_, P>, impl enough::Stop) -> core::result::Result<alloc::vec::Vec<u8>, BitmapError> where [P]: rgb::legacy::internal::pixel::ComponentBytes<u8>
+pub fn encode_pgm_pixels<P: EncodePixel>(&[P], u32, u32, impl enough::Stop) -> core::result::Result<alloc::vec::Vec<u8>, BitmapError> where [P]: rgb::legacy::internal::pixel::ComponentBytes<u8>
+pub fn encode_ppm_img<P: EncodePixel>(imgref::ImgRef<'_, P>, impl enough::Stop) -> core::result::Result<alloc::vec::Vec<u8>, BitmapError> where [P]: rgb::legacy::internal::pixel::ComponentBytes<u8>
+pub fn encode_ppm_pixels<P: EncodePixel>(&[P], u32, u32, impl enough::Stop) -> core::result::Result<alloc::vec::Vec<u8>, BitmapError> where [P]: rgb::legacy::internal::pixel::ComponentBytes<u8>
+pub fn encode_qoi(&[u8], u32, u32, PixelLayout, impl enough::Stop) -> core::result::Result<alloc::vec::Vec<u8>, BitmapError>
+pub fn encode_tga(&[u8], u32, u32, PixelLayout, impl enough::Stop) -> core::result::Result<alloc::vec::Vec<u8>, BitmapError>
+pub fn probe_bmp(&[u8]) -> core::result::Result<BmpMetadata, BitmapError>
+pub type BGR8 = rgb::formats::bgr::Bgr<u8>
+pub type BGRA8 = rgb::formats::bgra::Bgra<u8>
+pub type RGB8 = rgb::formats::rgb::Rgb<u8>
+pub type RGBA8 = rgb::formats::rgba::Rgba<u8>
+
+## trait impls (43 types)
+
+BitmapError: From<zencodec::capabilities::UnsupportedOperation>
+BmpDecodeJob: zencodec::traits::decoding::DecodeJob<'a>
+BmpDecoder<'_>: zencodec::traits::decoder::Decode
+BmpDecoderConfig: Clone, Debug, Default, zencodec::traits::decoding::DecoderConfig
+BmpEncodeJob: zencodec::traits::encoding::EncodeJob
+BmpEncoder: zencodec::traits::encoder::Encoder
+BmpEncoderConfig: Clone, Debug, Default, zencodec::traits::encoding::EncoderConfig
+BmpMetadata: Clone, Debug
+BmpPermissiveness: Clone, Copy, Debug, Default, Eq, PartialEq
+FarbfeldDecodeJob: zencodec::traits::decoding::DecodeJob<'a>
+FarbfeldDecoder<'_>: zencodec::traits::decoder::Decode
+FarbfeldDecoderConfig: Clone, Debug, Default, zencodec::traits::decoding::DecoderConfig
+FarbfeldEncodeJob: zencodec::traits::encoding::EncodeJob
+FarbfeldEncoder: zencodec::traits::encoder::Encoder
+FarbfeldEncoderConfig: Clone, Debug, Default, zencodec::traits::encoding::EncoderConfig
+HdrDecodeJob: zencodec::traits::decoding::DecodeJob<'a>
+HdrDecoder<'_>: zencodec::traits::decoder::Decode
+HdrDecoderConfig: Clone, Debug, Default, zencodec::traits::decoding::DecoderConfig
+HdrEncodeJob: zencodec::traits::encoding::EncodeJob
+HdrEncoder: zencodec::traits::encoder::Encoder
+HdrEncoderConfig: Clone, Debug, Default, zencodec::traits::encoding::EncoderConfig
+PnmDecodeJob: zencodec::traits::decoding::DecodeJob<'a>
+PnmDecoder<'_>: zencodec::traits::decoder::Decode
+PnmDecoderConfig: Clone, Debug, Default, zencodec::traits::decoding::DecoderConfig
+PnmEncodeJob: zencodec::traits::encoding::EncodeJob
+PnmEncoder: zencodec::traits::encoder::Encoder
+PnmEncoderConfig: Clone, Debug, Default, zencodec::traits::encoding::EncoderConfig
+QoiDecodeJob: zencodec::traits::decoding::DecodeJob<'a>
+QoiDecoder<'_>: zencodec::traits::decoder::Decode
+QoiDecoderConfig: Clone, Debug, Default, zencodec::traits::decoding::DecoderConfig
+QoiEncodeJob: zencodec::traits::encoding::EncodeJob
+QoiEncoder: zencodec::traits::encoder::Encoder
+QoiEncoderConfig: Clone, Debug, Default, zencodec::traits::encoding::EncoderConfig
+TgaDecodeJob: zencodec::traits::decoding::DecodeJob<'a>
+TgaDecoder<'_>: zencodec::traits::decoder::Decode
+TgaDecoderConfig: Clone, Debug, Default, zencodec::traits::decoding::DecoderConfig
+TgaEncodeJob: zencodec::traits::encoding::EncodeJob
+TgaEncoder: zencodec::traits::encoder::Encoder
+TgaEncoderConfig: Clone, Debug, Default, zencodec::traits::encoding::EncoderConfig
+rgb::formats::bgr::Bgr<u8>: DecodePixel, EncodePixel
+rgb::formats::bgra::Bgra<u8>: DecodePixel, EncodePixel
+rgb::formats::rgb::Rgb<u8>: DecodePixel, EncodePixel
+rgb::formats::rgba::Rgba<u8>: DecodePixel, EncodePixel
+
+## auto traits
+
+14 types implement all of: Freeze, RefUnwindSafe, Send, Sync, Unpin, UnwindSafe
+BmpDecodeJob: !RefUnwindSafe !UnwindSafe
+BmpDecoder<'a>: !RefUnwindSafe !UnwindSafe
+BmpEncodeJob: !RefUnwindSafe !UnwindSafe
+BmpEncoder: !RefUnwindSafe !UnwindSafe
+FarbfeldDecodeJob: !RefUnwindSafe !UnwindSafe
+FarbfeldDecoder<'a>: !RefUnwindSafe !UnwindSafe
+FarbfeldEncodeJob: !RefUnwindSafe !UnwindSafe
+FarbfeldEncoder: !RefUnwindSafe !UnwindSafe
+HdrDecodeJob: !RefUnwindSafe !UnwindSafe
+HdrDecoder<'a>: !RefUnwindSafe !UnwindSafe
+HdrEncodeJob: !RefUnwindSafe !UnwindSafe
+HdrEncoder: !RefUnwindSafe !UnwindSafe
+PnmDecodeJob: !RefUnwindSafe !UnwindSafe
+PnmDecoder<'a>: !RefUnwindSafe !UnwindSafe
+PnmEncodeJob: !RefUnwindSafe !UnwindSafe
+PnmEncoder: !RefUnwindSafe !UnwindSafe
+QoiDecodeJob: !RefUnwindSafe !UnwindSafe
+QoiDecoder<'a>: !RefUnwindSafe !UnwindSafe
+QoiEncodeJob: !RefUnwindSafe !UnwindSafe
+QoiEncoder: !RefUnwindSafe !UnwindSafe
+TgaDecodeJob: !RefUnwindSafe !UnwindSafe
+TgaDecoder<'a>: !RefUnwindSafe !UnwindSafe
+TgaEncodeJob: !RefUnwindSafe !UnwindSafe
+TgaEncoder: !RefUnwindSafe !UnwindSafe
