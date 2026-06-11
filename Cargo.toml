@@ -23,10 +23,14 @@ enough = "0.4.3"
 imgref = { version = "1.12", default-features = false, optional = true }
 rgb = { version = "0.8", default-features = false, features = ["as-bytes"], optional = true }
 thiserror = { version = "2.0", default-features = false }
-zencodec = { version = "0.1.19", optional = true }
+zencodec = { version = "0.1.22", optional = true }
 # zennode is not yet published; uncomment when it's on crates.io
 # zennode = { path = "../zennode/zennode", default-features = false, features = ["derive"], optional = true }
-zenpixels = { version = "0.2.10", default-features = false, features = ["imgref"], optional = true }
+zenpixels = { version = "0.2.13", default-features = false, features = ["imgref"], optional = true }
+# Load-bearing descriptor narrowing for the zencodec encode path — raw
+# formats pay full price for dead lanes, so the reduction wins more here
+# than for any entropy-coded codec.
+zenpixels-convert = { version = "0.2.13", default-features = false, optional = true }
 # SIMD acceleration
 archmage = { version = "0.9.15", default-features = false, optional = true }
 garb = { version = "0.2.5", default-features = false, optional = true }
@@ -56,7 +60,7 @@ rgb = ["dep:rgb"]              # RGB8, RGBA8 etc. typed pixel encode/decode
 imgref = ["dep:imgref", "rgb"] # ImgVec/ImgRef 2D buffer support (implies rgb)
 
 # zencodec trait integration
-zencodec = ["dep:zencodec", "dep:zenpixels", "imgref", "rgb"]
+zencodec = ["dep:zencodec", "dep:zenpixels", "dep:zenpixels-convert", "imgref", "rgb"]
 
 # zennode node definitions (EncodeBmp schema with RIAPI keys)
 # Disabled until zennode is published to crates.io

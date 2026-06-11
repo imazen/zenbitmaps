@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Load-bearing descriptor narrowing on the zencodec encode path
+  (zenpixels-convert 0.2.13 `load_bearing` #30): PNM/QOI/BMP/TGA
+  encoders reduce the input view to its bit-exact load-bearing form
+  before format mapping — dead alpha drops (RGBA→RGB: PAM→PPM, QOI
+  4→3 channels, BMP 32→24, TGA 32→24), chroma-free RGB collapses to
+  gray, bit-replicated U16 narrows to U8. Raw formats pay full price
+  for dead lanes (no entropy coder downstream), so the reduction wins
+  more here than for any compressed codec. Live alpha / real chroma /
+  genuine high bits suppress the reduction (scan-proven, never lossy);
+  wiring test pins PPM-vs-PAM both ways. Farbfeld (fixed RGBA16) and
+  HDR (RGBE) are structurally exempt.
+
+### Changed
+
+- zencodec 0.1.19 → 0.1.22; zenpixels 0.2.10 → 0.2.13;
+  zenpixels-convert 0.2.13 added (optional, rides the `zencodec`
+  feature).
+
 ### Changed
 
 - Removed `tests/` and `benches/` from the published package `include` list; downstream consumers no longer receive ~444 KB of test fixtures and bench sources (local build/test/bench unaffected).

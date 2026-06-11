@@ -187,6 +187,14 @@ impl zencodec::encode::Encoder for PnmEncoder {
     }
 
     fn encode(self, pixels: PixelSlice<'_>) -> Result<EncodeOutput, BitmapError> {
+        // Bit-exact load-bearing narrowing (dead alpha / chroma-free /
+        // replicated-low-bits) before format mapping — see
+        // `super::reduce_for_raw_encode`.
+        let reduced = super::reduce_for_raw_encode(&pixels);
+        let pixels = match &reduced {
+            Some(buf) => buf.as_slice(),
+            None => pixels,
+        };
         let stop: &dyn Stop = match &self.stop {
             Some(s) => s,
             None => &enough::Unstoppable,

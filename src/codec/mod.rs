@@ -60,6 +60,22 @@ pub use hdr_codec::*;
 
 #[cfg(feature = "tga")]
 mod tga_codec;
+
+/// Reduce a pixel view to its load-bearing form before format mapping.
+///
+/// Raw formats pay the FULL price for dead lanes — an unused alpha
+/// channel is +33 % of every row, chroma-free RGB is 3× gray, and
+/// bit-replicated U16 doubles U8 — with no entropy coder downstream to
+/// absorb it. `try_reduce_to_load_bearing_format` is bit-exact
+/// invertible narrowing (zenpixels-convert #30): live alpha, real
+/// chroma, or genuine high bits all suppress the reduction, so this can
+/// never lose information — `None` means "encode the original view".
+pub(crate) fn reduce_for_raw_encode(
+    pixels: &zenpixels::PixelSlice<'_>,
+) -> Option<zenpixels::PixelBuffer> {
+    use zenpixels_convert::load_bearing::PixelSliceLoadBearingExt;
+    pixels.try_reduce_to_load_bearing_format()
+}
 #[cfg(feature = "tga")]
 pub use tga_codec::*;
 
@@ -228,6 +244,39 @@ pub(crate) fn decode_output_from_internal(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn raw_encode_drops_dead_alpha_and_keeps_live_alpha() {
+        use zencodec::encode::{EncodeJob as _, Encoder as _, EncoderConfig as _};
+        use zenpixels::{PixelDescriptor, PixelSlice};
+
+        // Opaque RGBA8 (alpha all 255; RGBA8 carries AlphaMode::Straight,
+        // so the lane scan must prove it dead).
+        let opaque: alloc::vec::Vec<u8> = (0..4 * 4).flat_map(|i| [i as u8, 10, 20, 255]).collect();
+        let desc = PixelDescriptor::RGBA8;
+        let slice = PixelSlice::new(&opaque, 4, 4, 16, desc).unwrap();
+        let out = crate::codec::pnm_codec::PnmEncoderConfig::new()
+            .job()
+            .encoder()
+            .unwrap()
+            .encode(slice)
+            .unwrap();
+        // PPM magic "P6" — the dead alpha lane was dropped (PAM is "P7").
+        assert_eq!(&out.data()[..2], b"P6", "dead alpha must narrow to PPM");
+
+        // Live alpha must NOT be narrowed.
+        let live: alloc::vec::Vec<u8> = (0..4 * 4)
+            .flat_map(|i| [i as u8, 10, 20, i as u8])
+            .collect();
+        let slice = PixelSlice::new(&live, 4, 4, 16, desc).unwrap();
+        let out = crate::codec::pnm_codec::PnmEncoderConfig::new()
+            .job()
+            .encoder()
+            .unwrap()
+            .encode(slice)
+            .unwrap();
+        assert_eq!(&out.data()[..2], b"P7", "live alpha must stay PAM");
+    }
+
     use alloc::vec;
 
     use super::*;
