@@ -54,7 +54,17 @@ Same as other zen* codecs — see codec-design/README.md. Key points:
 
 ## Known Bugs
 
-(none currently open)
+- **fuzz_roundtrip libFuzzer OOM (rss_limit 2048MB) — Fuzz CI red since 2026-06-11.**
+  Three consecutive failures: push run on d18de98 (zencodec 0.1.22 / zenpixels
+  0.2.13 dep bump; used 2074MB), push run on 2903572f (api-doc migration, no
+  crate-source changes; used 2179MB), scheduled run 2026-06-12 (used 2049MB,
+  artifact `oom-3c97c90cb3ced560de7602e7e88c14872c489d92` uploaded by CI run
+  27394559018; also wrote `slow-unit-caad5849…`). Scheduled-only runs on 06-04
+  and 06-09 also failed (flaky before), but the push-run pattern flipping red
+  at d18de98 suggests the dep bump made the OOM much easier to hit. Resource
+  bug (unbounded allocation in the roundtrip path), not a security issue.
+  Repro: download the CI artifact, then
+  `cargo fuzz run fuzz_roundtrip fuzz/artifacts/fuzz_roundtrip/oom-3c97c90c…`.
 
 ### Fixed
 
