@@ -42,6 +42,28 @@ assert_eq!(decoded.pixels(), &pixels[..]);
 # Ok::<(), BitmapError>(())
 ```
 
+### Output pixel layout (read `decoded.layout`)
+
+`decode()` returns pixels in the source format's **native** layout — it does
+**not** normalize to RGBA8. Use `decoded.pixels()` for the packed bytes and
+`decoded.layout` (a [`PixelLayout`]) to learn what those bytes are:
+
+| Source | `decoded.layout` |
+|--------|------------------|
+| BMP | `Rgb8` (24-bit), `Rgba8` (32-bit), or `Gray8` |
+| PGM (P2/P5) | `Gray8` or `Gray16` |
+| PPM (P3/P6) / PAM (P7) | per the header — `Gray8/16`, `GrayAlpha8/16`, `Rgb8/16`, or `Rgba8/16` |
+| farbfeld | always `Rgba16` |
+| PFM | always `RgbF32` |
+| QOI | `Rgb8` or `Rgba8` |
+
+To force a specific layout (e.g. RGBA8), convert from `decoded.layout` with a
+pixel-conversion crate such as [`zenpixels-convert`]. Note `as_pixels::<P>()`
+*reinterprets* the existing bytes (and errors on a layout mismatch) — it is a
+zero-copy view, **not** a converter.
+
+[`zenpixels-convert`]: https://crates.io/crates/zenpixels-convert
+
 ## Format detection
 
 `detect_format()` identifies the format from magic bytes without decoding:
