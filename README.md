@@ -213,6 +213,34 @@ let decoded = decode_with_limits(&data, &limits, Unstoppable)?;
 # Ok::<(), BitmapError>(())
 ```
 
+## Errors (for a server)
+
+`decode*`/`encode*` return a **bare** [`BitmapError`] (this crate does not wrap
+errors in `whereat::At<…>`, so match it directly — no `.error()`/`.decompose()`).
+`BitmapError` is `#[non_exhaustive]`, so keep a wildcard arm; map it to an HTTP
+status like so:
+
+```rust
+use zenbitmaps::{decode, BitmapError};
+use enough::Unstoppable;
+
+let webp_or_bmp_bytes: &[u8] = &[];
+let status = match decode(webp_or_bmp_bytes, Unstoppable) {
+    Ok(_decoded) => 200,
+    Err(e) => match e {
+        BitmapError::DimensionsTooLarge { .. }
+        | BitmapError::LimitExceeded(_) => 413,        // Payload Too Large
+        BitmapError::UnrecognizedFormat
+        | BitmapError::UnsupportedVariant(_)
+        | BitmapError::UnsupportedOperation(_) => 415, // Unsupported Media Type
+        BitmapError::Cancelled(_) => 499,              // client closed request
+        // malformed input: InvalidHeader, InvalidData, UnexpectedEof, ...
+        _ => 400,                                      // Bad Request
+    },
+};
+# let _ = status;
+```
+
 ## Features
 
 | Feature | What it adds |
