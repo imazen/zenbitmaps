@@ -1147,6 +1147,28 @@ impl<'a> BmpDecoderState<'a> {
             });
         }
 
+        // Decompression-bomb guard. RLE4/RLE8 expand by at most ~127 output
+        // bytes per input byte (a 2-byte encoded run yields ≤255 indices). A
+        // declared output far larger than the whole file could possibly encode
+        // is a bomb or a truncated header — reject it instead of allocating and
+        // post-processing a near-output-cap buffer (palette expansion, flip,
+        // format conversion all run per output pixel) for a tiny input. A
+        // 158-byte file declaring ~2.7e8 pixels otherwise cost ~18 s of work
+        // (fuzz DoS). The 256× factor leaves ~2× headroom over the worst legit
+        // ratio; the 64 KiB floor keeps small images decodable from tiny input.
+        const MAX_RLE_RATIO: usize = 256;
+        let ratio_cap = self
+            .bytes
+            .data
+            .len()
+            .saturating_mul(MAX_RLE_RATIO)
+            .max(64 * 1024);
+        if alloc_size > ratio_cap {
+            return Err(BitmapError::InvalidData(
+                "RLE output far exceeds the compressed size (decompression bomb)".into(),
+            ));
+        }
+
         let mut pixels = vec![0u8; alloc_size];
         let mut line = (self.height - 1) as i32;
         let mut pos = 0usize;
@@ -1178,7 +1200,14 @@ impl<'a> BmpDecoderState<'a> {
         let mut rle_code: u16;
         let mut stream_byte: u8;
 
-        while *line >= 0 && *pos <= self.width {
+        // Stop when the RLE stream is exhausted, matching `decode_rle8plus`. A
+        // well-formed RLE4 stream ends with the `00 01` end-of-bitmap escape
+        // (returns Ok below) before EOF; without this guard a truncated stream
+        // makes `read_u8()` return 0 forever (read as the `00 00` end-of-line
+        // escape), spinning `*line` down from a huge declared height — a tiny
+        // input with height ≈ 2.7e8 looped ~18 s (fuzz zenbitmaps DoS). The
+        // bound is now O(input), not O(height).
+        while *line >= 0 && *pos <= self.width && !self.bytes.eof() {
             rle_code = u16::from(self.bytes.read_u8());
 
             if rle_code == 0 {
