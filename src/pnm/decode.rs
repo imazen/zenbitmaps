@@ -543,13 +543,19 @@ pub(crate) fn decode_ascii_samples(
             height: header.height,
         })?;
 
-    let scale = if header.maxval == 255 {
-        None
-    } else {
-        Some(255.0 / header.maxval as f32)
-    };
+    let is_16bit = header.maxval > 255;
+    // 8-bit samples with a sub-255 maxval are normalized to the full 0..=255
+    // range (matching the binary 8-bit path). 16-bit samples (maxval > 255 → a
+    // 16-bit layout such as Gray16) are emitted as 2 raw native-endian bytes,
+    // matching the binary Gray16 path (`decode_integer_transform`). Emitting a
+    // single downscaled byte per 16-bit sample produced HALF the bytes the
+    // declared layout expects — an OOB panic in `PixelBuffer::as_slice` (the
+    // declared stride·height overran the short data) AND a silent 16-bit→8-bit
+    // precision loss (fuzz zenpipe#51).
+    let scale8 = (!is_16bit && header.maxval != 255).then(|| 255.0 / header.maxval as f32);
+    let bytes_per_sample = if is_16bit { 2 } else { 1 };
 
-    let mut out = Vec::with_capacity(total);
+    let mut out = Vec::with_capacity(total.saturating_mul(bytes_per_sample));
     let mut pos = 0;
 
     for i in 0..total {
@@ -582,12 +588,15 @@ pub(crate) fn decode_ascii_samples(
             .parse()
             .map_err(|_| BitmapError::InvalidData(alloc::format!("bad sample value: {s}")))?;
 
-        let byte = if let Some(s) = scale {
-            (val as f32 * s + 0.5) as u8
+        // Clamp out-of-range samples (a malformed ASCII value may exceed maxval).
+        let val = val.min(header.maxval);
+        if is_16bit {
+            out.extend_from_slice(&(val as u16).to_ne_bytes());
+        } else if let Some(s) = scale8 {
+            out.push((val as f32 * s + 0.5) as u8);
         } else {
-            val as u8
-        };
-        out.push(byte);
+            out.push(val as u8);
+        }
     }
 
     Ok(out)

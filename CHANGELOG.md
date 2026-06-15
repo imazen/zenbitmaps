@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- ASCII PNM (P2/P3) with `maxval > 255` now decodes as true 16-bit. `decode_ascii_samples` emitted a single downscaled `u8` per sample even though `maxval > 255` selects a 16-bit layout (e.g. Gray16) — producing half the bytes the layout declares. That overran `PixelBuffer::as_slice` (OOB panic, reached via `zencodecs::push_decode`, fuzz zenpipe#51) and silently dropped 16-bit precision. 16-bit samples are now emitted as 2 raw native-endian bytes (matching the binary Gray16 path) and out-of-range samples are clamped to `maxval`. Regression: `tests/pnm_ascii_16bit_regression.rs`.
+
 ### Added
 
 - Load-bearing descriptor narrowing on the zencodec encode path
