@@ -194,8 +194,9 @@ impl zencodec::encode::Encoder for TgaEncoder {
     fn encode(self, pixels: PixelSlice<'_>) -> Result<EncodeOutput, BitmapError> {
         // Bit-exact load-bearing narrowing (dead alpha / chroma-free /
         // replicated-low-bits) before format mapping — see
-        // `super::reduce_for_raw_encode`.
-        let reduced = super::reduce_for_raw_encode(&pixels);
+        // `super::reduce_for_raw_encode`. TGA encodes grayscale, so every
+        // narrowing target is encodable and the reduction is always safe.
+        let reduced = super::reduce_for_raw_encode(&pixels, |_| true);
         let pixels = match &reduced {
             Some(buf) => buf.as_slice(),
             None => pixels,

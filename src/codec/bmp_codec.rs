@@ -169,8 +169,17 @@ impl zencodec::encode::Encoder for BmpEncoder {
     fn encode(self, pixels: PixelSlice<'_>) -> Result<EncodeOutput, BitmapError> {
         // Bit-exact load-bearing narrowing (dead alpha / chroma-free /
         // replicated-low-bits) before format mapping — see
-        // `super::reduce_for_raw_encode`.
-        let reduced = super::reduce_for_raw_encode(&pixels);
+        // `super::reduce_for_raw_encode`. BMP encodes only 24-bit RGB and
+        // 32-bit RGBA/BGRA, so the predicate forbids the →Gray narrowing
+        // while still allowing dead-alpha and bit-depth reductions.
+        let reduced = super::reduce_for_raw_encode(&pixels, |d| {
+            matches!(
+                (d.channel_type(), d.layout()),
+                (ChannelType::U8, ChannelLayout::Rgb)
+                    | (ChannelType::U8, ChannelLayout::Rgba)
+                    | (ChannelType::U8, ChannelLayout::Bgra)
+            )
+        });
         let pixels = match &reduced {
             Some(buf) => buf.as_slice(),
             None => pixels,

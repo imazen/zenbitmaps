@@ -6,6 +6,17 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- QOI/BMP encode of chroma-free RGB no longer fails with
+  `UnsupportedVariant`. The load-bearing narrowing (see "Added" below)
+  collapses an all-gray RGB(A) view to Gray8, but QOI and BMP have no
+  grayscale encode path (QOI: RGB/RGBA/BGRA; BMP: 24-bit RGB / 32-bit
+  RGBA), so the reduced buffer hit the encoders' error arm — an all-gray
+  RGB image (e.g. solid black) panicked on encode. `reduce_for_raw_encode`
+  is now codec-aware: each encoder passes a predicate for the layouts it
+  can emit, and the reduction is used only if encodable, else the original
+  (broader) view is encoded. Narrowing only ever loses encodability via
+  the →Gray path, so PNM and TGA (which encode grayscale) are unchanged.
+  Regression: `codec::tests::{qoi,bmp}_all_gray_rgb_not_narrowed_to_unencodable_gray`.
 - RLE BMP decompression-bomb DoS: a 158-byte RLE4 BMP declaring width 1 / height ≈ 2.7e8 decoded in ~18 s (found by the fuzz farm). The ~134 MB declared output passed the 1 GiB cap, so the decoder allocated it and ran per-output-pixel post-processing over 268M pixels. Fixes: (1) `decode_rle4` now stops at input exhaustion (`!self.bytes.eof()`), matching `decode_rle8plus` — without it a truncated stream spun `*line` down from the declared height; (2) `decode_rle` rejects an output larger than the compressed stream could plausibly encode (256×-input ratio guard, 64 KiB floor). The repro now rejects in ~3 ms. Regression: `tests/bmp_rle_dos_regression.rs`.
 - ASCII PNM (P2/P3) with `maxval > 255` now decodes as true 16-bit. `decode_ascii_samples` emitted a single downscaled `u8` per sample even though `maxval > 255` selects a 16-bit layout (e.g. Gray16) — producing half the bytes the layout declares. That overran `PixelBuffer::as_slice` (OOB panic, reached via `zencodecs::push_decode`, fuzz zenpipe#51) and silently dropped 16-bit precision. 16-bit samples are now emitted as 2 raw native-endian bytes (matching the binary Gray16 path) and out-of-range samples are clamped to `maxval`. Regression: `tests/pnm_ascii_16bit_regression.rs`.
 

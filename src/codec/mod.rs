@@ -70,11 +70,27 @@ mod tga_codec;
 /// invertible narrowing (zenpixels-convert #30): live alpha, real
 /// chroma, or genuine high bits all suppress the reduction, so this can
 /// never lose information — `None` means "encode the original view".
+///
+/// Codec-aware: the reduction can narrow chroma-free RGB(A) down to
+/// grayscale, but QOI and BMP have no grayscale encode path, so a blind
+/// reduction would turn an encodable all-gray RGB buffer into an
+/// `UnsupportedVariant` error. `can_encode` is the codec's own
+/// encode-format predicate — the reduced buffer is used only if the codec
+/// can actually encode it; otherwise `None` is returned and the caller
+/// encodes the original (broader) view. Narrowing only ever loses
+/// encodability via the →Gray path, so codecs that support grayscale can
+/// pass `|_| true` safely.
 pub(crate) fn reduce_for_raw_encode(
     pixels: &zenpixels::PixelSlice<'_>,
+    can_encode: impl Fn(&PixelDescriptor) -> bool,
 ) -> Option<zenpixels::PixelBuffer> {
     use zenpixels_convert::load_bearing::PixelSliceLoadBearingExt;
-    pixels.try_reduce_to_load_bearing_format()
+    let reduced = pixels.try_reduce_to_load_bearing_format()?;
+    if can_encode(&reduced.as_slice().descriptor()) {
+        Some(reduced)
+    } else {
+        None
+    }
 }
 #[cfg(feature = "tga")]
 pub use tga_codec::*;
@@ -748,6 +764,83 @@ mod tests {
         let buf = decoded.into_buffer();
         let rgb_img = buf.try_as_imgref::<rgb::Rgb<u8>>().unwrap();
         assert_eq!(rgb_img.buf(), &pixels);
+    }
+
+    // Regression (fuzz farm 2026-06): the load-bearing reduction narrows
+    // chroma-free RGB down to Gray8, but QOI and BMP have no grayscale
+    // encode path. A blind reduction turned an encodable all-gray RGB
+    // buffer into an `UnsupportedVariant` error (the `qoi_with_limits_*`
+    // tests panicked on `.unwrap()`). The codec-aware `reduce_for_raw_encode`
+    // predicate must forbid the →Gray narrowing for these two formats.
+    #[cfg(feature = "qoi")]
+    #[test]
+    fn qoi_all_gray_rgb_not_narrowed_to_unencodable_gray() {
+        use zencodec::decode::{Decode, DecodeJob, DecoderConfig};
+        use zencodec::encode::{EncodeJob, Encoder, EncoderConfig};
+
+        let pixels = vec![
+            rgb::Rgb::<u8> {
+                r: 0x42,
+                g: 0x42,
+                b: 0x42,
+            };
+            100
+        ];
+        let img = imgref::ImgVec::new(pixels.clone(), 10, 10);
+        let encoded = QoiEncoderConfig::new()
+            .job()
+            .encoder()
+            .unwrap()
+            .encode(PixelSlice::from(img.as_ref()).erase())
+            .expect("all-gray RGB must encode as QOI RGB, not narrow to unencodable Gray8");
+        // Round-trips bit-exactly as RGB (QOI has no grayscale layout).
+        let decoded = QoiDecoderConfig::new()
+            .job()
+            .decoder(Cow::Borrowed(encoded.data()), &[])
+            .unwrap()
+            .decode()
+            .unwrap();
+        let buf = decoded.into_buffer();
+        let rgb_img = buf.try_as_imgref::<rgb::Rgb<u8>>().unwrap();
+        assert_eq!(rgb_img.buf(), &pixels);
+    }
+
+    #[cfg(feature = "bmp")]
+    #[test]
+    fn bmp_all_gray_rgb_not_narrowed_to_unencodable_gray() {
+        use zencodec::decode::{Decode, DecodeJob, DecoderConfig};
+        use zencodec::encode::{EncodeJob, Encoder, EncoderConfig};
+
+        let pixels = vec![
+            rgb::Rgb::<u8> {
+                r: 0x42,
+                g: 0x42,
+                b: 0x42,
+            };
+            100
+        ];
+        let img = imgref::ImgVec::new(pixels, 10, 10);
+        // Must not fail with UnsupportedVariant (BMP encodes 24-bit RGB,
+        // not grayscale — the reduction must stay RGB).
+        let encoded = BmpEncoderConfig::new()
+            .job()
+            .encoder()
+            .unwrap()
+            .encode(PixelSlice::from(img.as_ref()).erase())
+            .expect("all-gray RGB must encode as 24-bit BMP, not narrow to unencodable Gray8");
+        // Decodes without error; every output byte is the gray level
+        // regardless of whether decode reports Gray8 or RGB.
+        let decoded = BmpDecoderConfig::new()
+            .job()
+            .decoder(Cow::Borrowed(encoded.data()), &[])
+            .unwrap()
+            .decode()
+            .unwrap();
+        let buf = decoded.into_buffer();
+        assert!(
+            buf.as_slice().contiguous_bytes().iter().all(|&b| b == 0x42),
+            "every decoded sample must be the 0x42 gray level"
+        );
     }
 
     #[cfg(feature = "qoi")]
