@@ -1,5 +1,5 @@
 use super::*;
-use whereat::{At, at};
+use whereat::{At, ResultAtExt, at};
 
 // ══════════════════════════════════════════════════════════════════════
 // HDR capabilities and descriptors
@@ -502,7 +502,7 @@ impl zencodec::decode::StreamingDecode for HdrStreamingDecoder {
             self.row_bytes,
             PixelDescriptor::RGBF32_LINEAR,
         )
-        .map_err(|e| at!(BitmapError::InvalidData(e.to_string())))?;
+        .map_err_at(|inner| BitmapError::InvalidData(inner.to_string()))?;
 
         self.current_row += 1;
         Ok(Some((y, slice)))

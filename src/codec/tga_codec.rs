@@ -1,5 +1,5 @@
 use super::*;
-use whereat::{At, at};
+use whereat::{At, ResultAtExt, at};
 
 // ══════════════════════════════════════════════════════════════════════
 // TGA capabilities and descriptors
@@ -534,7 +534,7 @@ impl zencodec::decode::StreamingDecode for TgaStreamingDecoder {
         let row_data = &self.decoded_bytes[offset..offset + self.row_bytes];
 
         let slice = PixelSlice::new(row_data, self.width, 1, self.row_bytes, self.descriptor)
-            .map_err(|e| at!(BitmapError::InvalidData(e.to_string())))?;
+            .map_err_at(|inner| BitmapError::InvalidData(inner.to_string()))?;
 
         self.current_row += 1;
         Ok(Some((y, slice)))
