@@ -64,10 +64,15 @@ pub(crate) fn decode_with_permissiveness<'a>(
     permissiveness: BmpPermissiveness,
     stop: &dyn Stop,
 ) -> Result<DecodeOutput<'a>, BitmapError> {
-    let header = decode::parse_bmp_header(data)?;
+    // Resolve the pixel-count ceiling up front and parse the header *with* it,
+    // so an over-cap header is rejected with a `LimitExceeded("pixel count …")`
+    // resource error before the header parser's byte-availability heuristic can
+    // mask it as `InvalidData`.
+    let max_pixels = effective_max_pixels(limits);
+    let header = decode::parse_bmp_header(data, max_pixels)?;
     check_limits(limits, header.width, header.height, &header.layout)?;
     stop.check()?;
-    let (pixels, layout) = decode::decode_bmp_pixels(data, permissiveness, stop)?;
+    let (pixels, layout) = decode::decode_bmp_pixels(data, permissiveness, max_pixels, stop)?;
     Ok(DecodeOutput::owned(
         pixels,
         header.width,
@@ -82,11 +87,12 @@ pub(crate) fn decode_native<'a>(
     limits: Option<&Limits>,
     stop: &dyn Stop,
 ) -> Result<DecodeOutput<'a>, BitmapError> {
-    let header = decode::parse_bmp_header(data)?;
+    let max_pixels = effective_max_pixels(limits);
+    let header = decode::parse_bmp_header(data, max_pixels)?;
     check_limits(limits, header.width, header.height, &header.layout)?;
     stop.check()?;
     let (pixels, native_layout) =
-        decode::decode_bmp_pixels_native(data, BmpPermissiveness::Standard, stop)?;
+        decode::decode_bmp_pixels_native(data, BmpPermissiveness::Standard, max_pixels, stop)?;
     Ok(DecodeOutput::owned(
         pixels,
         header.width,
@@ -95,15 +101,24 @@ pub(crate) fn decode_native<'a>(
     ))
 }
 
+/// Resolve the effective pixel-count ceiling from the caller's [`Limits`].
+///
+/// Returns the explicit `max_pixels` when set (`Some(u64::MAX)` opts out), or
+/// [`crate::limits::DEFAULT_MAX_PIXELS`] when no limit was supplied — matching
+/// the default applied by [`crate::limits::check_dimensions`].
+fn effective_max_pixels(limits: Option<&Limits>) -> u64 {
+    limits
+        .and_then(|l| l.max_pixels)
+        .unwrap_or(crate::limits::DEFAULT_MAX_PIXELS)
+}
+
 fn check_limits(
     limits: Option<&Limits>,
     width: u32,
     height: u32,
     layout: &PixelLayout,
 ) -> Result<(), BitmapError> {
-    if let Some(limits) = limits {
-        limits.check(width, height)?;
-    }
+    crate::limits::check_dimensions(width, height, limits)?;
     let out_bytes = (width as usize)
         .checked_mul(height as usize)
         .and_then(|px| px.checked_mul(layout.bytes_per_pixel()))
@@ -114,7 +129,9 @@ fn check_limits(
 
 /// Probe BMP metadata without decoding pixels.
 pub(crate) fn probe(data: &[u8]) -> Result<BmpMetadata, BitmapError> {
-    let header = decode::parse_bmp_header(data)?;
+    // Metadata probe reads dimensions only; it must not reject on the
+    // pixel-count cap, so opt out with `u64::MAX`.
+    let header = decode::parse_bmp_header(data, u64::MAX)?;
 
     /// Convert pixels-per-meter to DPI. Returns None if the value is 0.
     fn pels_to_dpi(pels: u32) -> Option<f32> {

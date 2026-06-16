@@ -52,9 +52,7 @@ pub(crate) fn decode<'a>(
 
     let header = decode::parse_header(data)?;
 
-    if let Some(limits) = limits {
-        limits.check(header.width, header.height)?;
-    }
+    limits::check_dimensions(header.width, header.height, limits)?;
 
     stop.check()?;
 

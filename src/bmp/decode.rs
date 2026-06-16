@@ -255,10 +255,15 @@ pub(crate) struct BmpHeader {
 
 /// Parse a BMP header to extract dimensions and pixel format.
 /// This is the header-only fast path for probing.
-pub(crate) fn parse_bmp_header(data: &[u8]) -> Result<BmpHeader, BitmapError> {
+/// Parse the BMP header, returning the decoded geometry/format metadata.
+///
+/// `max_pixels` is the effective pixel-count ceiling enforced on the declared
+/// dimensions (pass `u64::MAX` for metadata-only probing that must not reject
+/// on size; the decode path passes the caller's resolved [`crate::Limits`]).
+pub(crate) fn parse_bmp_header(data: &[u8], max_pixels: u64) -> Result<BmpHeader, BitmapError> {
     // Header probing uses Permissive to avoid rejecting files before
     // the caller has chosen a permissiveness level.
-    let mut dec = BmpDecoderState::new(data, BmpPermissiveness::Permissive);
+    let mut dec = BmpDecoderState::new(data, BmpPermissiveness::Permissive, max_pixels);
     dec.decode_headers()?;
 
     let layout = match dec.pix_fmt {
@@ -298,12 +303,17 @@ pub(crate) fn parse_bmp_header(data: &[u8]) -> Result<BmpHeader, BitmapError> {
 // ── Full decode ─────────────────────────────────────────────────────
 
 /// Decode BMP pixel data (RGB/RGBA output).
+///
+/// `max_pixels` is the effective pixel-count ceiling (already resolved against
+/// the caller's [`crate::Limits`], defaulting to
+/// [`crate::limits::DEFAULT_MAX_PIXELS`]); pass `u64::MAX` to opt out.
 pub(crate) fn decode_bmp_pixels(
     data: &[u8],
     permissiveness: BmpPermissiveness,
+    max_pixels: u64,
     stop: &dyn Stop,
 ) -> Result<(Vec<u8>, PixelLayout), BitmapError> {
-    let mut dec = BmpDecoderState::new(data, permissiveness);
+    let mut dec = BmpDecoderState::new(data, permissiveness, max_pixels);
     dec.decode_headers()?;
 
     let output_size = dec.output_buf_size()?;
@@ -327,12 +337,17 @@ pub(crate) fn decode_bmp_pixels(
 }
 
 /// Decode BMP pixel data in native byte order (BGR/BGRA).
+///
+/// `max_pixels` is the effective pixel-count ceiling (already resolved against
+/// the caller's [`crate::Limits`], defaulting to
+/// [`crate::limits::DEFAULT_MAX_PIXELS`]); pass `u64::MAX` to opt out.
 pub(crate) fn decode_bmp_pixels_native(
     data: &[u8],
     permissiveness: BmpPermissiveness,
+    max_pixels: u64,
     stop: &dyn Stop,
 ) -> Result<(Vec<u8>, PixelLayout), BitmapError> {
-    let mut dec = BmpDecoderState::new(data, permissiveness);
+    let mut dec = BmpDecoderState::new(data, permissiveness, max_pixels);
     dec.decode_headers()?;
 
     let output_size = dec.output_buf_size()?;
@@ -378,6 +393,14 @@ struct BmpDecoderState<'a> {
     x_pels_per_meter: u32,
     /// Vertical pixels per meter from the DIB header (0 if not present).
     y_pels_per_meter: u32,
+    /// Effective pixel-count ceiling, already resolved against the caller's
+    /// [`crate::Limits`] (or [`crate::limits::DEFAULT_MAX_PIXELS`] when none
+    /// was supplied). Checked in `decode_headers` immediately after the
+    /// dimensions are parsed, *before* the byte-availability heuristic — so an
+    /// over-cap header is rejected with a `LimitExceeded("pixel count …")`
+    /// resource error rather than masked by a downstream truncation error.
+    /// `u64::MAX` opts out (header-probe path uses this).
+    max_pixels: u64,
 }
 
 impl<'a> BmpDecoderState<'a> {
@@ -386,7 +409,7 @@ impl<'a> BmpDecoderState<'a> {
     /// via the `Limits` API. This limit is independent of system memory.
     const MAX_OUTPUT_BYTES: usize = 1024 * 1024 * 1024;
 
-    fn new(data: &'a [u8], permissiveness: BmpPermissiveness) -> Self {
+    fn new(data: &'a [u8], permissiveness: BmpPermissiveness, max_pixels: u64) -> Self {
         let mut cursor = Cursor::new(data);
         cursor.permissive = permissiveness == BmpPermissiveness::Permissive;
         Self {
@@ -408,6 +431,7 @@ impl<'a> BmpDecoderState<'a> {
             permissiveness,
             x_pels_per_meter: 0,
             y_pels_per_meter: 0,
+            max_pixels,
         }
     }
 
@@ -566,6 +590,19 @@ impl<'a> BmpDecoderState<'a> {
         }
         if self.height == 0 {
             return Err(BitmapError::InvalidHeader("BMP height is zero".into()));
+        }
+
+        // Enforce the effective pixel-count ceiling on the *declared*
+        // dimensions before the byte-availability heuristic below. A header
+        // over the cap (e.g. 225 MP under the 120 MP default) must report the
+        // resource limit as the reason it was rejected, not a downstream
+        // "not enough pixel data" error. Mirrors `limits::check_dimensions`.
+        let declared_pixels = (self.width as u64).saturating_mul(self.height as u64);
+        if declared_pixels > self.max_pixels {
+            return Err(BitmapError::LimitExceeded(alloc::format!(
+                "pixel count {declared_pixels} exceeds limit {}",
+                self.max_pixels
+            )));
         }
 
         // RLE + top-down is forbidden by spec (Standard and Strict reject)
