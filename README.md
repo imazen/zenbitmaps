@@ -42,6 +42,23 @@ assert_eq!(decoded.pixels(), &pixels[..]);
 # Ok::<(), BitmapError>(())
 ```
 
+**Signatures & types.** Dimensions are `u32` everywhere (`encode_*(.., width: u32,
+height: u32, layout: PixelLayout, stop: impl Stop)`; `decode`/`decode_with_limits`
+take `&[u8]`). On `DecodeOutput<'a>`, `width` / `height` (`u32`) and `layout`
+(`PixelLayout`) are public **fields**; `pixels() -> &[u8]`, `is_borrowed() -> bool`,
+and `into_owned() -> DecodeOutput<'static>` are **methods**. `PixelLayout` and
+`ImageFormat` are `#[non_exhaustive]` enums — a `match` on either needs a wildcard
+(`_ =>`) arm.
+
+**`encode_ppm` contract.** P6 is RGB-only and `encode_ppm` always writes
+**`maxval = 255`** (8-bit). It accepts `Rgb8` (verbatim), `Bgr8`/`Rgba8`/`Bgra8`
+(swizzled to RGB; alpha dropped), and `Gray8` (replicated to R=G=B). Any other
+layout — including the 16-bit/float ones (`Gray16`, `Rgba16`, `GrayF32`,
+`RgbF32`) and `Bgrx8` — is **rejected** with `BitmapError::UnsupportedVariant`
+(it does not silently truncate or mis-encode). For 16-bit/float output use
+`encode_pam` (16-bit integer) or `encode_pfm` (float); `encode_pgm` is the
+grayscale analog (also 8-bit `maxval = 255`).
+
 ### Output pixel layout (read `decoded.layout`)
 
 `decode()` returns pixels in the source format's **native** layout — it does
@@ -52,9 +69,10 @@ assert_eq!(decoded.pixels(), &pixels[..]);
 |--------|------------------|
 | BMP | `Rgb8` (24-bit), `Rgba8` (32-bit), or `Gray8` |
 | PGM (P2/P5) | `Gray8` or `Gray16` |
-| PPM (P3/P6) / PAM (P7) | per the header — `Gray8/16`, `GrayAlpha8/16`, `Rgb8/16`, or `Rgba8/16` |
+| PPM (P3/P6) | `Rgb8` (16-bit PPM is downscaled to `Rgb8`) |
+| PAM (P7) | per `DEPTH` — `Gray8`/`Gray16`, `Rgb8`, or `Rgba8` (16-bit RGB/RGBA are downscaled to 8-bit) |
 | farbfeld | always `Rgba16` |
-| PFM | always `RgbF32` |
+| PFM | `RgbF32` (`PF`) or `GrayF32` (`Pf`) — top-down, native-endian `f32` (see [byte conventions](#byte-conventions-for-float--16-bit-read-before-rendering)) |
 | QOI | `Rgb8` or `Rgba8` |
 
 To force a specific layout (e.g. RGBA8), convert from `decoded.layout` with a
@@ -63,6 +81,41 @@ pixel-conversion crate such as [`zenpixels-convert`]. Note `as_pixels::<P>()`
 zero-copy view, **not** a converter.
 
 [`zenpixels-convert`]: https://crates.io/crates/zenpixels-convert
+
+### Byte conventions for float & 16-bit (read before rendering)
+
+These are the details a server needs to avoid an upside-down or byte-swapped
+image. They are **not** obvious from the format names, so they are spelled out
+here. (`decoded.pixels()` always returns packed bytes in `decoded.layout`.)
+
+**PFM (`GrayF32` / `RgbF32`):**
+- **Row order is normalized to top-down.** PFM stores scanlines *bottom-to-top*
+  on disk; the decoder reverses them so `decoded.pixels()` is **top-left-origin**
+  like every other format here. You do **not** need to flip it — render row 0 at
+  the top. (Encode does the inverse: `encode_pfm` writes your top-down buffer back
+  out bottom-to-top.)
+- **Samples are returned as native-endian `f32`.** On disk PFM carries a signed
+  scale whose **sign selects byte order** (negative = little-endian file,
+  positive = big-endian file); the decoder reads accordingly and re-emits each
+  sample as host-native `f32` bytes. Reinterpret `decoded.pixels()` as `&[f32]`
+  directly (or use the `rgb` feature's typed view) — no byte-swap needed.
+- **The scale magnitude is applied to every sample**, i.e. returned value =
+  `file_value * scale.abs()`. The scale is consumed during decode and is **not**
+  surfaced separately, so values are already in the file's intended units.
+  A non-finite or zero scale is rejected (`InvalidHeader`).
+- `encode_pfm` always writes a scale of `-1.0` (little-endian, unit scale).
+
+**16-bit integer (`Gray16`):**
+- **Binary PGM/PAM (P5/P7) 16-bit is returned big-endian** — the on-disk bytes
+  (PNM stores 16-bit samples most-significant-byte first) are preserved verbatim.
+- **ASCII PGM (P2) 16-bit is returned native-endian** (samples are parsed to
+  `u16` and written in host order).
+- So for `Gray16` the byte order **depends on whether the source was binary or
+  ASCII**. If you reinterpret `decoded.pixels()` as `&[u16]`, account for this:
+  on a little-endian host, P5 samples need a `u16::swap_bytes`/`from_be_bytes`,
+  P2 samples do not. When in doubt, read each pair with `u16::from_be_bytes` for
+  P5 and `u16::from_ne_bytes` for P2. (16-bit P6/PPM and other 16-bit layouts are
+  downscaled to 8-bit during decode, so this only concerns `Gray16`.)
 
 ## Format detection
 
@@ -224,6 +277,27 @@ let limits = Limits {
 let decoded = decode_with_limits(&data, &limits, Unstoppable)?;
 # Ok::<(), BitmapError>(())
 ```
+
+**Semantics:**
+- All limit fields are `Option<u64>`. `max_width`/`max_height` are in **pixels**;
+  `max_pixels` is **width × height**; `max_memory_bytes` is in **bytes**. A
+  breach returns `BitmapError::LimitExceeded`. Dimension/pixel limits are checked
+  against the header *before* allocating, so a crafted header is rejected cheaply.
+- `max_memory_bytes` caps the **decoded output buffer** — the post-expansion size
+  (e.g. a 16-bit→8-bit PGM counts the 8-bit output; a PFM counts the `f32`
+  output: `width × height × channels × 4`). It does **not** cap the input slice.
+- **There is always a default cap.** Even plain `decode()` (no `_with_limits`)
+  applies `DEFAULT_MAX_MEMORY_BYTES` (**1 GiB**) when you don't set
+  `max_memory_bytes`, so a malicious header can't request an unbounded allocation.
+  Set `max_memory_bytes: Some(n)` to raise or lower it for your workload.
+- The **zero-copy borrowed path is not subject to `max_memory_bytes`** (it
+  allocates nothing — it returns a slice into your input), but it is still
+  gated by `max_width`/`max_height`/`max_pixels`. So for untrusted input, set the
+  dimension/pixel limits, not just the memory limit.
+- **For untrusted input, prefer `decode_with_limits`** with explicit
+  `max_width`/`max_height`/`max_pixels` (and a `max_memory_bytes` tuned to your
+  budget) rather than relying on the 1 GiB default — 1 GiB is a backstop against
+  OOM, not a per-request size policy.
 
 ## Errors (for a server)
 
