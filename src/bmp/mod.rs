@@ -101,9 +101,7 @@ fn check_limits(
     height: u32,
     layout: &PixelLayout,
 ) -> Result<(), BitmapError> {
-    if let Some(limits) = limits {
-        limits.check(width, height)?;
-    }
+    crate::limits::check_dimensions(width, height, limits)?;
     let out_bytes = (width as usize)
         .checked_mul(height as usize)
         .and_then(|px| px.checked_mul(layout.bytes_per_pixel()))

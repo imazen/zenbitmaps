@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- Decode now applies a default 120 MP pixel cap (`DEFAULT_MAX_PIXELS`) even when
+  no explicit `Limits` are supplied, matching the always-on 1 GiB
+  `DEFAULT_MAX_MEMORY_BYTES` byte cap and the wider fleet's 120 MP house
+  convention. **Behavior change:** a header declaring more than 120 MP is now
+  rejected at the pre-flight dimension check before allocation, whereas
+  previously the byte cap alone admitted far larger pixel counts for low-bpp
+  formats (e.g. a ~1 G grayscale-px header fit under 1 GiB and decoded). The
+  dimension check (`check_dimensions`) now reads the default via `unwrap_or`,
+  so it fires on the no-limits path the same way the byte cap already did.
+  Opt out by setting `Limits { max_pixels: Some(u64::MAX), .. }`; set a
+  smaller `max_pixels` to lower the ceiling. Closes #13. Regression:
+  `tests/default_pixel_cap.rs` + `limits::tests`.
+
 ### Docs
 
 - README: document the byte conventions that were previously undocumented and

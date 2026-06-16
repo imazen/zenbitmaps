@@ -26,9 +26,7 @@ pub(crate) fn decode<'a>(
 ) -> Result<DecodeOutput<'a>, BitmapError> {
     let hdr = decode::parse_header(data)?;
     let (width, height, has_alpha) = (hdr.width, hdr.height, hdr.has_alpha);
-    if let Some(limits) = limits {
-        limits.check(width, height)?;
-    }
+    limits::check_dimensions(width, height, limits)?;
     let channels: usize = if has_alpha { 4 } else { 3 };
     let out_bytes = (width as usize)
         .checked_mul(height as usize)

@@ -24,9 +24,7 @@ pub(crate) fn decode<'a>(
     let width = header.width as u32;
     let height = header.height as u32;
 
-    if let Some(limits) = limits {
-        limits.check(width, height)?;
-    }
+    limits::check_dimensions(width, height, limits)?;
 
     // Estimate output size for memory limit check
     let out_channels: usize = if matches!(header.image_type, 3 | 11) {

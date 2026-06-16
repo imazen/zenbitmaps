@@ -23,9 +23,7 @@ pub(crate) fn decode<'a>(
     stop: &dyn Stop,
 ) -> Result<DecodeOutput<'a>, BitmapError> {
     let (width, height) = decode::parse_header(data)?;
-    if let Some(limits) = limits {
-        limits.check(width, height)?;
-    }
+    limits::check_dimensions(width, height, limits)?;
     let out_bytes = (width as usize)
         .checked_mul(height as usize)
         .and_then(|px| px.checked_mul(8)) // 4 channels × 2 bytes
