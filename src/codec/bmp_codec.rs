@@ -296,7 +296,8 @@ impl<'a> zencodec::decode::DecodeJob<'a> for BmpDecodeJob {
     }
 
     fn probe(&self, data: &[u8]) -> Result<ImageInfo, BitmapError> {
-        let header = crate::bmp::decode::parse_bmp_header(data)?;
+        // Metadata only — do not reject on the pixel-count cap.
+        let header = crate::bmp::decode::parse_bmp_header(data, u64::MAX)?;
         let has_alpha = matches!(
             header.layout,
             crate::PixelLayout::Rgba8 | crate::PixelLayout::Bgra8
@@ -325,7 +326,8 @@ impl<'a> zencodec::decode::DecodeJob<'a> for BmpDecodeJob {
     }
 
     fn output_info(&self, data: &[u8]) -> Result<OutputInfo, BitmapError> {
-        let header = crate::bmp::decode::parse_bmp_header(data)?;
+        // Metadata only — do not reject on the pixel-count cap.
+        let header = crate::bmp::decode::parse_bmp_header(data, u64::MAX)?;
         let has_alpha = matches!(
             header.layout,
             crate::PixelLayout::Rgba8 | crate::PixelLayout::Bgra8

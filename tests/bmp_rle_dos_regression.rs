@@ -7,6 +7,9 @@
 //! now stops at input exhaustion (matching `decode_rle8plus`), and `decode_rle`
 //! rejects an output far larger than the compressed stream could encode
 //! (decompression-bomb ratio guard). The bomb must now be rejected, not slow.
+//!
+//! Uses `decode_bmp`, which is gated behind the `bmp` feature.
+#![cfg(feature = "bmp")]
 
 use std::time::Instant;
 

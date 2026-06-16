@@ -5,6 +5,10 @@
 //! per 16-bit sample — half the bytes the layout declared — so the declared
 //! `stride·height` overran the short data (OOB panic in `PixelBuffer::as_slice`,
 //! reached via `zencodecs::push_decode`), and 16-bit precision was silently lost.
+//!
+//! Exercises the `zencodec` decode layer (`PnmDecoderConfig`), gated behind the
+//! `zencodec` feature.
+#![cfg(feature = "zencodec")]
 
 use std::borrow::Cow;
 

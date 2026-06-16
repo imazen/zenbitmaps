@@ -34,6 +34,11 @@ pub struct Limits {
 
 impl Limits {
     /// Check dimensions against limits. Returns Ok(()) or LimitExceeded error.
+    ///
+    /// Only the `zencodec` codec adapters call this directly; gate it so the
+    /// default-feature lib build (whose decoders go through `check_dimensions`)
+    /// does not flag it as dead code.
+    #[cfg(any(feature = "zencodec", test))]
     pub(crate) fn check(&self, width: u32, height: u32) -> Result<(), crate::BitmapError> {
         check_dimensions(width, height, Some(self))
     }
@@ -127,7 +132,7 @@ mod tests {
             "expected pixel-count LimitExceeded for {OVER_W}x{OVER_H} with default limits"
         );
         // The capability claim must match reality: the default really enforces.
-        assert!(DEFAULT_MAX_PIXELS <= 120_000_000);
+        const { assert!(DEFAULT_MAX_PIXELS <= 120_000_000) };
     }
 
     #[test]
