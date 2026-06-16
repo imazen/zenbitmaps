@@ -195,6 +195,18 @@ let decoded_img = decode_img::<RGB8>(&encoded, Unstoppable)?;
 
 Every function takes a `stop` parameter implementing `enough::Stop`. Pass `Unstoppable` when you don't need cancellation. For server use, pass a token that checks a shutdown flag — decode/encode will bail out promptly via `BitmapError::Cancelled`.
 
+The simplest constructible token is `almost_enough::Stopper` (`cargo add almost-enough`) — `Clone`, with all clones sharing one flag. `stop` is taken by value, so hand `decode`/`encode` a clone and keep one to cancel from a watchdog thread:
+
+```rust
+use zenbitmaps::decode;
+
+let stopper = almost_enough::Stopper::new();
+let watch = stopper.clone();   // hand a clone to a watchdog/deadline thread
+// std::thread::spawn(move || { /* on shutdown */ watch.cancel(); });
+let decoded = decode(&data, stopper)?;   // pass the token by value
+// once cancelled, decode/encode returns Err(BitmapError::Cancelled(..)).
+```
+
 ## Resource limits
 
 ```rust
@@ -231,8 +243,8 @@ let status = match decode(webp_or_bmp_bytes, Unstoppable) {
         BitmapError::DimensionsTooLarge { .. }
         | BitmapError::LimitExceeded(_) => 413,        // Payload Too Large
         BitmapError::UnrecognizedFormat
-        | BitmapError::UnsupportedVariant(_)
-        | BitmapError::UnsupportedOperation(_) => 415, // Unsupported Media Type
+        | BitmapError::UnsupportedVariant(_) => 415,   // Unsupported Media Type
+        // (with `--features zencodec`, also map `BitmapError::UnsupportedOperation(_) => 415`)
         BitmapError::Cancelled(_) => 499,              // client closed request
         // malformed input: InvalidHeader, InvalidData, UnexpectedEof, ...
         _ => 400,                                      // Bad Request
