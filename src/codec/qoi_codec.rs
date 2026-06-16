@@ -1,5 +1,5 @@
 use super::*;
-use whereat::{At, at};
+use whereat::{At, ResultAtExt, at};
 
 // ══════════════════════════════════════════════════════════════════════
 // QOI capabilities and descriptors
@@ -608,7 +608,7 @@ impl zencodec::decode::StreamingDecode for QoiStreamingDecoder<'_> {
 
         let stride = self.row_buf.len();
         let slice = PixelSlice::new(&self.row_buf, self.width, 1, stride, self.descriptor)
-            .map_err(|e| at!(BitmapError::InvalidData(e.to_string())))?;
+            .map_err_at(|inner| BitmapError::InvalidData(inner.to_string()))?;
 
         Ok(Some((y, slice)))
     }
