@@ -1,6 +1,6 @@
 //! # zenbitmaps
 //!
-//! PNM/PAM/PFM, BMP, and farbfeld image format decoder and encoder.
+//! PNM/PAM/PFM, BMP, farbfeld, QOI, TGA, and Radiance HDR image format decoder and encoder.
 //!
 //! Reference bitmap formats for codec testing and apples-to-apples comparisons.
 //! `no_std` compatible (with `alloc`), `forbid(unsafe_code)`, panic-free.
@@ -102,6 +102,22 @@
 //! - Palette expansion, bottom-up/top-down, grayscale detection
 //! - `BmpPermissiveness` levels: Strict, Standard, Permissive
 //! - Auto-detected by [`decode()`] via `"BM"` magic
+//!
+//! ### QOI (`qoi` feature, opt-in)
+//! - RGB8 and RGBA8, lossless
+//! - Row-level streaming decode and encode
+//! - Auto-detected by [`decode()`] via `"qoif"` magic
+//!
+//! ### TGA (`tga` feature, opt-in)
+//! - Uncompressed and RLE-compressed (types 1-3, 9-11)
+//! - True color (15/16/24/32-bit), grayscale, color-mapped
+//! - All image origins (top/bottom, left/right)
+//! - Auto-detected by [`decode()`] via a header heuristic (TGA has no magic bytes)
+//!
+//! ### Radiance HDR (`hdr` feature, opt-in)
+//! - RGBE format with new-style per-channel RLE
+//! - Decodes to `RgbF32` (linear float); encodes from `RgbF32` or `Rgb8`
+//! - Auto-detected by [`decode()`] via `"#?RADIANCE"` / `"#?RGBE"` magic
 //!
 //! ## Cooperative Cancellation
 //!
@@ -246,7 +262,9 @@ pub type BGRA8 = rgb::alt::BGRA<u8>;
 /// Detect image format from magic bytes.
 ///
 /// Returns `None` if the data doesn't match any supported format's magic bytes.
-/// Recognized formats: BMP (`BM`), farbfeld (`farbfeld`), PNM (`P5`/`P6`/`P7`/`Pf`/`PF`).
+/// Recognized formats: BMP (`BM`), farbfeld (`farbfeld`), QOI (`qoif`),
+/// Radiance HDR (`#?RADIANCE`/`#?RGBE`), PNM (`P5`/`P6`/`P7`/`Pf`/`PF`), and TGA
+/// (header heuristic + v2 footer, checked last since TGA has no magic bytes).
 ///
 /// ```
 /// use zenbitmaps::*;
@@ -490,10 +508,10 @@ pub fn encode_farbfeld(
 // ── TGA encode/decode ────────────────────────────────────────────────
 
 /// Decode TGA data to pixels.
-#[cfg(feature = "tga")]
 ///
 /// Also auto-detected by [`decode()`] via header heuristics (TGA has no magic bytes).
 /// Output layout is [`PixelLayout::Rgb8`], [`PixelLayout::Rgba8`], or [`PixelLayout::Gray8`].
+#[cfg(feature = "tga")]
 pub fn decode_tga(data: &[u8], stop: impl Stop) -> Result<DecodeOutput<'_>, BitmapError> {
     tga::decode(data, None, &stop)
 }
