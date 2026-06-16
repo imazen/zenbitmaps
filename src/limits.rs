@@ -39,7 +39,7 @@ impl Limits {
     /// default-feature lib build (whose decoders go through `check_dimensions`)
     /// does not flag it as dead code.
     #[cfg(any(feature = "zencodec", test))]
-    pub(crate) fn check(&self, width: u32, height: u32) -> Result<(), crate::BitmapError> {
+    pub(crate) fn check(&self, width: u32, height: u32) -> crate::Result<()> {
         check_dimensions(width, height, Some(self))
     }
 }
@@ -55,19 +55,19 @@ pub(crate) fn check_dimensions(
     width: u32,
     height: u32,
     limits: Option<&Limits>,
-) -> Result<(), crate::BitmapError> {
+) -> crate::Result<()> {
     if let Some(max_w) = limits.and_then(|l| l.max_width)
         && u64::from(width) > max_w
     {
-        return Err(crate::BitmapError::LimitExceeded(alloc::format!(
-            "width {width} exceeds limit {max_w}"
+        return Err(whereat::at!(crate::BitmapError::LimitExceeded(
+            alloc::format!("width {width} exceeds limit {max_w}")
         )));
     }
     if let Some(max_h) = limits.and_then(|l| l.max_height)
         && u64::from(height) > max_h
     {
-        return Err(crate::BitmapError::LimitExceeded(alloc::format!(
-            "height {height} exceeds limit {max_h}"
+        return Err(whereat::at!(crate::BitmapError::LimitExceeded(
+            alloc::format!("height {height} exceeds limit {max_h}")
         )));
     }
     let max_px = limits
@@ -75,8 +75,8 @@ pub(crate) fn check_dimensions(
         .unwrap_or(DEFAULT_MAX_PIXELS);
     let pixels = u64::from(width) * u64::from(height);
     if pixels > max_px {
-        return Err(crate::BitmapError::LimitExceeded(alloc::format!(
-            "pixel count {pixels} exceeds limit {max_px}"
+        return Err(whereat::at!(crate::BitmapError::LimitExceeded(
+            alloc::format!("pixel count {pixels} exceeds limit {max_px}")
         )));
     }
     Ok(())
@@ -86,16 +86,13 @@ pub(crate) fn check_dimensions(
 ///
 /// Every decoder must call this before allocating the output buffer.
 /// When `limits` is `None`, applies [`DEFAULT_MAX_MEMORY_BYTES`].
-pub(crate) fn check_output_size(
-    bytes: usize,
-    limits: Option<&Limits>,
-) -> Result<(), crate::BitmapError> {
+pub(crate) fn check_output_size(bytes: usize, limits: Option<&Limits>) -> crate::Result<()> {
     let max = limits
         .and_then(|l| l.max_memory_bytes)
         .unwrap_or(DEFAULT_MAX_MEMORY_BYTES);
     if bytes as u64 > max {
-        return Err(crate::BitmapError::LimitExceeded(alloc::format!(
-            "output size {bytes} bytes exceeds memory limit {max}"
+        return Err(whereat::at!(crate::BitmapError::LimitExceeded(
+            alloc::format!("output size {bytes} bytes exceeds memory limit {max}")
         )));
     }
     Ok(())
@@ -115,8 +112,8 @@ mod tests {
     const UNDER_W: u32 = 10_000;
     const UNDER_H: u32 = 10_000;
 
-    fn is_pixel_limit_err(r: Result<(), crate::BitmapError>) -> bool {
-        match r {
+    fn is_pixel_limit_err(r: crate::Result<()>) -> bool {
+        match r.as_ref().map_err(|e| e.error()) {
             Err(crate::BitmapError::LimitExceeded(msg)) => msg.contains("pixel count"),
             _ => false,
         }
@@ -176,7 +173,7 @@ mod tests {
             max_width: Some(100),
             ..Limits::default()
         };
-        match l.check(200, 1) {
+        match l.check(200, 1).as_ref().map_err(|e| e.error()) {
             Err(crate::BitmapError::LimitExceeded(msg)) => {
                 assert!(msg.contains("width"), "got: {msg}")
             }

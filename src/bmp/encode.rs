@@ -4,6 +4,7 @@ use crate::error::BitmapError;
 use crate::pixel::PixelLayout;
 use alloc::vec::Vec;
 use enough::Stop;
+use whereat::at;
 
 /// Encode pixels to BMP format.
 pub(crate) fn encode_bmp(
@@ -13,21 +14,21 @@ pub(crate) fn encode_bmp(
     layout: PixelLayout,
     alpha: bool,
     stop: &dyn Stop,
-) -> Result<Vec<u8>, BitmapError> {
+) -> crate::Result<Vec<u8>> {
     let w = width as usize;
     let h = height as usize;
     let expected = w
         .checked_mul(h)
         .and_then(|wh| wh.checked_mul(layout.bytes_per_pixel()))
-        .ok_or(BitmapError::DimensionsTooLarge { width, height })?;
+        .ok_or_else(|| at!(BitmapError::DimensionsTooLarge { width, height }))?;
     if pixels.len() < expected {
-        return Err(BitmapError::BufferTooSmall {
+        return Err(at!(BitmapError::BufferTooSmall {
             needed: expected,
             actual: pixels.len(),
-        });
+        }));
     }
 
-    stop.check()?;
+    stop.check().map_err(|r| at!(BitmapError::from(r)))?;
 
     if layout == PixelLayout::Gray8 && !alpha {
         return encode_8bit_gray(pixels, width, height, w, h, stop);
@@ -48,18 +49,18 @@ fn encode_24bit(
     h: usize,
     layout: PixelLayout,
     stop: &dyn Stop,
-) -> Result<Vec<u8>, BitmapError> {
+) -> crate::Result<Vec<u8>> {
     let row_stride = w
         .checked_mul(3)
         .and_then(|r| r.checked_add(3))
         .map(|r| r & !3)
-        .ok_or(BitmapError::DimensionsTooLarge { width, height })?;
+        .ok_or_else(|| at!(BitmapError::DimensionsTooLarge { width, height }))?;
     let pixel_data_size = row_stride
         .checked_mul(h)
-        .ok_or(BitmapError::DimensionsTooLarge { width, height })?;
+        .ok_or_else(|| at!(BitmapError::DimensionsTooLarge { width, height }))?;
     let file_size = pixel_data_size
         .checked_add(54)
-        .ok_or(BitmapError::DimensionsTooLarge { width, height })?;
+        .ok_or_else(|| at!(BitmapError::DimensionsTooLarge { width, height }))?;
 
     let mut out = Vec::with_capacity(file_size);
     write_bmp_header(&mut out, file_size, pixel_data_size, width, height, 24);
@@ -69,7 +70,7 @@ fn encode_24bit(
     let src_bpp = layout.bytes_per_pixel();
     for row in (0..h).rev() {
         if row % 16 == 0 {
-            stop.check()?;
+            stop.check().map_err(|r| at!(BitmapError::from(r)))?;
         }
         if is_bgr_native {
             // BGR→BMP24: already in native byte order, direct copy
@@ -97,16 +98,16 @@ fn encode_32bit(
     h: usize,
     layout: PixelLayout,
     stop: &dyn Stop,
-) -> Result<Vec<u8>, BitmapError> {
+) -> crate::Result<Vec<u8>> {
     let row_stride = w
         .checked_mul(4)
-        .ok_or(BitmapError::DimensionsTooLarge { width, height })?;
+        .ok_or_else(|| at!(BitmapError::DimensionsTooLarge { width, height }))?;
     let pixel_data_size = row_stride
         .checked_mul(h)
-        .ok_or(BitmapError::DimensionsTooLarge { width, height })?;
+        .ok_or_else(|| at!(BitmapError::DimensionsTooLarge { width, height }))?;
     let file_size = pixel_data_size
         .checked_add(54)
-        .ok_or(BitmapError::DimensionsTooLarge { width, height })?;
+        .ok_or_else(|| at!(BitmapError::DimensionsTooLarge { width, height }))?;
 
     let mut out = Vec::with_capacity(file_size);
     write_bmp_header(&mut out, file_size, pixel_data_size, width, height, 32);
@@ -116,7 +117,7 @@ fn encode_32bit(
     let is_bgra_native = matches!(layout, PixelLayout::Bgra8);
     for row in (0..h).rev() {
         if row % 16 == 0 {
-            stop.check()?;
+            stop.check().map_err(|r| at!(BitmapError::from(r)))?;
         }
         if is_bgra_native {
             // BGRA/BGRX→BMP32: already in native byte order, direct copy
@@ -143,21 +144,21 @@ fn encode_8bit_gray(
     w: usize,
     h: usize,
     stop: &dyn Stop,
-) -> Result<Vec<u8>, BitmapError> {
+) -> crate::Result<Vec<u8>> {
     // Row stride for 8bpp must be a multiple of 4 bytes
     let row_stride = w
         .checked_add(3)
         .map(|r| r & !3)
-        .ok_or(BitmapError::DimensionsTooLarge { width, height })?;
+        .ok_or_else(|| at!(BitmapError::DimensionsTooLarge { width, height }))?;
     let pixel_data_size = row_stride
         .checked_mul(h)
-        .ok_or(BitmapError::DimensionsTooLarge { width, height })?;
+        .ok_or_else(|| at!(BitmapError::DimensionsTooLarge { width, height }))?;
     // No palette: data_offset = 14 (file header) + 40 (DIB header) = 54
     // The decoder recognizes 8bpp with no palette space as Gray8.
     let data_offset: usize = 54;
     let file_size = pixel_data_size
         .checked_add(data_offset)
-        .ok_or(BitmapError::DimensionsTooLarge { width, height })?;
+        .ok_or_else(|| at!(BitmapError::DimensionsTooLarge { width, height }))?;
 
     let mut out = Vec::with_capacity(file_size);
 
@@ -184,7 +185,7 @@ fn encode_8bit_gray(
     let pad_bytes = row_stride - w;
     for row in (0..h).rev() {
         if row % 16 == 0 {
-            stop.check()?;
+            stop.check().map_err(|r| at!(BitmapError::from(r)))?;
         }
         let row_start = row * w;
         out.extend_from_slice(&pixels[row_start..row_start + w]);
@@ -222,7 +223,7 @@ fn write_bmp_header(
     out.extend_from_slice(&0u32.to_le_bytes()); // important colors
 }
 
-fn get_rgb(pixels: &[u8], idx: usize, layout: PixelLayout) -> Result<(u8, u8, u8), BitmapError> {
+fn get_rgb(pixels: &[u8], idx: usize, layout: PixelLayout) -> crate::Result<(u8, u8, u8)> {
     Ok(match layout {
         PixelLayout::Rgb8 => {
             let off = idx * 3;
@@ -245,19 +246,15 @@ fn get_rgb(pixels: &[u8], idx: usize, layout: PixelLayout) -> Result<(u8, u8, u8
             (g, g, g)
         }
         _ => {
-            return Err(BitmapError::UnsupportedVariant(alloc::format!(
+            return Err(at!(BitmapError::UnsupportedVariant(alloc::format!(
                 "cannot get RGB from {:?}",
                 layout
-            )));
+            ))));
         }
     })
 }
 
-fn get_rgba(
-    pixels: &[u8],
-    idx: usize,
-    layout: PixelLayout,
-) -> Result<(u8, u8, u8, u8), BitmapError> {
+fn get_rgba(pixels: &[u8], idx: usize, layout: PixelLayout) -> crate::Result<(u8, u8, u8, u8)> {
     Ok(match layout {
         PixelLayout::Rgba8 => {
             let off = idx * 4;
@@ -294,10 +291,10 @@ fn get_rgba(
             (g, g, g, 255)
         }
         _ => {
-            return Err(BitmapError::UnsupportedVariant(alloc::format!(
+            return Err(at!(BitmapError::UnsupportedVariant(alloc::format!(
                 "cannot get RGBA from {:?}",
                 layout
-            )));
+            ))));
         }
     })
 }

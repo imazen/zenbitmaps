@@ -834,7 +834,7 @@ dependencies = [
 
 [[package]]
 name = "zenbitmaps"
-version = "0.1.5"
+version = "0.2.0"
 dependencies = [
  "archmage",
  "codec-corpus",
@@ -843,6 +843,7 @@ dependencies = [
  "imgref",
  "rgb",
  "thiserror",
+ "whereat",
  "zenbench",
  "zencodec",
  "zenpixels",

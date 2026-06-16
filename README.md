@@ -39,7 +39,7 @@ let encoded = encode_ppm(&pixels, 2, 1, PixelLayout::Rgb8, Unstoppable)?;
 let decoded = decode(&encoded, Unstoppable)?;
 assert!(decoded.is_borrowed()); // zero-copy for PPM with maxval=255
 assert_eq!(decoded.pixels(), &pixels[..]);
-# Ok::<(), BitmapError>(())
+# Ok::<(), zenbitmaps::At<zenbitmaps::BitmapError>>(())
 ```
 
 **Signatures & types.** Dimensions are `u32` everywhere (`encode_*(.., width: u32,
@@ -227,7 +227,7 @@ use enough::Unstoppable;
 let pixels = vec![RGB8 { r: 255, g: 0, b: 0 }, RGB8 { r: 0, g: 255, b: 0 }];
 let encoded = encode_ppm_pixels(&pixels, 2, 1, Unstoppable)?;
 let (decoded, w, h) = decode_pixels::<RGB8>(&encoded, Unstoppable)?;
-# Ok::<(), BitmapError>(())
+# Ok::<(), zenbitmaps::At<zenbitmaps::BitmapError>>(())
 ```
 
 Available types: `RGB8`, `RGBA8`, `BGR8`, `BGRA8` (type aliases for `rgb` crate types).
@@ -275,7 +275,7 @@ let limits = Limits {
 };
 # let data = encode_ppm(&[0u8; 3], 1, 1, PixelLayout::Rgb8, Unstoppable).unwrap();
 let decoded = decode_with_limits(&data, &limits, Unstoppable)?;
-# Ok::<(), BitmapError>(())
+# Ok::<(), zenbitmaps::At<zenbitmaps::BitmapError>>(())
 ```
 
 **Semantics:**
@@ -301,10 +301,12 @@ let decoded = decode_with_limits(&data, &limits, Unstoppable)?;
 
 ## Errors (for a server)
 
-`decode*`/`encode*` return a **bare** [`BitmapError`] (this crate does not wrap
-errors in `whereat::At<…>`, so match it directly — no `.error()`/`.decompose()`).
-`BitmapError` is `#[non_exhaustive]`, so keep a wildcard arm; map it to an HTTP
-status like so:
+`decode*`/`encode*` return [`At<BitmapError>`][whereat] (re-exported as
+`zenbitmaps::At`). The [`whereat::At`][whereat] wrapper carries the `file:line`
+(and a GitHub source link) where the error was raised, which is what you want in
+a server log or stack trace. The inner enum is `BitmapError`; call `.error()` on
+the `At` to borrow it (`&BitmapError`) and match on that. `BitmapError` is
+`#[non_exhaustive]`, so keep a wildcard arm. Map it to an HTTP status like so:
 
 ```rust
 use zenbitmaps::{decode, BitmapError};
@@ -313,7 +315,7 @@ use enough::Unstoppable;
 let webp_or_bmp_bytes: &[u8] = &[];
 let status = match decode(webp_or_bmp_bytes, Unstoppable) {
     Ok(_decoded) => 200,
-    Err(e) => match e {
+    Err(e) => match e.error() {                        // e is At<BitmapError>; .error() -> &BitmapError
         BitmapError::DimensionsTooLarge { .. }
         | BitmapError::LimitExceeded(_) => 413,        // Payload Too Large
         BitmapError::UnrecognizedFormat
@@ -326,6 +328,9 @@ let status = match decode(webp_or_bmp_bytes, Unstoppable) {
 };
 # let _ = status;
 ```
+
+The `At` itself `Display`s and `Debug`s with the location prefix, so logging `e`
+directly (`tracing::error!("{e}")`) records where it came from.
 
 ## Features
 
@@ -380,7 +385,10 @@ All public functions are flat, one-shot calls at crate root.
 - `PixelLayout` — pixel format (Gray8, Gray16, Rgb8, Rgba8, Rgba16, Bgr8, Bgra8, Bgrx8, GrayF32, RgbF32)
 - `BmpPermissiveness` — decode strictness (Strict, Standard, Permissive) (`bmp`)
 - `Limits` — resource limits (max width/height/pixels/memory)
-- `BitmapError` — error type, `#[non_exhaustive]`
+- `BitmapError` — error enum, `#[non_exhaustive]`. The public error is
+  `At<BitmapError>` — match on `.error()` (see [Errors](#errors-for-a-server)).
+- `At<E>` — `whereat` location-tracking error wrapper (re-export);
+  `Result<T> = Result<T, At<BitmapError>>` is the crate's result alias
 
 ## Performance
 

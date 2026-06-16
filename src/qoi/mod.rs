@@ -23,7 +23,7 @@ pub(crate) fn decode<'a>(
     data: &'a [u8],
     limits: Option<&Limits>,
     stop: &dyn Stop,
-) -> Result<DecodeOutput<'a>, BitmapError> {
+) -> crate::Result<DecodeOutput<'a>> {
     let hdr = decode::parse_header(data)?;
     let (width, height, has_alpha) = (hdr.width, hdr.height, hdr.has_alpha);
     limits::check_dimensions(width, height, limits)?;
@@ -31,9 +31,14 @@ pub(crate) fn decode<'a>(
     let out_bytes = (width as usize)
         .checked_mul(height as usize)
         .and_then(|px| px.checked_mul(channels))
-        .ok_or_else(|| BitmapError::LimitExceeded("output size overflows usize".into()))?;
+        .ok_or_else(|| {
+            whereat::at!(BitmapError::LimitExceeded(
+                "output size overflows usize".into()
+            ))
+        })?;
     limits::check_output_size(out_bytes, limits)?;
-    stop.check()?;
+    stop.check()
+        .map_err(|r| whereat::at!(BitmapError::from(r)))?;
     let pixels = decode::decode_pixels(data, width, height, has_alpha, stop)?;
     let layout = if has_alpha {
         PixelLayout::Rgba8
@@ -50,6 +55,6 @@ pub(crate) fn encode(
     height: u32,
     layout: PixelLayout,
     stop: &dyn Stop,
-) -> Result<Vec<u8>, BitmapError> {
+) -> crate::Result<Vec<u8>> {
     encode::encode_qoi(pixels, width, height, layout, stop)
 }

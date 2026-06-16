@@ -62,8 +62,13 @@ const OVER_H: i32 = 15_000;
 const UNDER_W: i32 = 10_000;
 const UNDER_H: i32 = 10_000;
 
-fn is_pixel_count_limit_err(r: &Result<zenbitmaps::DecodeOutput<'_>, BitmapError>) -> bool {
-    matches!(r, Err(BitmapError::LimitExceeded(msg)) if msg.contains("pixel count"))
+fn is_pixel_count_limit_err(
+    r: &Result<zenbitmaps::DecodeOutput<'_>, zenbitmaps::At<BitmapError>>,
+) -> bool {
+    matches!(
+        r.as_ref().map_err(|e| e.error()),
+        Err(BitmapError::LimitExceeded(msg)) if msg.contains("pixel count")
+    )
 }
 
 #[test]

@@ -20,7 +20,7 @@ pub(crate) fn encode_tga(
     height: u32,
     layout: PixelLayout,
     stop: &dyn Stop,
-) -> Result<Vec<u8>, BitmapError> {
+) -> crate::Result<Vec<u8>> {
     let w = width as usize;
     let h = height as usize;
     let bpp = layout.bytes_per_pixel();
@@ -28,17 +28,20 @@ pub(crate) fn encode_tga(
     let expected = w
         .checked_mul(h)
         .and_then(|wh| wh.checked_mul(bpp))
-        .ok_or(BitmapError::DimensionsTooLarge { width, height })?;
+        .ok_or_else(|| whereat::at!(BitmapError::DimensionsTooLarge { width, height }))?;
     if pixels.len() < expected {
-        return Err(BitmapError::BufferTooSmall {
+        return Err(whereat::at!(BitmapError::BufferTooSmall {
             needed: expected,
             actual: pixels.len(),
-        });
+        }));
     }
 
     // Validate width/height fit in u16
     if width > u16::MAX as u32 || height > u16::MAX as u32 {
-        return Err(BitmapError::DimensionsTooLarge { width, height });
+        return Err(whereat::at!(BitmapError::DimensionsTooLarge {
+            width,
+            height
+        }));
     }
 
     // Determine output pixel depth and image type
@@ -47,9 +50,11 @@ pub(crate) fn encode_tga(
         PixelLayout::Rgb8 | PixelLayout::Bgr8 => (2, 24, 3),
         PixelLayout::Rgba8 | PixelLayout::Bgra8 => (2, 32, 4),
         _ => {
-            return Err(BitmapError::UnsupportedVariant(alloc::format!(
-                "cannot encode {:?} as TGA (supported: Gray8, Rgb8, Rgba8, Bgr8, Bgra8)",
-                layout
+            return Err(whereat::at!(BitmapError::UnsupportedVariant(
+                alloc::format!(
+                    "cannot encode {:?} as TGA (supported: Gray8, Rgb8, Rgba8, Bgr8, Bgra8)",
+                    layout
+                )
             )));
         }
     };
@@ -58,10 +63,10 @@ pub(crate) fn encode_tga(
     let pixel_bytes = w
         .checked_mul(h)
         .and_then(|wh| wh.checked_mul(out_bpp))
-        .ok_or(BitmapError::DimensionsTooLarge { width, height })?;
+        .ok_or_else(|| whereat::at!(BitmapError::DimensionsTooLarge { width, height }))?;
     let total = pixel_bytes
         .checked_add(18)
-        .ok_or(BitmapError::DimensionsTooLarge { width, height })?;
+        .ok_or_else(|| whereat::at!(BitmapError::DimensionsTooLarge { width, height }))?;
 
     let mut out = Vec::with_capacity(total);
 
@@ -80,13 +85,15 @@ pub(crate) fn encode_tga(
     let alpha_bits: u8 = if out_depth == 32 { 8 } else { 0 };
     out.push(alpha_bits); // descriptor: alpha bits, origin=bottom-left (bit 5=0)
 
-    stop.check()?;
+    stop.check()
+        .map_err(|r| whereat::at!(BitmapError::from(r)))?;
 
     // Write pixel data bottom-to-top (TGA default origin is bottom-left)
     for y_inv in 0..h {
         let y = h - 1 - y_inv;
         if y_inv % 16 == 0 {
-            stop.check()?;
+            stop.check()
+                .map_err(|r| whereat::at!(BitmapError::from(r)))?;
         }
         let row_start = y * w * bpp;
 

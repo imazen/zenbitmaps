@@ -581,7 +581,7 @@ fn limits_max_memory_tga() {
 fn cancellation_decode_tga() {
     struct AlreadyStopped;
     impl enough::Stop for AlreadyStopped {
-        fn check(&self) -> Result<(), enough::StopReason> {
+        fn check(&self) -> core::result::Result<(), enough::StopReason> {
             Err(enough::StopReason::Cancelled)
         }
     }
@@ -589,7 +589,9 @@ fn cancellation_decode_tga() {
     let pixels: Vec<u8> = (0..10 * 32).flat_map(|i| [(i % 256) as u8, 0, 0]).collect();
     let encoded = encode_tga(&pixels, 10, 32, PixelLayout::Rgb8, Unstoppable).unwrap();
     assert!(matches!(
-        decode_tga(&encoded, AlreadyStopped),
+        decode_tga(&encoded, AlreadyStopped)
+            .as_ref()
+            .map_err(|e| e.error()),
         Err(BitmapError::Cancelled(_))
     ));
 }
@@ -598,14 +600,16 @@ fn cancellation_decode_tga() {
 fn cancellation_encode_tga() {
     struct AlreadyStopped;
     impl enough::Stop for AlreadyStopped {
-        fn check(&self) -> Result<(), enough::StopReason> {
+        fn check(&self) -> core::result::Result<(), enough::StopReason> {
             Err(enough::StopReason::Cancelled)
         }
     }
 
     let pixels = vec![0u8; 10 * 32 * 3];
     assert!(matches!(
-        encode_tga(&pixels, 10, 32, PixelLayout::Rgb8, AlreadyStopped),
+        encode_tga(&pixels, 10, 32, PixelLayout::Rgb8, AlreadyStopped)
+            .as_ref()
+            .map_err(|e| e.error()),
         Err(BitmapError::Cancelled(_))
     ));
 }

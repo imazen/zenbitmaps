@@ -6,6 +6,19 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- **BREAKING (0.2.0):** the public error type is now `At<BitmapError>`
+  (`whereat::At` wrapping the `BitmapError` enum), re-exported as
+  `zenbitmaps::At` alongside a `pub type Result<T> = Result<T, At<BitmapError>>`.
+  Every `decode*`/`encode*`/`probe_bmp` entry point — and the `zencodec`
+  adapters' associated `Error` types — now return the wrapped form, which
+  carries a captured `file:line` location (and, via
+  `whereat::define_at_crate_info!`, a GitHub source link) for server-side
+  stack traces on malformed-input failures. **Migration:** match on the inner
+  enum through `err.error()` (returns `&BitmapError`), e.g.
+  `matches!(result.as_ref().map_err(|e| e.error()), Err(BitmapError::LimitExceeded(_)))`
+  or `match err.error() { BitmapError::UnrecognizedFormat => .. }`. The
+  `BitmapError` enum itself (variant names, `#[non_exhaustive]`) is unchanged;
+  only the wrapper is new. Bumps to 0.2.0 (leftmost-non-zero 0.x break).
 - Decode now applies a default 120 MP pixel cap (`DEFAULT_MAX_PIXELS`) even when
   no explicit `Limits` are supplied, matching the always-on 1 GiB
   `DEFAULT_MAX_MEMORY_BYTES` byte cap and the wider fleet's 120 MP house

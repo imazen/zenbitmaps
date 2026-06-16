@@ -453,7 +453,7 @@ fn limits_reject_large() {
     };
     let result = decode_with_limits(&encoded, &limits, Unstoppable);
     assert!(result.is_err());
-    match result.unwrap_err() {
+    match result.unwrap_err().error() {
         BitmapError::LimitExceeded(_) => {}
         other => panic!("expected LimitExceeded, got {other:?}"),
     }
@@ -497,7 +497,10 @@ fn detect_format_unknown() {
 #[test]
 fn decode_unrecognized_format() {
     let result = decode(b"NOTAFORMAT", Unstoppable);
-    assert!(matches!(result, Err(BitmapError::UnrecognizedFormat)));
+    assert!(matches!(
+        result.as_ref().map_err(|e| e.error()),
+        Err(BitmapError::UnrecognizedFormat)
+    ));
 }
 
 #[test]
@@ -625,7 +628,10 @@ fn qoi_limits_reject() {
         ..Default::default()
     };
     let result = decode_qoi_with_limits(&encoded, &limits, Unstoppable);
-    assert!(matches!(result, Err(BitmapError::LimitExceeded(_))));
+    assert!(matches!(
+        result.as_ref().map_err(|e| e.error()),
+        Err(BitmapError::LimitExceeded(_))
+    ));
 }
 
 // ── QOI_OP_RUN run-clamp regression ──────────────────────────────────
@@ -857,28 +863,40 @@ fn qoi_decode_truncated_pixel_data() {
 #[test]
 fn qoi_encode_unsupported_layout_gray8() {
     let result = encode_qoi(&[128u8], 1, 1, PixelLayout::Gray8, Unstoppable);
-    assert!(matches!(result, Err(BitmapError::UnsupportedVariant(_))));
+    assert!(matches!(
+        result.as_ref().map_err(|e| e.error()),
+        Err(BitmapError::UnsupportedVariant(_))
+    ));
 }
 
 #[cfg(feature = "qoi")]
 #[test]
 fn qoi_encode_unsupported_layout_rgba16() {
     let result = encode_qoi(&[0u8; 8], 1, 1, PixelLayout::Rgba16, Unstoppable);
-    assert!(matches!(result, Err(BitmapError::UnsupportedVariant(_))));
+    assert!(matches!(
+        result.as_ref().map_err(|e| e.error()),
+        Err(BitmapError::UnsupportedVariant(_))
+    ));
 }
 
 #[cfg(feature = "qoi")]
 #[test]
 fn qoi_encode_unsupported_layout_grayf32() {
     let result = encode_qoi(&[0u8; 4], 1, 1, PixelLayout::GrayF32, Unstoppable);
-    assert!(matches!(result, Err(BitmapError::UnsupportedVariant(_))));
+    assert!(matches!(
+        result.as_ref().map_err(|e| e.error()),
+        Err(BitmapError::UnsupportedVariant(_))
+    ));
 }
 
 #[cfg(feature = "qoi")]
 #[test]
 fn qoi_encode_unsupported_layout_rgbf32() {
     let result = encode_qoi(&[0u8; 12], 1, 1, PixelLayout::RgbF32, Unstoppable);
-    assert!(matches!(result, Err(BitmapError::UnsupportedVariant(_))));
+    assert!(matches!(
+        result.as_ref().map_err(|e| e.error()),
+        Err(BitmapError::UnsupportedVariant(_))
+    ));
 }
 
 #[cfg(feature = "qoi")]
@@ -886,7 +904,10 @@ fn qoi_encode_unsupported_layout_rgbf32() {
 fn qoi_encode_buffer_too_small() {
     // Claim 2x2 RGB (12 bytes needed) but only provide 6
     let result = encode_qoi(&[0u8; 6], 2, 2, PixelLayout::Rgb8, Unstoppable);
-    assert!(matches!(result, Err(BitmapError::BufferTooSmall { .. })));
+    assert!(matches!(
+        result.as_ref().map_err(|e| e.error()),
+        Err(BitmapError::BufferTooSmall { .. })
+    ));
 }
 
 // ── QOI limit variants ──────────────────────────────────────────────
@@ -901,7 +922,10 @@ fn qoi_limits_max_width() {
         ..Default::default()
     };
     let result = decode_qoi_with_limits(&encoded, &limits, Unstoppable);
-    assert!(matches!(result, Err(BitmapError::LimitExceeded(_))));
+    assert!(matches!(
+        result.as_ref().map_err(|e| e.error()),
+        Err(BitmapError::LimitExceeded(_))
+    ));
 }
 
 #[cfg(feature = "qoi")]
@@ -914,7 +938,10 @@ fn qoi_limits_max_height() {
         ..Default::default()
     };
     let result = decode_qoi_with_limits(&encoded, &limits, Unstoppable);
-    assert!(matches!(result, Err(BitmapError::LimitExceeded(_))));
+    assert!(matches!(
+        result.as_ref().map_err(|e| e.error()),
+        Err(BitmapError::LimitExceeded(_))
+    ));
 }
 
 #[cfg(feature = "qoi")]
@@ -927,7 +954,10 @@ fn qoi_limits_max_memory() {
         ..Default::default()
     };
     let result = decode_qoi_with_limits(&encoded, &limits, Unstoppable);
-    assert!(matches!(result, Err(BitmapError::LimitExceeded(_))));
+    assert!(matches!(
+        result.as_ref().map_err(|e| e.error()),
+        Err(BitmapError::LimitExceeded(_))
+    ));
 }
 
 // ── QOI cancellation ────────────────────────────────────────────────
@@ -937,7 +967,7 @@ fn qoi_limits_max_memory() {
 fn qoi_decode_cancellation() {
     struct AlreadyStopped;
     impl enough::Stop for AlreadyStopped {
-        fn check(&self) -> Result<(), enough::StopReason> {
+        fn check(&self) -> core::result::Result<(), enough::StopReason> {
             Err(enough::StopReason::Cancelled)
         }
     }
@@ -946,7 +976,10 @@ fn qoi_decode_cancellation() {
     let encoded = encode_qoi(&pixels, 10, 32, PixelLayout::Rgb8, Unstoppable).unwrap();
 
     let result = decode_qoi(&encoded, AlreadyStopped);
-    assert!(matches!(result, Err(BitmapError::Cancelled(_))));
+    assert!(matches!(
+        result.as_ref().map_err(|e| e.error()),
+        Err(BitmapError::Cancelled(_))
+    ));
 }
 
 #[cfg(feature = "qoi")]
@@ -954,14 +987,17 @@ fn qoi_decode_cancellation() {
 fn qoi_encode_cancellation() {
     struct AlreadyStopped;
     impl enough::Stop for AlreadyStopped {
-        fn check(&self) -> Result<(), enough::StopReason> {
+        fn check(&self) -> core::result::Result<(), enough::StopReason> {
             Err(enough::StopReason::Cancelled)
         }
     }
 
     let pixels = vec![0u8; 10 * 32 * 3];
     let result = encode_qoi(&pixels, 10, 32, PixelLayout::Rgb8, AlreadyStopped);
-    assert!(matches!(result, Err(BitmapError::Cancelled(_))));
+    assert!(matches!(
+        result.as_ref().map_err(|e| e.error()),
+        Err(BitmapError::Cancelled(_))
+    ));
 }
 
 // ── QOI auto-detect decode ──────────────────────────────────────────
@@ -1092,7 +1128,10 @@ fn tga_limits_reject() {
         ..Default::default()
     };
     let result = decode_tga_with_limits(&encoded, &limits, Unstoppable);
-    assert!(matches!(result, Err(BitmapError::LimitExceeded(_))));
+    assert!(matches!(
+        result.as_ref().map_err(|e| e.error()),
+        Err(BitmapError::LimitExceeded(_))
+    ));
 }
 
 #[cfg(feature = "tga")]
@@ -1119,13 +1158,22 @@ fn tga_decode_truncated() {
 #[test]
 fn tga_encode_unsupported_layout() {
     let result = encode_tga(&[0u8; 12], 1, 1, PixelLayout::RgbF32, Unstoppable);
-    assert!(matches!(result, Err(BitmapError::UnsupportedVariant(_))));
+    assert!(matches!(
+        result.as_ref().map_err(|e| e.error()),
+        Err(BitmapError::UnsupportedVariant(_))
+    ));
 
     let result = encode_tga(&[0u8; 8], 1, 1, PixelLayout::Rgba16, Unstoppable);
-    assert!(matches!(result, Err(BitmapError::UnsupportedVariant(_))));
+    assert!(matches!(
+        result.as_ref().map_err(|e| e.error()),
+        Err(BitmapError::UnsupportedVariant(_))
+    ));
 
     let result = encode_tga(&[0u8; 4], 1, 1, PixelLayout::GrayF32, Unstoppable);
-    assert!(matches!(result, Err(BitmapError::UnsupportedVariant(_))));
+    assert!(matches!(
+        result.as_ref().map_err(|e| e.error()),
+        Err(BitmapError::UnsupportedVariant(_))
+    ));
 }
 
 #[cfg(feature = "tga")]
@@ -1285,7 +1333,10 @@ fn hdr_limits_reject() {
         ..Default::default()
     };
     let result = decode_hdr_with_limits(&encoded, &limits, Unstoppable);
-    assert!(matches!(result, Err(BitmapError::LimitExceeded(_))));
+    assert!(matches!(
+        result.as_ref().map_err(|e| e.error()),
+        Err(BitmapError::LimitExceeded(_))
+    ));
 }
 
 #[cfg(feature = "hdr")]
@@ -1350,7 +1401,10 @@ fn hdr_encode_rgb8() {
 #[test]
 fn hdr_encode_unsupported_layout() {
     let result = encode_hdr(&[0u8; 4], 1, 1, PixelLayout::Rgba8, Unstoppable);
-    assert!(matches!(result, Err(BitmapError::UnsupportedVariant(_))));
+    assert!(matches!(
+        result.as_ref().map_err(|e| e.error()),
+        Err(BitmapError::UnsupportedVariant(_))
+    ));
 }
 
 #[cfg(feature = "hdr")]
@@ -1358,7 +1412,7 @@ fn hdr_encode_unsupported_layout() {
 fn hdr_cancellation() {
     struct AlreadyStopped;
     impl enough::Stop for AlreadyStopped {
-        fn check(&self) -> Result<(), enough::StopReason> {
+        fn check(&self) -> core::result::Result<(), enough::StopReason> {
             Err(enough::StopReason::Cancelled)
         }
     }
@@ -1366,12 +1420,18 @@ fn hdr_cancellation() {
     // Encode should cancel
     let pixels = make_rgbf32_pixels(&vec![(1.0, 1.0, 1.0); 100]);
     let result = encode_hdr(&pixels, 10, 10, PixelLayout::RgbF32, AlreadyStopped);
-    assert!(matches!(result, Err(BitmapError::Cancelled(_))));
+    assert!(matches!(
+        result.as_ref().map_err(|e| e.error()),
+        Err(BitmapError::Cancelled(_))
+    ));
 
     // Decode should cancel (use a valid encoded file)
     let encoded = encode_hdr(&pixels, 10, 10, PixelLayout::RgbF32, Unstoppable).unwrap();
     let result = decode_hdr(&encoded, AlreadyStopped);
-    assert!(matches!(result, Err(BitmapError::Cancelled(_))));
+    assert!(matches!(
+        result.as_ref().map_err(|e| e.error()),
+        Err(BitmapError::Cancelled(_))
+    ));
 }
 
 #[cfg(feature = "hdr")]

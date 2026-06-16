@@ -4,6 +4,7 @@
 
 use alloc::vec::Vec;
 use enough::Stop;
+use whereat::at;
 
 use crate::error::BitmapError;
 use crate::pixel::PixelLayout;
@@ -18,29 +19,29 @@ pub(crate) fn encode_farbfeld(
     height: u32,
     layout: PixelLayout,
     stop: &dyn Stop,
-) -> Result<Vec<u8>, BitmapError> {
+) -> crate::Result<Vec<u8>> {
     let w = width as usize;
     let h = height as usize;
     let bpp = layout.bytes_per_pixel();
     let expected = w
         .checked_mul(h)
         .and_then(|wh| wh.checked_mul(bpp))
-        .ok_or(BitmapError::DimensionsTooLarge { width, height })?;
+        .ok_or_else(|| at!(BitmapError::DimensionsTooLarge { width, height }))?;
     if pixels.len() < expected {
-        return Err(BitmapError::BufferTooSmall {
+        return Err(at!(BitmapError::BufferTooSmall {
             needed: expected,
             actual: pixels.len(),
-        });
+        }));
     }
 
     // Output: 16 header + w*h*8 pixel bytes
     let pixel_bytes = w
         .checked_mul(h)
         .and_then(|wh| wh.checked_mul(8))
-        .ok_or(BitmapError::DimensionsTooLarge { width, height })?;
+        .ok_or_else(|| at!(BitmapError::DimensionsTooLarge { width, height }))?;
     let total = pixel_bytes
         .checked_add(16)
-        .ok_or(BitmapError::DimensionsTooLarge { width, height })?;
+        .ok_or_else(|| at!(BitmapError::DimensionsTooLarge { width, height }))?;
 
     let mut out = Vec::with_capacity(total);
 
@@ -49,14 +50,14 @@ pub(crate) fn encode_farbfeld(
     out.extend_from_slice(&width.to_be_bytes());
     out.extend_from_slice(&height.to_be_bytes());
 
-    stop.check()?;
+    stop.check().map_err(|r| at!(BitmapError::from(r)))?;
 
     match layout {
         PixelLayout::Rgba16 => {
             // Native endian u16 → big endian u16
             for (row_idx, row) in pixels[..expected].chunks_exact(w * 8).enumerate() {
                 if row_idx % 16 == 0 {
-                    stop.check()?;
+                    stop.check().map_err(|r| at!(BitmapError::from(r)))?;
                 }
                 for pair in row.chunks_exact(2) {
                     let val = u16::from_ne_bytes([pair[0], pair[1]]);
@@ -68,7 +69,7 @@ pub(crate) fn encode_farbfeld(
             // Expand u8 → u16 via val * 257
             for (row_idx, row) in pixels[..expected].chunks_exact(w * 4).enumerate() {
                 if row_idx % 16 == 0 {
-                    stop.check()?;
+                    stop.check().map_err(|r| at!(BitmapError::from(r)))?;
                 }
                 for &byte in row {
                     let val: u16 = byte as u16 * 257;
@@ -80,7 +81,7 @@ pub(crate) fn encode_farbfeld(
             // Expand RGB u8 → RGBA u16 (alpha = 65535)
             for (row_idx, row) in pixels[..expected].chunks_exact(w * 3).enumerate() {
                 if row_idx % 16 == 0 {
-                    stop.check()?;
+                    stop.check().map_err(|r| at!(BitmapError::from(r)))?;
                 }
                 for pixel in row.chunks_exact(3) {
                     let r: u16 = pixel[0] as u16 * 257;
@@ -97,7 +98,7 @@ pub(crate) fn encode_farbfeld(
             // Expand BGRA u8 → RGBA u16 (swap B↔R)
             for (row_idx, row) in pixels[..expected].chunks_exact(w * 4).enumerate() {
                 if row_idx % 16 == 0 {
-                    stop.check()?;
+                    stop.check().map_err(|r| at!(BitmapError::from(r)))?;
                 }
                 for pixel in row.chunks_exact(4) {
                     let r: u16 = pixel[2] as u16 * 257;
@@ -115,7 +116,7 @@ pub(crate) fn encode_farbfeld(
             // Expand BGRX u8 → RGBA u16 (swap B↔R, alpha=65535)
             for (row_idx, row) in pixels[..expected].chunks_exact(w * 4).enumerate() {
                 if row_idx % 16 == 0 {
-                    stop.check()?;
+                    stop.check().map_err(|r| at!(BitmapError::from(r)))?;
                 }
                 for pixel in row.chunks_exact(4) {
                     let r: u16 = pixel[2] as u16 * 257;
@@ -132,7 +133,7 @@ pub(crate) fn encode_farbfeld(
             // Expand BGR u8 → RGBA u16 (swap B↔R, alpha=65535)
             for (row_idx, row) in pixels[..expected].chunks_exact(w * 3).enumerate() {
                 if row_idx % 16 == 0 {
-                    stop.check()?;
+                    stop.check().map_err(|r| at!(BitmapError::from(r)))?;
                 }
                 for pixel in row.chunks_exact(3) {
                     let r: u16 = pixel[2] as u16 * 257;
@@ -149,7 +150,7 @@ pub(crate) fn encode_farbfeld(
             // Expand gray u8 → RGBA u16 (R=G=B=gray, alpha=65535)
             for (row_idx, row) in pixels[..expected].chunks_exact(w).enumerate() {
                 if row_idx % 16 == 0 {
-                    stop.check()?;
+                    stop.check().map_err(|r| at!(BitmapError::from(r)))?;
                 }
                 for &byte in row {
                     let val: u16 = byte as u16 * 257;
@@ -161,10 +162,10 @@ pub(crate) fn encode_farbfeld(
             }
         }
         _ => {
-            return Err(BitmapError::UnsupportedVariant(alloc::format!(
+            return Err(at!(BitmapError::UnsupportedVariant(alloc::format!(
                 "cannot encode {:?} as farbfeld (supported: Rgba16, Rgba8, Rgb8, Gray8)",
                 layout
-            )));
+            ))));
         }
     }
 

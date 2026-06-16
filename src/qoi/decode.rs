@@ -22,15 +22,19 @@ pub(crate) struct QoiHeaderInfo {
 }
 
 /// Parse QOI header, returning dimensions, alpha, and colorspace.
-pub(crate) fn parse_header(data: &[u8]) -> Result<QoiHeaderInfo, BitmapError> {
+pub(crate) fn parse_header(data: &[u8]) -> crate::Result<QoiHeaderInfo> {
     let qoi = rapid_qoi::Qoi::decode_header(data)
-        .map_err(|e| BitmapError::InvalidHeader(alloc::format!("{e:?}")))?;
+        .map_err(|e| whereat::at!(BitmapError::InvalidHeader(alloc::format!("{e:?}"))))?;
 
     if qoi.width == 0 {
-        return Err(BitmapError::InvalidHeader("QOI width is zero".into()));
+        return Err(whereat::at!(BitmapError::InvalidHeader(
+            "QOI width is zero".into()
+        )));
     }
     if qoi.height == 0 {
-        return Err(BitmapError::InvalidHeader("QOI height is zero".into()));
+        return Err(whereat::at!(BitmapError::InvalidHeader(
+            "QOI height is zero".into()
+        )));
     }
 
     let is_linear = matches!(qoi.colors, rapid_qoi::Colors::Rgb | rapid_qoi::Colors::Rgba);
@@ -50,21 +54,23 @@ pub(crate) fn decode_pixels(
     height: u32,
     has_alpha: bool,
     stop: &dyn Stop,
-) -> Result<Vec<u8>, BitmapError> {
+) -> crate::Result<Vec<u8>> {
     let channels: usize = if has_alpha { 4 } else { 3 };
     let row_bytes = (width as usize)
         .checked_mul(channels)
-        .ok_or(BitmapError::DimensionsTooLarge { width, height })?;
+        .ok_or_else(|| whereat::at!(BitmapError::DimensionsTooLarge { width, height }))?;
     let total_bytes = row_bytes
         .checked_mul(height as usize)
-        .ok_or(BitmapError::DimensionsTooLarge { width, height })?;
+        .ok_or_else(|| whereat::at!(BitmapError::DimensionsTooLarge { width, height }))?;
 
     let mut output = vec![0u8; total_bytes];
 
     // Row-level streaming decode with cancellation checks, using the vendored
     // QOI kernel via `QoiDecodeState` (runs are clamped to the remaining output
     // and carried across rows).
-    let encoded = data.get(14..).ok_or(BitmapError::UnexpectedEof)?;
+    let encoded = data
+        .get(14..)
+        .ok_or_else(|| whereat::at!(BitmapError::UnexpectedEof))?;
 
     if has_alpha {
         let mut state = QoiDecodeState::<4>::new();
@@ -72,13 +78,14 @@ pub(crate) fn decode_pixels(
 
         for row_idx in 0..height as usize {
             if row_idx % 16 == 0 {
-                stop.check()?;
+                stop.check()
+                    .map_err(|r| whereat::at!(BitmapError::from(r)))?;
             }
             let row_start = row_idx * row_bytes;
             let row_end = row_start + row_bytes;
             let consumed = state
                 .decode_into(&encoded[offset..], &mut output[row_start..row_end])
-                .map_err(|()| BitmapError::UnexpectedEof)?;
+                .map_err(|()| whereat::at!(BitmapError::UnexpectedEof))?;
             offset += consumed;
         }
     } else {
@@ -87,13 +94,14 @@ pub(crate) fn decode_pixels(
 
         for row_idx in 0..height as usize {
             if row_idx % 16 == 0 {
-                stop.check()?;
+                stop.check()
+                    .map_err(|r| whereat::at!(BitmapError::from(r)))?;
             }
             let row_start = row_idx * row_bytes;
             let row_end = row_start + row_bytes;
             let consumed = state
                 .decode_into(&encoded[offset..], &mut output[row_start..row_end])
-                .map_err(|()| BitmapError::UnexpectedEof)?;
+                .map_err(|()| whereat::at!(BitmapError::UnexpectedEof))?;
             offset += consumed;
         }
     }
