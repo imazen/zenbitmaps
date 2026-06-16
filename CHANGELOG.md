@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Docs
+
+- README: document the byte conventions that were previously undocumented and
+  could cause silent pixel corruption in a downstream renderer — PFM row order
+  (decoder normalizes the on-disk bottom-to-top scanlines to top-down) and
+  endianness (scale sign selects file byte order; samples returned as
+  native-endian `f32` with the scale magnitude applied), and `Gray16` byte order
+  (binary P5/P7 returns big-endian on-disk bytes verbatim, while ASCII P2 returns
+  native-endian). Also added the real `encode_*`/`DecodeOutput` signatures and
+  field-vs-method shapes, the `encode_ppm` `maxval = 255` / RGB-only contract and
+  its accepted/rejected layouts, the `Limits` units + the always-on 1 GiB
+  `DEFAULT_MAX_MEMORY_BYTES` default cap (and that the zero-copy borrowed path is
+  gated by dimension limits, not `max_memory_bytes`), and corrected the
+  PPM/PAM decode-output layout table (PNM never yields `GrayAlpha*`/`Rgb16`/
+  `Rgba16`; 16-bit RGB/RGBA downscale to 8-bit). Found via an insulated
+  external-developer usability test of the published README.
+
 ### Fixed
 
 - QOI/BMP encode of chroma-free RGB no longer fails with
