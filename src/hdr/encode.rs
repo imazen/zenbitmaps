@@ -2,6 +2,7 @@
 
 use alloc::vec::Vec;
 use enough::Stop;
+use whereat::at;
 
 use crate::error::BitmapError;
 use crate::pixel::PixelLayout;
@@ -15,19 +16,19 @@ pub(crate) fn encode_hdr(
     height: u32,
     layout: PixelLayout,
     stop: &dyn Stop,
-) -> Result<Vec<u8>, BitmapError> {
+) -> crate::Result<Vec<u8>> {
     let w = width as usize;
     let h = height as usize;
     let bpp = layout.bytes_per_pixel();
     let expected = w
         .checked_mul(h)
         .and_then(|wh| wh.checked_mul(bpp))
-        .ok_or(BitmapError::DimensionsTooLarge { width, height })?;
+        .ok_or_else(|| at!(BitmapError::DimensionsTooLarge { width, height }))?;
     if pixels.len() < expected {
-        return Err(BitmapError::BufferTooSmall {
+        return Err(at!(BitmapError::BufferTooSmall {
             needed: expected,
             actual: pixels.len(),
-        });
+        }));
     }
 
     // Estimate output size: header (~60 bytes) + compressed data (roughly w*h*4)
@@ -43,14 +44,14 @@ pub(crate) fn encode_hdr(
     let res_line = alloc::format!("-Y {height} +X {width}\n");
     out.extend_from_slice(res_line.as_bytes());
 
-    stop.check()?;
+    stop.check().map_err(|r| at!(BitmapError::from(r)))?;
 
     // Convert each scanline to RGBE, then RLE-encode
     let mut rgbe_scanline = alloc::vec![[0u8; 4]; w];
 
     for row in 0..h {
         if row % 16 == 0 {
-            stop.check()?;
+            stop.check().map_err(|r| at!(BitmapError::from(r)))?;
         }
 
         // Convert this row's pixels to RGBE
@@ -91,9 +92,9 @@ pub(crate) fn encode_hdr(
                 }
             }
             _ => {
-                return Err(BitmapError::UnsupportedVariant(alloc::format!(
+                return Err(at!(BitmapError::UnsupportedVariant(alloc::format!(
                     "cannot encode {layout:?} as HDR (supported: RgbF32, Rgb8)"
-                )));
+                ))));
             }
         }
 

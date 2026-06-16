@@ -62,9 +62,9 @@ impl TgaHeader {
 }
 
 /// Parse and validate the 18-byte TGA header.
-pub(crate) fn parse_header(data: &[u8]) -> Result<TgaHeader, BitmapError> {
+pub(crate) fn parse_header(data: &[u8]) -> crate::Result<TgaHeader> {
     if data.len() < 18 {
-        return Err(BitmapError::UnexpectedEof);
+        return Err(whereat::at!(BitmapError::UnexpectedEof));
     }
 
     let header = TgaHeader {
@@ -84,33 +84,36 @@ pub(crate) fn parse_header(data: &[u8]) -> Result<TgaHeader, BitmapError> {
 
     // Validate image type
     if !matches!(header.image_type, 1 | 2 | 3 | 9 | 10 | 11) {
-        return Err(BitmapError::UnsupportedVariant(alloc::format!(
-            "TGA image type {} is not supported",
-            header.image_type
+        return Err(whereat::at!(BitmapError::UnsupportedVariant(
+            alloc::format!("TGA image type {} is not supported", header.image_type)
         )));
     }
 
     // Validate dimensions
     if header.width == 0 {
-        return Err(BitmapError::InvalidHeader("TGA width is zero".into()));
+        return Err(whereat::at!(BitmapError::InvalidHeader(
+            "TGA width is zero".into()
+        )));
     }
     if header.height == 0 {
-        return Err(BitmapError::InvalidHeader("TGA height is zero".into()));
+        return Err(whereat::at!(BitmapError::InvalidHeader(
+            "TGA height is zero".into()
+        )));
     }
 
     // Validate color map type
     if header.color_map_type > 1 {
-        return Err(BitmapError::InvalidHeader(alloc::format!(
+        return Err(whereat::at!(BitmapError::InvalidHeader(alloc::format!(
             "TGA color_map_type {} is invalid (must be 0 or 1)",
             header.color_map_type
-        )));
+        ))));
     }
 
     // Color-mapped images must have a color map
     if header.is_color_mapped() && header.color_map_type != 1 {
-        return Err(BitmapError::InvalidHeader(
-            "TGA color-mapped image must have color_map_type=1".into(),
-        ));
+        return Err(whereat::at!(BitmapError::InvalidHeader(
+            "TGA color-mapped image must have color_map_type=1".into()
+        )));
     }
 
     // Validate pixel depth
@@ -118,34 +121,42 @@ pub(crate) fn parse_header(data: &[u8]) -> Result<TgaHeader, BitmapError> {
         1 | 9 => {
             // Color-mapped: index depth must be 8 (we only support 8-bit indices)
             if header.pixel_depth != 8 {
-                return Err(BitmapError::UnsupportedVariant(alloc::format!(
-                    "TGA color-mapped pixel_depth {} not supported (only 8-bit indices)",
-                    header.pixel_depth
+                return Err(whereat::at!(BitmapError::UnsupportedVariant(
+                    alloc::format!(
+                        "TGA color-mapped pixel_depth {} not supported (only 8-bit indices)",
+                        header.pixel_depth
+                    )
                 )));
             }
             // Palette entry depth
             if !matches!(header.color_map_depth, 15 | 16 | 24 | 32) {
-                return Err(BitmapError::UnsupportedVariant(alloc::format!(
-                    "TGA color_map_depth {} not supported (must be 15, 16, 24, or 32)",
-                    header.color_map_depth
+                return Err(whereat::at!(BitmapError::UnsupportedVariant(
+                    alloc::format!(
+                        "TGA color_map_depth {} not supported (must be 15, 16, 24, or 32)",
+                        header.color_map_depth
+                    )
                 )));
             }
         }
         2 | 10 => {
             // Truecolor
             if !matches!(header.pixel_depth, 15 | 16 | 24 | 32) {
-                return Err(BitmapError::UnsupportedVariant(alloc::format!(
-                    "TGA truecolor pixel_depth {} not supported (must be 15, 16, 24, or 32)",
-                    header.pixel_depth
+                return Err(whereat::at!(BitmapError::UnsupportedVariant(
+                    alloc::format!(
+                        "TGA truecolor pixel_depth {} not supported (must be 15, 16, 24, or 32)",
+                        header.pixel_depth
+                    )
                 )));
             }
         }
         3 | 11 => {
             // Grayscale
             if header.pixel_depth != 8 {
-                return Err(BitmapError::UnsupportedVariant(alloc::format!(
-                    "TGA grayscale pixel_depth {} not supported (only 8-bit)",
-                    header.pixel_depth
+                return Err(whereat::at!(BitmapError::UnsupportedVariant(
+                    alloc::format!(
+                        "TGA grayscale pixel_depth {} not supported (only 8-bit)",
+                        header.pixel_depth
+                    )
                 )));
             }
         }
@@ -160,7 +171,7 @@ pub(crate) fn decode_pixels(
     data: &[u8],
     header: &TgaHeader,
     stop: &dyn Stop,
-) -> Result<(Vec<u8>, PixelLayout), BitmapError> {
+) -> crate::Result<(Vec<u8>, PixelLayout)> {
     let w = header.width as usize;
     let h = header.height as usize;
 
@@ -174,21 +185,25 @@ pub(crate) fn decode_pixels(
             24 => 3,
             32 => 4,
             _ => {
-                return Err(BitmapError::UnsupportedVariant(alloc::format!(
-                    "TGA color_map_depth {} not supported",
-                    header.color_map_depth
+                return Err(whereat::at!(BitmapError::UnsupportedVariant(
+                    alloc::format!(
+                        "TGA color_map_depth {} not supported",
+                        header.color_map_depth
+                    )
                 )));
             }
         };
         let map_size = (header.color_map_length as usize)
             .checked_mul(entry_bytes)
-            .ok_or_else(|| BitmapError::InvalidHeader("color map size overflow".into()))?;
+            .ok_or_else(|| {
+                whereat::at!(BitmapError::InvalidHeader("color map size overflow".into()))
+            })?;
         let map_start = pixel_data_offset;
         let map_end = map_start
             .checked_add(map_size)
-            .ok_or(BitmapError::UnexpectedEof)?;
+            .ok_or_else(|| whereat::at!(BitmapError::UnexpectedEof))?;
         if data.len() < map_end {
-            return Err(BitmapError::UnexpectedEof);
+            return Err(whereat::at!(BitmapError::UnexpectedEof));
         }
         (Some(&data[map_start..map_end]), map_end)
     } else {
@@ -197,7 +212,7 @@ pub(crate) fn decode_pixels(
 
     let pixel_data = data
         .get(color_map_end..)
-        .ok_or(BitmapError::UnexpectedEof)?;
+        .ok_or_else(|| whereat::at!(BitmapError::UnexpectedEof))?;
 
     // Determine output layout
     let (layout, out_channels) = if header.is_grayscale() {
@@ -211,17 +226,18 @@ pub(crate) fn decode_pixels(
         (PixelLayout::Rgb8, 3)
     };
 
-    let pixel_count = w.checked_mul(h).ok_or(BitmapError::DimensionsTooLarge {
-        width: header.width as u32,
-        height: header.height as u32,
+    let pixel_count = w.checked_mul(h).ok_or_else(|| {
+        whereat::at!(BitmapError::DimensionsTooLarge {
+            width: header.width as u32,
+            height: header.height as u32,
+        })
     })?;
-    let out_size =
-        pixel_count
-            .checked_mul(out_channels)
-            .ok_or(BitmapError::DimensionsTooLarge {
-                width: header.width as u32,
-                height: header.height as u32,
-            })?;
+    let out_size = pixel_count.checked_mul(out_channels).ok_or_else(|| {
+        whereat::at!(BitmapError::DimensionsTooLarge {
+            width: header.width as u32,
+            height: header.height as u32,
+        })
+    })?;
 
     let mut out = vec![0u8; out_size];
 
@@ -278,25 +294,25 @@ fn decode_raw(
     out_channels: usize,
     color_map: Option<&[u8]>,
     stop: &dyn Stop,
-) -> Result<(), BitmapError> {
+) -> crate::Result<()> {
     let w = header.width as usize;
     let h = header.height as usize;
-    let row_bytes = w
-        .checked_mul(src_bpp)
-        .ok_or(BitmapError::DimensionsTooLarge {
+    let row_bytes = w.checked_mul(src_bpp).ok_or_else(|| {
+        whereat::at!(BitmapError::DimensionsTooLarge {
             width: header.width as u32,
             height: header.height as u32,
-        })?;
+        })
+    })?;
 
-    let total_src_bytes = row_bytes
-        .checked_mul(h)
-        .ok_or(BitmapError::DimensionsTooLarge {
+    let total_src_bytes = row_bytes.checked_mul(h).ok_or_else(|| {
+        whereat::at!(BitmapError::DimensionsTooLarge {
             width: header.width as u32,
             height: header.height as u32,
-        })?;
+        })
+    })?;
 
     if pixel_data.len() < total_src_bytes {
-        return Err(BitmapError::UnexpectedEof);
+        return Err(whereat::at!(BitmapError::UnexpectedEof));
     }
 
     // Fast path: 24-bit or 32-bit non-color-mapped — memcpy + batch swizzle
@@ -332,7 +348,8 @@ fn decode_raw(
     // General path: per-pixel conversion (color-mapped, 16-bit, grayscale)
     for y in 0..h {
         if y % 16 == 0 {
-            stop.check()?;
+            stop.check()
+                .map_err(|r| whereat::at!(BitmapError::from(r)))?;
         }
         let src_row = &pixel_data[y * row_bytes..(y + 1) * row_bytes];
         let dst_row_start = y * w * out_channels;
@@ -361,7 +378,7 @@ fn decode_rle(
     out_channels: usize,
     color_map: Option<&[u8]>,
     stop: &dyn Stop,
-) -> Result<(), BitmapError> {
+) -> crate::Result<()> {
     let w = header.width as usize;
     let h = header.height as usize;
     let total_pixels = w * h;
@@ -370,11 +387,12 @@ fn decode_rle(
 
     while pixel_idx < total_pixels {
         if pixel_idx % (w * 16) == 0 {
-            stop.check()?;
+            stop.check()
+                .map_err(|r| whereat::at!(BitmapError::from(r)))?;
         }
 
         if src_pos >= pixel_data.len() {
-            return Err(BitmapError::UnexpectedEof);
+            return Err(whereat::at!(BitmapError::UnexpectedEof));
         }
 
         let packet_header = pixel_data[src_pos];
@@ -384,15 +402,15 @@ fn decode_rle(
         let is_rle_packet = packet_header & 0x80 != 0;
 
         if pixel_idx + run_count > total_pixels {
-            return Err(BitmapError::InvalidData(
-                "TGA RLE packet exceeds image bounds".into(),
-            ));
+            return Err(whereat::at!(BitmapError::InvalidData(
+                "TGA RLE packet exceeds image bounds".into()
+            )));
         }
 
         if is_rle_packet {
             // Run-length packet: one pixel value repeated
             if src_pos + src_bpp > pixel_data.len() {
-                return Err(BitmapError::UnexpectedEof);
+                return Err(whereat::at!(BitmapError::UnexpectedEof));
             }
             let src = &pixel_data[src_pos..src_pos + src_bpp];
             src_pos += src_bpp;
@@ -410,9 +428,9 @@ fn decode_rle(
             // Raw packet: run_count literal pixels
             let needed = run_count
                 .checked_mul(src_bpp)
-                .ok_or(BitmapError::UnexpectedEof)?;
+                .ok_or_else(|| whereat::at!(BitmapError::UnexpectedEof))?;
             if src_pos + needed > pixel_data.len() {
-                return Err(BitmapError::UnexpectedEof);
+                return Err(whereat::at!(BitmapError::UnexpectedEof));
             }
 
             for _ in 0..run_count {
@@ -442,21 +460,23 @@ fn convert_pixel(
     dst: &mut [u8],
     header: &TgaHeader,
     color_map: Option<&[u8]>,
-) -> Result<(), BitmapError> {
+) -> crate::Result<()> {
     if header.is_color_mapped() {
         // Color-mapped: src is a single-byte index
         let index = src[0] as usize;
         let map = color_map.ok_or_else(|| {
-            BitmapError::InvalidData("color-mapped image has no color map".into())
+            whereat::at!(BitmapError::InvalidData(
+                "color-mapped image has no color map".into()
+            ))
         })?;
 
         let adjusted_index = index
             .checked_sub(header.color_map_start as usize)
             .ok_or_else(|| {
-                BitmapError::InvalidData(alloc::format!(
+                whereat::at!(BitmapError::InvalidData(alloc::format!(
                     "palette index {index} is below color_map_start {}",
                     header.color_map_start
-                ))
+                )))
             })?;
 
         let entry_bytes: usize = match header.color_map_depth {
@@ -468,11 +488,11 @@ fn convert_pixel(
 
         let entry_offset = adjusted_index
             .checked_mul(entry_bytes)
-            .ok_or(BitmapError::UnexpectedEof)?;
+            .ok_or_else(|| whereat::at!(BitmapError::UnexpectedEof))?;
         if entry_offset + entry_bytes > map.len() {
-            return Err(BitmapError::InvalidData(alloc::format!(
+            return Err(whereat::at!(BitmapError::InvalidData(alloc::format!(
                 "palette index {index} out of range"
-            )));
+            ))));
         }
 
         let entry = &map[entry_offset..entry_offset + entry_bytes];

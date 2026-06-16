@@ -4,25 +4,30 @@
 
 use alloc::vec;
 use enough::Stop;
+use whereat::at;
 
 use crate::error::BitmapError;
 
 /// Parse farbfeld header, returning (width, height).
-pub(crate) fn parse_header(data: &[u8]) -> Result<(u32, u32), BitmapError> {
+pub(crate) fn parse_header(data: &[u8]) -> crate::Result<(u32, u32)> {
     if data.len() < 16 {
-        return Err(BitmapError::UnexpectedEof);
+        return Err(at!(BitmapError::UnexpectedEof));
     }
     if &data[0..8] != b"farbfeld" {
-        return Err(BitmapError::UnrecognizedFormat);
+        return Err(at!(BitmapError::UnrecognizedFormat));
     }
     let width = u32::from_be_bytes([data[8], data[9], data[10], data[11]]);
     let height = u32::from_be_bytes([data[12], data[13], data[14], data[15]]);
 
     if width == 0 {
-        return Err(BitmapError::InvalidHeader("farbfeld width is zero".into()));
+        return Err(at!(BitmapError::InvalidHeader(
+            "farbfeld width is zero".into()
+        )));
     }
     if height == 0 {
-        return Err(BitmapError::InvalidHeader("farbfeld height is zero".into()));
+        return Err(at!(BitmapError::InvalidHeader(
+            "farbfeld height is zero".into()
+        )));
     }
     Ok((width, height))
 }
@@ -33,20 +38,20 @@ pub(crate) fn decode_pixels(
     width: u32,
     height: u32,
     stop: &dyn Stop,
-) -> Result<alloc::vec::Vec<u8>, BitmapError> {
+) -> crate::Result<alloc::vec::Vec<u8>> {
     let pixel_count = (width as usize)
         .checked_mul(height as usize)
-        .ok_or(BitmapError::DimensionsTooLarge { width, height })?;
+        .ok_or_else(|| at!(BitmapError::DimensionsTooLarge { width, height }))?;
     let sample_count = pixel_count
         .checked_mul(4)
-        .ok_or(BitmapError::DimensionsTooLarge { width, height })?;
+        .ok_or_else(|| at!(BitmapError::DimensionsTooLarge { width, height }))?;
     let input_bytes = sample_count
         .checked_mul(2)
-        .ok_or(BitmapError::DimensionsTooLarge { width, height })?;
+        .ok_or_else(|| at!(BitmapError::DimensionsTooLarge { width, height }))?;
 
     let pixel_data = data
         .get(16..16 + input_bytes)
-        .ok_or(BitmapError::UnexpectedEof)?;
+        .ok_or_else(|| at!(BitmapError::UnexpectedEof))?;
 
     // Pre-allocate output and write directly — no Vec growth
     let mut out = vec![0u8; input_bytes];
@@ -58,7 +63,7 @@ pub(crate) fn decode_pixels(
         .enumerate()
     {
         if row_idx % 16 == 0 {
-            stop.check()?;
+            stop.check().map_err(|r| at!(BitmapError::from(r)))?;
         }
         be16_to_ne_bulk(src_row, dst_row);
     }

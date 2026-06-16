@@ -6,26 +6,27 @@
 # impls omitted; re-export duplicates annotated `[also: path]`.
 # DO NOT EDIT BY HAND — commit regenerated changes with the code.
 #
-# files: zenbitmaps.txt 69 lines (supported surface) | zenbitmaps.features.txt 183 added (features: all,bmp,hdr,imgref,qoi,rgb,simd,std,tga,zencodec) | zenbitmaps.internal.txt 6 lines (6 hidden + 0 excluded-feature)
+# files: zenbitmaps.txt 71 lines (supported surface) | zenbitmaps.features.txt 183 added (features: all,bmp,hdr,imgref,qoi,rgb,simd,std,tga,zencodec) | zenbitmaps.internal.txt 6 lines (6 hidden + 0 excluded-feature)
 
 ## summary
 #
 #   pub modules                                 1
-#   pub types (struct/enum/trait/alias)         5
+#   pub types (struct/enum/trait/alias)         6
 #   free functions                             10
 #   inherent methods                            6
 #   struct fields                              13
 #   enum variants                              26
-#   re-exports                                  2
+#   re-exports                                  3
 #   trait roster entries (type × trait)        22
 #   auto-trait-complete types                   5
 #
 # per-module pub lines:
-#   (root)                           63
+#   (root)                           65
 
-## items (63 lines)
+## items (65 lines)
 
 pub mod zenbitmaps
+pub use At
 pub use Stop
 pub use Unstoppable
 #[non_exhaustive] pub enum BitmapError
@@ -78,16 +79,17 @@ pub Limits::max_height: core::option::Option<u64>
 pub Limits::max_memory_bytes: core::option::Option<u64>
 pub Limits::max_pixels: core::option::Option<u64>
 pub Limits::max_width: core::option::Option<u64>
-pub fn decode(&[u8], impl enough::Stop) -> core::result::Result<DecodeOutput<'_>, BitmapError>
-pub fn decode_farbfeld(&[u8], impl enough::Stop) -> core::result::Result<DecodeOutput<'_>, BitmapError>
-pub fn decode_farbfeld_with_limits<'a>(&'a [u8], &'a Limits, impl enough::Stop) -> core::result::Result<DecodeOutput<'a>, BitmapError>
-pub fn decode_with_limits<'a>(&'a [u8], &'a Limits, impl enough::Stop) -> core::result::Result<DecodeOutput<'a>, BitmapError>
+pub fn decode(&[u8], impl enough::Stop) -> Result<DecodeOutput<'_>>
+pub fn decode_farbfeld(&[u8], impl enough::Stop) -> Result<DecodeOutput<'_>>
+pub fn decode_farbfeld_with_limits<'a>(&'a [u8], &'a Limits, impl enough::Stop) -> Result<DecodeOutput<'a>>
+pub fn decode_with_limits<'a>(&'a [u8], &'a Limits, impl enough::Stop) -> Result<DecodeOutput<'a>>
 pub fn detect_format(&[u8]) -> core::option::Option<ImageFormat>
-pub fn encode_farbfeld(&[u8], u32, u32, PixelLayout, impl enough::Stop) -> core::result::Result<alloc::vec::Vec<u8>, BitmapError>
-pub fn encode_pam(&[u8], u32, u32, PixelLayout, impl enough::Stop) -> core::result::Result<alloc::vec::Vec<u8>, BitmapError>
-pub fn encode_pfm(&[u8], u32, u32, PixelLayout, impl enough::Stop) -> core::result::Result<alloc::vec::Vec<u8>, BitmapError>
-pub fn encode_pgm(&[u8], u32, u32, PixelLayout, impl enough::Stop) -> core::result::Result<alloc::vec::Vec<u8>, BitmapError>
-pub fn encode_ppm(&[u8], u32, u32, PixelLayout, impl enough::Stop) -> core::result::Result<alloc::vec::Vec<u8>, BitmapError>
+pub fn encode_farbfeld(&[u8], u32, u32, PixelLayout, impl enough::Stop) -> Result<alloc::vec::Vec<u8>>
+pub fn encode_pam(&[u8], u32, u32, PixelLayout, impl enough::Stop) -> Result<alloc::vec::Vec<u8>>
+pub fn encode_pfm(&[u8], u32, u32, PixelLayout, impl enough::Stop) -> Result<alloc::vec::Vec<u8>>
+pub fn encode_pgm(&[u8], u32, u32, PixelLayout, impl enough::Stop) -> Result<alloc::vec::Vec<u8>>
+pub fn encode_ppm(&[u8], u32, u32, PixelLayout, impl enough::Stop) -> Result<alloc::vec::Vec<u8>>
+pub type Result<T> = core::result::Result<T, whereat::at::At<BitmapError>>
 
 ## trait impls (5 types)
 

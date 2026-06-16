@@ -39,26 +39,27 @@ pub(crate) fn decode<'a>(
     data: &'a [u8],
     limits: Option<&Limits>,
     stop: &dyn Stop,
-) -> Result<DecodeOutput<'a>, BitmapError> {
+) -> crate::Result<DecodeOutput<'a>> {
     if data.len() < 3 {
-        return Err(BitmapError::UnexpectedEof);
+        return Err(whereat::at!(BitmapError::UnexpectedEof));
     }
 
     // Verify magic bytes
     match &data[..2] {
         b"P1" | b"P2" | b"P3" | b"P4" | b"P5" | b"P6" | b"P7" | b"Pf" | b"PF" => {}
-        _ => return Err(BitmapError::UnrecognizedFormat),
+        _ => return Err(whereat::at!(BitmapError::UnrecognizedFormat)),
     }
 
     let header = decode::parse_header(data)?;
 
     limits::check_dimensions(header.width, header.height, limits)?;
 
-    stop.check()?;
+    stop.check()
+        .map_err(|r| whereat::at!(BitmapError::from(r)))?;
 
     let pixel_data = data
         .get(header.data_offset..)
-        .ok_or(BitmapError::UnexpectedEof)?;
+        .ok_or_else(|| whereat::at!(BitmapError::UnexpectedEof))?;
 
     let w = header.width as usize;
     let h = header.height as usize;
@@ -68,9 +69,11 @@ pub(crate) fn decode<'a>(
         PnmFormat::Pbm => {
             // P1 (ASCII) or P4 (binary bit-packed)
             let is_ascii = data[1] == b'1';
-            let out_bytes = w.checked_mul(h).ok_or(BitmapError::DimensionsTooLarge {
-                width: header.width,
-                height: header.height,
+            let out_bytes = w.checked_mul(h).ok_or_else(|| {
+                whereat::at!(BitmapError::DimensionsTooLarge {
+                    width: header.width,
+                    height: header.height,
+                })
             })?;
             limits::check_output_size(out_bytes, limits)?;
             let pixels = if is_ascii {
@@ -90,9 +93,11 @@ pub(crate) fn decode<'a>(
                 .checked_mul(h)
                 .and_then(|wh| wh.checked_mul(depth))
                 .and_then(|whd| whd.checked_mul(4))
-                .ok_or(BitmapError::DimensionsTooLarge {
-                    width: header.width,
-                    height: header.height,
+                .ok_or_else(|| {
+                    whereat::at!(BitmapError::DimensionsTooLarge {
+                        width: header.width,
+                        height: header.height,
+                    })
                 })?;
             limits::check_output_size(out_bytes, limits)?;
             let pixels = decode::decode_pfm(pixel_data, &header, stop)?;
@@ -109,9 +114,11 @@ pub(crate) fn decode<'a>(
                 let out_bytes = w
                     .checked_mul(h)
                     .and_then(|wh| wh.checked_mul(depth))
-                    .ok_or(BitmapError::DimensionsTooLarge {
-                        width: header.width,
-                        height: header.height,
+                    .ok_or_else(|| {
+                        whereat::at!(BitmapError::DimensionsTooLarge {
+                            width: header.width,
+                            height: header.height,
+                        })
                     })?;
                 limits::check_output_size(out_bytes, limits)?;
                 let pixels = decode::decode_ascii_samples(pixel_data, &header, stop)?;
@@ -129,13 +136,15 @@ pub(crate) fn decode<'a>(
                     .checked_mul(h)
                     .and_then(|wh| wh.checked_mul(depth))
                     .and_then(|whd| whd.checked_mul(src_bps))
-                    .ok_or(BitmapError::DimensionsTooLarge {
-                        width: header.width,
-                        height: header.height,
+                    .ok_or_else(|| {
+                        whereat::at!(BitmapError::DimensionsTooLarge {
+                            width: header.width,
+                            height: header.height,
+                        })
                     })?;
 
                 if pixel_data.len() < expected_src {
-                    return Err(BitmapError::UnexpectedEof);
+                    return Err(whereat::at!(BitmapError::UnexpectedEof));
                 }
 
                 if !is_16bit && header.maxval == 255 {
@@ -149,9 +158,11 @@ pub(crate) fn decode<'a>(
                     let out_bytes = w
                         .checked_mul(h)
                         .and_then(|wh| wh.checked_mul(depth))
-                        .ok_or(BitmapError::DimensionsTooLarge {
-                            width: header.width,
-                            height: header.height,
+                        .ok_or_else(|| {
+                            whereat::at!(BitmapError::DimensionsTooLarge {
+                                width: header.width,
+                                height: header.height,
+                            })
                         })?;
                     limits::check_output_size(out_bytes, limits)?;
                     let pixels =
@@ -173,12 +184,14 @@ pub(crate) fn decode<'a>(
                 .checked_mul(h)
                 .and_then(|wh| wh.checked_mul(depth))
                 .and_then(|whd| whd.checked_mul(src_bps))
-                .ok_or(BitmapError::DimensionsTooLarge {
-                    width: header.width,
-                    height: header.height,
+                .ok_or_else(|| {
+                    whereat::at!(BitmapError::DimensionsTooLarge {
+                        width: header.width,
+                        height: header.height,
+                    })
                 })?;
             if pixel_data.len() < expected_src {
-                return Err(BitmapError::UnexpectedEof);
+                return Err(whereat::at!(BitmapError::UnexpectedEof));
             }
             if !is_16bit && header.maxval == 255 {
                 Ok(DecodeOutput::borrowed(
@@ -191,9 +204,11 @@ pub(crate) fn decode<'a>(
                 let out_bytes = w
                     .checked_mul(h)
                     .and_then(|wh| wh.checked_mul(depth))
-                    .ok_or(BitmapError::DimensionsTooLarge {
-                        width: header.width,
-                        height: header.height,
+                    .ok_or_else(|| {
+                        whereat::at!(BitmapError::DimensionsTooLarge {
+                            width: header.width,
+                            height: header.height,
+                        })
                     })?;
                 limits::check_output_size(out_bytes, limits)?;
                 let pixels =
@@ -217,6 +232,6 @@ pub(crate) fn encode(
     layout: PixelLayout,
     format: PnmFormat,
     stop: &dyn Stop,
-) -> Result<alloc::vec::Vec<u8>, BitmapError> {
+) -> crate::Result<alloc::vec::Vec<u8>> {
     encode::encode_pnm(pixels, width, height, layout, format, stop)
 }

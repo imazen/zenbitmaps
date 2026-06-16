@@ -53,7 +53,7 @@ pub(crate) fn decode<'a>(
     data: &'a [u8],
     limits: Option<&Limits>,
     stop: &dyn Stop,
-) -> Result<DecodeOutput<'a>, BitmapError> {
+) -> crate::Result<DecodeOutput<'a>> {
     decode_with_permissiveness(data, limits, BmpPermissiveness::Standard, stop)
 }
 
@@ -63,7 +63,7 @@ pub(crate) fn decode_with_permissiveness<'a>(
     limits: Option<&Limits>,
     permissiveness: BmpPermissiveness,
     stop: &dyn Stop,
-) -> Result<DecodeOutput<'a>, BitmapError> {
+) -> crate::Result<DecodeOutput<'a>> {
     // Resolve the pixel-count ceiling up front and parse the header *with* it,
     // so an over-cap header is rejected with a `LimitExceeded("pixel count …")`
     // resource error before the header parser's byte-availability heuristic can
@@ -71,7 +71,8 @@ pub(crate) fn decode_with_permissiveness<'a>(
     let max_pixels = effective_max_pixels(limits);
     let header = decode::parse_bmp_header(data, max_pixels)?;
     check_limits(limits, header.width, header.height, &header.layout)?;
-    stop.check()?;
+    stop.check()
+        .map_err(|r| whereat::at!(BitmapError::from(r)))?;
     let (pixels, layout) = decode::decode_bmp_pixels(data, permissiveness, max_pixels, stop)?;
     Ok(DecodeOutput::owned(
         pixels,
@@ -86,11 +87,12 @@ pub(crate) fn decode_native<'a>(
     data: &'a [u8],
     limits: Option<&Limits>,
     stop: &dyn Stop,
-) -> Result<DecodeOutput<'a>, BitmapError> {
+) -> crate::Result<DecodeOutput<'a>> {
     let max_pixels = effective_max_pixels(limits);
     let header = decode::parse_bmp_header(data, max_pixels)?;
     check_limits(limits, header.width, header.height, &header.layout)?;
-    stop.check()?;
+    stop.check()
+        .map_err(|r| whereat::at!(BitmapError::from(r)))?;
     let (pixels, native_layout) =
         decode::decode_bmp_pixels_native(data, BmpPermissiveness::Standard, max_pixels, stop)?;
     Ok(DecodeOutput::owned(
@@ -117,18 +119,22 @@ fn check_limits(
     width: u32,
     height: u32,
     layout: &PixelLayout,
-) -> Result<(), BitmapError> {
+) -> crate::Result<()> {
     crate::limits::check_dimensions(width, height, limits)?;
     let out_bytes = (width as usize)
         .checked_mul(height as usize)
         .and_then(|px| px.checked_mul(layout.bytes_per_pixel()))
-        .ok_or_else(|| BitmapError::LimitExceeded("output size overflows usize".into()))?;
+        .ok_or_else(|| {
+            whereat::at!(BitmapError::LimitExceeded(
+                "output size overflows usize".into()
+            ))
+        })?;
     crate::limits::check_output_size(out_bytes, limits)?;
     Ok(())
 }
 
 /// Probe BMP metadata without decoding pixels.
-pub(crate) fn probe(data: &[u8]) -> Result<BmpMetadata, BitmapError> {
+pub(crate) fn probe(data: &[u8]) -> crate::Result<BmpMetadata> {
     // Metadata probe reads dimensions only; it must not reject on the
     // pixel-count cap, so opt out with `u64::MAX`.
     let header = decode::parse_bmp_header(data, u64::MAX)?;
@@ -160,7 +166,7 @@ pub(crate) fn encode(
     layout: PixelLayout,
     alpha: bool,
     stop: &dyn Stop,
-) -> Result<Vec<u8>, BitmapError> {
+) -> crate::Result<Vec<u8>> {
     encode::encode_bmp(pixels, width, height, layout, alpha, stop)
 }
 

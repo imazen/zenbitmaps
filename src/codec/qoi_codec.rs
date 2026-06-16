@@ -1,4 +1,5 @@
 use super::*;
+use whereat::{At, at};
 
 // ══════════════════════════════════════════════════════════════════════
 // QOI capabilities and descriptors
@@ -58,7 +59,7 @@ impl QoiEncoderConfig {
 }
 
 impl zencodec::encode::EncoderConfig for QoiEncoderConfig {
-    type Error = BitmapError;
+    type Error = At<BitmapError>;
     type Job = QoiEncodeJob;
 
     fn format() -> ImageFormat {
@@ -96,7 +97,7 @@ pub struct QoiEncodeJob {
 }
 
 impl zencodec::encode::EncodeJob for QoiEncodeJob {
-    type Error = BitmapError;
+    type Error = At<BitmapError>;
     type Enc = QoiEncoder;
     type AnimationFrameEnc = ();
 
@@ -114,7 +115,7 @@ impl zencodec::encode::EncodeJob for QoiEncodeJob {
         self
     }
 
-    fn encoder(self) -> Result<QoiEncoder, BitmapError> {
+    fn encoder(self) -> crate::Result<QoiEncoder> {
         Ok(QoiEncoder {
             config: self.config,
             limits: self.limits,
@@ -123,10 +124,10 @@ impl zencodec::encode::EncodeJob for QoiEncodeJob {
         })
     }
 
-    fn animation_frame_encoder(self) -> Result<(), BitmapError> {
-        Err(BitmapError::from(
+    fn animation_frame_encoder(self) -> crate::Result<()> {
+        Err(at!(BitmapError::from(
             zencodec::UnsupportedOperation::AnimationEncode,
-        ))
+        )))
     }
 }
 
@@ -167,17 +168,17 @@ impl QoiEncoder {
 }
 
 impl zencodec::encode::Encoder for QoiEncoder {
-    type Error = BitmapError;
+    type Error = At<BitmapError>;
 
-    fn reject(op: zencodec::UnsupportedOperation) -> BitmapError {
-        BitmapError::from(op)
+    fn reject(op: zencodec::UnsupportedOperation) -> At<BitmapError> {
+        at!(BitmapError::from(op))
     }
 
     fn preferred_strip_height(&self) -> u32 {
         1 // QOI is scanline-oriented
     }
 
-    fn encode(self, pixels: PixelSlice<'_>) -> Result<EncodeOutput, BitmapError> {
+    fn encode(self, pixels: PixelSlice<'_>) -> crate::Result<EncodeOutput> {
         // Bit-exact load-bearing narrowing (dead alpha / chroma-free /
         // replicated-low-bits) before format mapping — see
         // `super::reduce_for_raw_encode`. QOI has no grayscale layout, so
@@ -213,9 +214,9 @@ impl zencodec::encode::Encoder for QoiEncoder {
             (ChannelType::U8, ChannelLayout::Rgba) => crate::PixelLayout::Rgba8,
             (ChannelType::U8, ChannelLayout::Bgra) => crate::PixelLayout::Bgra8,
             _ => {
-                return Err(BitmapError::UnsupportedVariant(alloc::format!(
+                return Err(at!(BitmapError::UnsupportedVariant(alloc::format!(
                     "QOI encode: unsupported pixel format: {desc:?}"
-                )));
+                ))));
             }
         };
 
@@ -223,16 +224,16 @@ impl zencodec::encode::Encoder for QoiEncoder {
         Ok(EncodeOutput::new(encoded, ImageFormat::Qoi))
     }
 
-    fn push_rows(&mut self, rows: PixelSlice<'_>) -> Result<(), BitmapError> {
+    fn push_rows(&mut self, rows: PixelSlice<'_>) -> crate::Result<()> {
         let desc = rows.descriptor();
         let channels: usize = match (desc.channel_type(), desc.layout()) {
             (ChannelType::U8, ChannelLayout::Rgb) => 3,
             (ChannelType::U8, ChannelLayout::Rgba) => 4,
             (ChannelType::U8, ChannelLayout::Bgra) => 4,
             _ => {
-                return Err(BitmapError::UnsupportedVariant(alloc::format!(
+                return Err(at!(BitmapError::UnsupportedVariant(alloc::format!(
                     "QOI push_rows: unsupported pixel format: {desc:?}"
-                )));
+                ))));
             }
         };
 
@@ -247,9 +248,9 @@ impl zencodec::encode::Encoder for QoiEncoder {
             });
 
         if acc.width != rows.width() || acc.channels != channels {
-            return Err(BitmapError::InvalidData(
+            return Err(at!(BitmapError::InvalidData(
                 "push_rows: width or channel count changed".into(),
-            ));
+            )));
         }
 
         let bytes = rows.contiguous_bytes();
@@ -268,10 +269,12 @@ impl zencodec::encode::Encoder for QoiEncoder {
         Ok(())
     }
 
-    fn finish(self) -> Result<EncodeOutput, BitmapError> {
-        let acc = self
-            .accumulator
-            .ok_or_else(|| BitmapError::InvalidData("finish() without push_rows()".into()))?;
+    fn finish(self) -> crate::Result<EncodeOutput> {
+        let acc = self.accumulator.ok_or_else(|| {
+            at!(BitmapError::InvalidData(
+                "finish() without push_rows()".into()
+            ))
+        })?;
 
         let colors = if acc.channels == 4 {
             crate::qoi::rapid_qoi::Colors::SrgbLinA
@@ -285,7 +288,7 @@ impl zencodec::encode::Encoder for QoiEncoder {
         };
         let encoded = qoi
             .encode_alloc(&acc.data)
-            .map_err(|e| BitmapError::InvalidData(e.to_string()))?;
+            .map_err(|e| at!(BitmapError::InvalidData(e.to_string())))?;
         Ok(EncodeOutput::new(encoded, ImageFormat::Qoi))
     }
 }
@@ -312,7 +315,7 @@ impl QoiDecoderConfig {
 }
 
 impl zencodec::decode::DecoderConfig for QoiDecoderConfig {
-    type Error = BitmapError;
+    type Error = At<BitmapError>;
     type Job<'a> = QoiDecodeJob;
 
     fn formats() -> &'static [ImageFormat] {
@@ -350,10 +353,10 @@ pub struct QoiDecodeJob {
 }
 
 impl<'a> zencodec::decode::DecodeJob<'a> for QoiDecodeJob {
-    type Error = BitmapError;
+    type Error = At<BitmapError>;
     type Dec = QoiDecoder<'a>;
     type StreamDec = QoiStreamingDecoder<'a>;
-    type AnimationFrameDec = zencodec::Unsupported<BitmapError>;
+    type AnimationFrameDec = zencodec::Unsupported<At<BitmapError>>;
 
     fn with_stop(mut self, stop: zencodec::StopToken) -> Self {
         self.stop = Some(stop);
@@ -371,7 +374,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for QoiDecodeJob {
         self
     }
 
-    fn probe(&self, data: &[u8]) -> Result<ImageInfo, BitmapError> {
+    fn probe(&self, data: &[u8]) -> crate::Result<ImageInfo> {
         let hdr = crate::qoi::decode::parse_header(data)?;
         let cicp = if hdr.is_linear {
             zencodec::Cicp::new(1, 8, 0, true) // BT.709 primaries, Linear transfer
@@ -386,7 +389,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for QoiDecodeJob {
             .with_source_encoding_details(BitmapSourceEncoding))
     }
 
-    fn output_info(&self, data: &[u8]) -> Result<OutputInfo, BitmapError> {
+    fn output_info(&self, data: &[u8]) -> crate::Result<OutputInfo> {
         let hdr = crate::qoi::decode::parse_header(data)?;
         let (width, height, has_alpha) = (hdr.width, hdr.height, hdr.has_alpha);
         let desc = if has_alpha {
@@ -401,14 +404,14 @@ impl<'a> zencodec::decode::DecodeJob<'a> for QoiDecodeJob {
         self,
         data: Cow<'a, [u8]>,
         _preferred: &[PixelDescriptor],
-    ) -> Result<QoiDecoder<'a>, BitmapError> {
+    ) -> crate::Result<QoiDecoder<'a>> {
         if let Some(max) = self.max_input_bytes
             && data.len() as u64 > max
         {
-            return Err(BitmapError::LimitExceeded(alloc::format!(
+            return Err(at!(BitmapError::LimitExceeded(alloc::format!(
                 "input size {} exceeds limit {max}",
                 data.len()
-            )));
+            ))));
         }
         Ok(QoiDecoder {
             config: self.config,
@@ -425,7 +428,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for QoiDecodeJob {
         preferred: &[PixelDescriptor],
     ) -> Result<OutputInfo, Self::Error> {
         zencodec::helpers::copy_decode_to_sink(self, data, sink, preferred, |e| {
-            BitmapError::InvalidData(e.to_string())
+            at!(BitmapError::InvalidData(e.to_string()))
         })
     }
 
@@ -433,14 +436,14 @@ impl<'a> zencodec::decode::DecodeJob<'a> for QoiDecodeJob {
         self,
         data: Cow<'a, [u8]>,
         _preferred: &[PixelDescriptor],
-    ) -> Result<QoiStreamingDecoder<'a>, BitmapError> {
+    ) -> crate::Result<QoiStreamingDecoder<'a>> {
         if let Some(max) = self.max_input_bytes
             && data.len() as u64 > max
         {
-            return Err(BitmapError::LimitExceeded(alloc::format!(
+            return Err(at!(BitmapError::LimitExceeded(alloc::format!(
                 "input size {} exceeds limit {max}",
                 data.len()
-            )));
+            ))));
         }
         let hdr_info = crate::qoi::decode::parse_header(&data)?;
         let (width, height, has_alpha) = (hdr_info.width, hdr_info.height, hdr_info.has_alpha);
@@ -453,7 +456,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for QoiDecodeJob {
         let channels: usize = if has_alpha { 4 } else { 3 };
         let row_bytes = (width as usize)
             .checked_mul(channels)
-            .ok_or(BitmapError::DimensionsTooLarge { width, height })?;
+            .ok_or_else(|| at!(BitmapError::DimensionsTooLarge { width, height }))?;
 
         crate::limits::check_output_size(
             row_bytes.saturating_mul(height as usize),
@@ -480,10 +483,10 @@ impl<'a> zencodec::decode::DecodeJob<'a> for QoiDecodeJob {
         self,
         _data: Cow<'a, [u8]>,
         _preferred: &[PixelDescriptor],
-    ) -> Result<zencodec::Unsupported<BitmapError>, BitmapError> {
-        Err(BitmapError::from(
+    ) -> crate::Result<zencodec::Unsupported<At<BitmapError>>> {
+        Err(at!(BitmapError::from(
             zencodec::UnsupportedOperation::AnimationDecode,
-        ))
+        )))
     }
 }
 
@@ -504,9 +507,9 @@ impl QoiDecoder<'_> {
 }
 
 impl zencodec::decode::Decode for QoiDecoder<'_> {
-    type Error = BitmapError;
+    type Error = At<BitmapError>;
 
-    fn decode(self) -> Result<DecodeOutput, BitmapError> {
+    fn decode(self) -> crate::Result<DecodeOutput> {
         let limits = self.effective_limits();
         let stop: &dyn Stop = match &self.stop {
             Some(s) => s,
@@ -551,7 +554,7 @@ impl<'a> QoiStreamingDecoder<'a> {
         has_alpha: bool,
         row_bytes: usize,
         stop: Option<zencodec::StopToken>,
-    ) -> Result<Self, BitmapError> {
+    ) -> crate::Result<Self> {
         Ok(Self {
             data,
             info,
@@ -570,33 +573,33 @@ impl<'a> QoiStreamingDecoder<'a> {
 }
 
 impl zencodec::decode::StreamingDecode for QoiStreamingDecoder<'_> {
-    type Error = BitmapError;
+    type Error = At<BitmapError>;
 
-    fn next_batch(&mut self) -> Result<Option<(u32, PixelSlice<'_>)>, BitmapError> {
+    fn next_batch(&mut self) -> crate::Result<Option<(u32, PixelSlice<'_>)>> {
         if self.current_row >= self.height {
             return Ok(None);
         }
 
         if let Some(ref stop) = self.stop {
-            stop.check()?;
+            stop.check().map_err(|r| at!(BitmapError::from(r)))?;
         }
 
         let encoded = self
             .data
             .get(self.byte_offset..)
-            .ok_or(BitmapError::UnexpectedEof)?;
+            .ok_or_else(|| at!(BitmapError::UnexpectedEof))?;
 
         if self.has_alpha {
             let consumed = self
                 .state_rgba
                 .decode_into(encoded, &mut self.row_buf)
-                .map_err(|()| BitmapError::UnexpectedEof)?;
+                .map_err(|()| at!(BitmapError::UnexpectedEof))?;
             self.byte_offset += consumed;
         } else {
             let consumed = self
                 .state_rgb
                 .decode_into(encoded, &mut self.row_buf)
-                .map_err(|()| BitmapError::UnexpectedEof)?;
+                .map_err(|()| at!(BitmapError::UnexpectedEof))?;
             self.byte_offset += consumed;
         }
 
@@ -605,7 +608,7 @@ impl zencodec::decode::StreamingDecode for QoiStreamingDecoder<'_> {
 
         let stride = self.row_buf.len();
         let slice = PixelSlice::new(&self.row_buf, self.width, 1, stride, self.descriptor)
-            .map_err(|e| BitmapError::InvalidData(e.to_string()))?;
+            .map_err(|e| at!(BitmapError::InvalidData(e.to_string())))?;
 
         Ok(Some((y, slice)))
     }

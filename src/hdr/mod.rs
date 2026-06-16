@@ -12,21 +12,26 @@ use crate::limits::{self, Limits};
 use crate::pixel::PixelLayout;
 use alloc::vec::Vec;
 use enough::Stop;
+use whereat::at;
 
 /// Decode Radiance HDR data to RgbF32 pixels.
 pub(crate) fn decode<'a>(
     data: &'a [u8],
     limits: Option<&Limits>,
     stop: &dyn Stop,
-) -> Result<DecodeOutput<'a>, BitmapError> {
+) -> crate::Result<DecodeOutput<'a>> {
     let (width, height, offset) = decode::parse_header(data)?;
     limits::check_dimensions(width, height, limits)?;
     let out_bytes = (width as usize)
         .checked_mul(height as usize)
         .and_then(|px| px.checked_mul(12)) // 3 channels × 4 bytes per f32
-        .ok_or_else(|| BitmapError::LimitExceeded("output size overflows usize".into()))?;
+        .ok_or_else(|| {
+            at!(BitmapError::LimitExceeded(
+                "output size overflows usize".into()
+            ))
+        })?;
     limits::check_output_size(out_bytes, limits)?;
-    stop.check()?;
+    stop.check().map_err(|r| at!(BitmapError::from(r)))?;
     let pixels = decode::decode_pixels(data, offset, width, height, stop)?;
     Ok(DecodeOutput::owned(
         pixels,
@@ -43,6 +48,6 @@ pub(crate) fn encode(
     height: u32,
     layout: PixelLayout,
     stop: &dyn Stop,
-) -> Result<Vec<u8>, BitmapError> {
+) -> crate::Result<Vec<u8>> {
     encode::encode_hdr(pixels, width, height, layout, stop)
 }

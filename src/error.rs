@@ -1,5 +1,28 @@
 use alloc::string::String;
 use enough::StopReason;
+use whereat::At;
+
+/// Result alias with `At<BitmapError>` for automatic file:line location tracking.
+///
+/// Every public decode/encode entry point returns this. The error carries a
+/// captured call-site trace (file, line, and — with [`whereat::define_at_crate_info!`]
+/// in scope — a GitHub source link), which is invaluable for diagnosing
+/// malformed-input failures in server logs. Match on the underlying enum via
+/// [`At::error`]:
+///
+/// ```
+/// use zenbitmaps::{decode, BitmapError};
+/// use enough::Unstoppable;
+///
+/// match decode(b"not an image", Unstoppable) {
+///     Ok(_) => {}
+///     Err(e) => {
+///         // `e` is `At<BitmapError>`; the inner enum is `e.error()`.
+///         assert!(matches!(e.error(), BitmapError::UnrecognizedFormat));
+///     }
+/// }
+/// ```
+pub type Result<T> = core::result::Result<T, At<BitmapError>>;
 
 /// Errors from PNM/BMP decoding and encoding.
 #[derive(Debug, thiserror::Error)]

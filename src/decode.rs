@@ -3,6 +3,8 @@ use alloc::vec::Vec;
 
 #[cfg(feature = "rgb")]
 use rgb::AsPixels as _;
+#[cfg(feature = "rgb")]
+use whereat::at;
 
 use crate::pixel::PixelLayout;
 
@@ -58,15 +60,15 @@ impl<'a> DecodeOutput<'a> {
     ///
     /// Returns [`crate::BitmapError::LayoutMismatch`] if the pixel layout doesn't match `P`.
     #[cfg(feature = "rgb")]
-    pub fn as_pixels<P: crate::DecodePixel>(&self) -> Result<&[P], crate::BitmapError>
+    pub fn as_pixels<P: crate::DecodePixel>(&self) -> crate::Result<&[P]>
     where
         [u8]: rgb::AsPixels<P>,
     {
         if !self.layout.is_memory_compatible(P::layout()) {
-            return Err(crate::BitmapError::LayoutMismatch {
+            return Err(at!(crate::BitmapError::LayoutMismatch {
                 expected: P::layout(),
                 actual: self.layout,
-            });
+            }));
         }
         Ok(self.pixels().as_pixels())
     }
@@ -79,9 +81,7 @@ impl<'a> DecodeOutput<'a> {
     ///
     /// Returns [`crate::BitmapError::LayoutMismatch`] if the pixel layout doesn't match `P`.
     #[cfg(feature = "imgref")]
-    pub fn as_imgref<P: crate::DecodePixel>(
-        &self,
-    ) -> Result<imgref::ImgRef<'_, P>, crate::BitmapError>
+    pub fn as_imgref<P: crate::DecodePixel>(&self) -> crate::Result<imgref::ImgRef<'_, P>>
     where
         [u8]: rgb::AsPixels<P>,
     {
@@ -97,7 +97,7 @@ impl<'a> DecodeOutput<'a> {
     ///
     /// Returns [`crate::BitmapError::LayoutMismatch`] if the pixel layout doesn't match `P`.
     #[cfg(feature = "imgref")]
-    pub fn to_imgvec<P: crate::DecodePixel>(&self) -> Result<imgref::ImgVec<P>, crate::BitmapError>
+    pub fn to_imgvec<P: crate::DecodePixel>(&self) -> crate::Result<imgref::ImgVec<P>>
     where
         [u8]: rgb::AsPixels<P>,
     {

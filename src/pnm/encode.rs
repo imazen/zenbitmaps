@@ -17,26 +17,27 @@ pub(crate) fn encode_pnm(
     layout: PixelLayout,
     fmt: PnmFormat,
     stop: &dyn Stop,
-) -> Result<Vec<u8>, BitmapError> {
+) -> crate::Result<Vec<u8>> {
     let w = width as usize;
     let h = height as usize;
     let expected = w
         .checked_mul(h)
         .and_then(|wh| wh.checked_mul(layout.bytes_per_pixel()))
-        .ok_or(BitmapError::DimensionsTooLarge { width, height })?;
+        .ok_or_else(|| whereat::at!(BitmapError::DimensionsTooLarge { width, height }))?;
     if pixels.len() < expected {
-        return Err(BitmapError::BufferTooSmall {
+        return Err(whereat::at!(BitmapError::BufferTooSmall {
             needed: expected,
             actual: pixels.len(),
-        });
+        }));
     }
 
-    stop.check()?;
+    stop.check()
+        .map_err(|r| whereat::at!(BitmapError::from(r)))?;
 
     match fmt {
-        PnmFormat::Pbm => Err(BitmapError::UnsupportedVariant(
+        PnmFormat::Pbm => Err(whereat::at!(BitmapError::UnsupportedVariant(
             "PBM encode not supported, use PGM (encode_pgm)".into(),
-        )),
+        ))),
         PnmFormat::Pgm => encode_pgm(pixels, width, height, w, h, layout, stop),
         PnmFormat::Ppm => encode_ppm(pixels, width, height, w, h, layout, stop),
         PnmFormat::Pam => encode_pam(pixels, width, height, w, h, layout, stop),
@@ -52,7 +53,7 @@ fn encode_pgm(
     h: usize,
     layout: PixelLayout,
     stop: &dyn Stop,
-) -> Result<Vec<u8>, BitmapError> {
+) -> crate::Result<Vec<u8>> {
     let header = format!("P5\n{width} {height}\n255\n");
     let mut out = Vec::with_capacity(header.len() + w * h);
     out.extend_from_slice(header.as_bytes());
@@ -64,7 +65,8 @@ fn encode_pgm(
         PixelLayout::Rgb8 => {
             for i in 0..(w * h) {
                 if i % w.saturating_mul(16).max(1) == 0 {
-                    stop.check()?;
+                    stop.check()
+                        .map_err(|r| whereat::at!(BitmapError::from(r)))?;
                 }
                 let off = i * 3;
                 let r = pixels[off] as u32;
@@ -76,7 +78,8 @@ fn encode_pgm(
         PixelLayout::Bgr8 => {
             for i in 0..(w * h) {
                 if i % w.saturating_mul(16).max(1) == 0 {
-                    stop.check()?;
+                    stop.check()
+                        .map_err(|r| whereat::at!(BitmapError::from(r)))?;
                 }
                 let off = i * 3;
                 let b = pixels[off] as u32;
@@ -88,7 +91,8 @@ fn encode_pgm(
         PixelLayout::Rgba8 => {
             for i in 0..(w * h) {
                 if i % w.saturating_mul(16).max(1) == 0 {
-                    stop.check()?;
+                    stop.check()
+                        .map_err(|r| whereat::at!(BitmapError::from(r)))?;
                 }
                 let off = i * 4;
                 let r = pixels[off] as u32;
@@ -100,7 +104,8 @@ fn encode_pgm(
         PixelLayout::Bgra8 | PixelLayout::Bgrx8 => {
             for i in 0..(w * h) {
                 if i % w.saturating_mul(16).max(1) == 0 {
-                    stop.check()?;
+                    stop.check()
+                        .map_err(|r| whereat::at!(BitmapError::from(r)))?;
                 }
                 let off = i * 4;
                 let b = pixels[off] as u32;
@@ -110,10 +115,10 @@ fn encode_pgm(
             }
         }
         _ => {
-            return Err(BitmapError::UnsupportedVariant(format!(
+            return Err(whereat::at!(BitmapError::UnsupportedVariant(format!(
                 "cannot encode {:?} as PGM",
                 layout
-            )));
+            ))));
         }
     }
 
@@ -128,7 +133,7 @@ fn encode_ppm(
     h: usize,
     layout: PixelLayout,
     stop: &dyn Stop,
-) -> Result<Vec<u8>, BitmapError> {
+) -> crate::Result<Vec<u8>> {
     let header = format!("P6\n{width} {height}\n255\n");
     let mut out = Vec::with_capacity(header.len() + w * h * 3);
     out.extend_from_slice(header.as_bytes());
@@ -140,7 +145,8 @@ fn encode_ppm(
         PixelLayout::Bgr8 => {
             for i in 0..(w * h) {
                 if i % w.saturating_mul(16).max(1) == 0 {
-                    stop.check()?;
+                    stop.check()
+                        .map_err(|r| whereat::at!(BitmapError::from(r)))?;
                 }
                 let off = i * 3;
                 out.push(pixels[off + 2]);
@@ -151,7 +157,8 @@ fn encode_ppm(
         PixelLayout::Rgba8 => {
             for i in 0..(w * h) {
                 if i % w.saturating_mul(16).max(1) == 0 {
-                    stop.check()?;
+                    stop.check()
+                        .map_err(|r| whereat::at!(BitmapError::from(r)))?;
                 }
                 let off = i * 4;
                 out.push(pixels[off]);
@@ -162,7 +169,8 @@ fn encode_ppm(
         PixelLayout::Bgra8 | PixelLayout::Bgrx8 => {
             for i in 0..(w * h) {
                 if i % w.saturating_mul(16).max(1) == 0 {
-                    stop.check()?;
+                    stop.check()
+                        .map_err(|r| whereat::at!(BitmapError::from(r)))?;
                 }
                 let off = i * 4;
                 out.push(pixels[off + 2]);
@@ -178,10 +186,10 @@ fn encode_ppm(
             }
         }
         _ => {
-            return Err(BitmapError::UnsupportedVariant(format!(
+            return Err(whereat::at!(BitmapError::UnsupportedVariant(format!(
                 "cannot encode {:?} as PPM",
                 layout
-            )));
+            ))));
         }
     }
 
@@ -196,7 +204,7 @@ fn encode_pam(
     h: usize,
     layout: PixelLayout,
     stop: &dyn Stop,
-) -> Result<Vec<u8>, BitmapError> {
+) -> crate::Result<Vec<u8>> {
     let (depth, tupltype, maxval) = match layout {
         PixelLayout::Gray8 => (1, "GRAYSCALE", 255),
         PixelLayout::Gray16 => (1, "GRAYSCALE", 65535),
@@ -206,10 +214,10 @@ fn encode_pam(
         PixelLayout::Bgra8 => (4, "RGB_ALPHA", 255),
         PixelLayout::Bgrx8 => (4, "RGB_ALPHA", 255),
         _ => {
-            return Err(BitmapError::UnsupportedVariant(format!(
+            return Err(whereat::at!(BitmapError::UnsupportedVariant(format!(
                 "cannot encode {:?} as PAM",
                 layout
-            )));
+            ))));
         }
     };
 
@@ -227,7 +235,8 @@ fn encode_pam(
             // Swizzle BGR → RGB
             for i in 0..pixel_count {
                 if i % w.saturating_mul(16).max(1) == 0 {
-                    stop.check()?;
+                    stop.check()
+                        .map_err(|r| whereat::at!(BitmapError::from(r)))?;
                 }
                 let off = i * 3;
                 out.push(pixels[off + 2]); // R
@@ -239,7 +248,8 @@ fn encode_pam(
             // Swizzle BGRA → RGBA
             for i in 0..pixel_count {
                 if i % w.saturating_mul(16).max(1) == 0 {
-                    stop.check()?;
+                    stop.check()
+                        .map_err(|r| whereat::at!(BitmapError::from(r)))?;
                 }
                 let off = i * 4;
                 out.push(pixels[off + 2]); // R
@@ -252,7 +262,8 @@ fn encode_pam(
             // Swizzle BGRX → RGBA (A=255)
             for i in 0..pixel_count {
                 if i % w.saturating_mul(16).max(1) == 0 {
-                    stop.check()?;
+                    stop.check()
+                        .map_err(|r| whereat::at!(BitmapError::from(r)))?;
                 }
                 let off = i * 4;
                 out.push(pixels[off + 2]); // R
@@ -279,15 +290,15 @@ fn encode_pfm(
     h: usize,
     layout: PixelLayout,
     stop: &dyn Stop,
-) -> Result<Vec<u8>, BitmapError> {
+) -> crate::Result<Vec<u8>> {
     let (magic, depth) = match layout {
         PixelLayout::GrayF32 => ("Pf", 1),
         PixelLayout::RgbF32 => ("PF", 3),
         _ => {
-            return Err(BitmapError::UnsupportedVariant(format!(
+            return Err(whereat::at!(BitmapError::UnsupportedVariant(format!(
                 "PFM requires GrayF32 or RgbF32, got {:?}",
                 layout
-            )));
+            ))));
         }
     };
 
@@ -295,17 +306,18 @@ fn encode_pfm(
     let row_bytes = w
         .checked_mul(depth)
         .and_then(|wd| wd.checked_mul(4))
-        .ok_or(BitmapError::DimensionsTooLarge { width, height })?;
+        .ok_or_else(|| whereat::at!(BitmapError::DimensionsTooLarge { width, height }))?;
     let total_pixels = h
         .checked_mul(row_bytes)
-        .ok_or(BitmapError::DimensionsTooLarge { width, height })?;
+        .ok_or_else(|| whereat::at!(BitmapError::DimensionsTooLarge { width, height }))?;
     let mut out = Vec::with_capacity(header.len().saturating_add(total_pixels));
     out.extend_from_slice(header.as_bytes());
 
     // PFM stores bottom-to-top
     for row in (0..h).rev() {
         if row % 16 == 0 {
-            stop.check()?;
+            stop.check()
+                .map_err(|r| whereat::at!(BitmapError::from(r)))?;
         }
         let start = row * row_bytes;
         out.extend_from_slice(&pixels[start..start + row_bytes]);

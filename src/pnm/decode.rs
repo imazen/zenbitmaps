@@ -16,9 +16,9 @@ use alloc::vec::Vec;
 use enough::Stop;
 
 /// Parse header from raw data.
-pub(crate) fn parse_header(data: &[u8]) -> Result<PnmHeader, BitmapError> {
+pub(crate) fn parse_header(data: &[u8]) -> crate::Result<PnmHeader> {
     if data.len() < 3 {
-        return Err(BitmapError::UnexpectedEof);
+        return Err(whereat::at!(BitmapError::UnexpectedEof));
     }
 
     match &data[..2] {
@@ -29,11 +29,11 @@ pub(crate) fn parse_header(data: &[u8]) -> Result<PnmHeader, BitmapError> {
         b"P1" | b"P4" => parse_pbm_header(data),
         b"P2" => parse_p5_p6_header(data, PnmFormat::Pgm),
         b"P3" => parse_p5_p6_header(data, PnmFormat::Ppm),
-        _ => Err(BitmapError::UnrecognizedFormat),
+        _ => Err(whereat::at!(BitmapError::UnrecognizedFormat)),
     }
 }
 
-fn parse_p5_p6_header(data: &[u8], format: PnmFormat) -> Result<PnmHeader, BitmapError> {
+fn parse_p5_p6_header(data: &[u8], format: PnmFormat) -> crate::Result<PnmHeader> {
     let mut pos = 2;
 
     pos = skip_whitespace_and_comments(data, pos)?;
@@ -44,18 +44,18 @@ fn parse_p5_p6_header(data: &[u8], format: PnmFormat) -> Result<PnmHeader, Bitma
     let (maxval, new_pos) = parse_u32(data, pos)?;
 
     if width == 0 || height == 0 {
-        return Err(BitmapError::InvalidHeader(
+        return Err(whereat::at!(BitmapError::InvalidHeader(
             "width and height must be non-zero".into(),
-        ));
+        )));
     }
     if maxval == 0 || maxval > 65535 {
-        return Err(BitmapError::InvalidHeader(alloc::format!(
+        return Err(whereat::at!(BitmapError::InvalidHeader(alloc::format!(
             "maxval must be 1-65535, got {maxval}"
-        )));
+        ))));
     }
 
     if new_pos >= data.len() {
-        return Err(BitmapError::UnexpectedEof);
+        return Err(whereat::at!(BitmapError::UnexpectedEof));
     }
     let data_offset = new_pos + 1;
 
@@ -69,9 +69,8 @@ fn parse_p5_p6_header(data: &[u8], format: PnmFormat) -> Result<PnmHeader, Bitma
         }
         PnmFormat::Ppm => (3, PixelLayout::Rgb8),
         _ => {
-            return Err(BitmapError::UnsupportedVariant(alloc::format!(
-                "unexpected format {:?} in P5/P6 parser",
-                format
+            return Err(whereat::at!(BitmapError::UnsupportedVariant(
+                alloc::format!("unexpected format {:?} in P5/P6 parser", format)
             )));
         }
     };
@@ -89,7 +88,7 @@ fn parse_p5_p6_header(data: &[u8], format: PnmFormat) -> Result<PnmHeader, Bitma
 }
 
 /// Parse P1/P4 (PBM) header. PBM has width and height but no maxval.
-fn parse_pbm_header(data: &[u8]) -> Result<PnmHeader, BitmapError> {
+fn parse_pbm_header(data: &[u8]) -> crate::Result<PnmHeader> {
     let mut pos = 2;
 
     pos = skip_whitespace_and_comments(data, pos)?;
@@ -98,15 +97,15 @@ fn parse_pbm_header(data: &[u8]) -> Result<PnmHeader, BitmapError> {
     let (height, new_pos) = parse_u32(data, pos)?;
 
     if width == 0 || height == 0 {
-        return Err(BitmapError::InvalidHeader(
+        return Err(whereat::at!(BitmapError::InvalidHeader(
             "width and height must be non-zero".into(),
-        ));
+        )));
     }
 
     // P1: single whitespace separates header from ASCII data
     // P4: single whitespace byte separates header from binary data
     if new_pos >= data.len() {
-        return Err(BitmapError::UnexpectedEof);
+        return Err(whereat::at!(BitmapError::UnexpectedEof));
     }
     let data_offset = new_pos + 1;
 
@@ -122,7 +121,7 @@ fn parse_pbm_header(data: &[u8]) -> Result<PnmHeader, BitmapError> {
     })
 }
 
-fn parse_p7_header(data: &[u8]) -> Result<PnmHeader, BitmapError> {
+fn parse_p7_header(data: &[u8]) -> crate::Result<PnmHeader> {
     let mut pos = 2;
     pos = skip_whitespace_and_comments(data, pos)?;
 
@@ -139,7 +138,7 @@ fn parse_p7_header(data: &[u8]) -> Result<PnmHeader, BitmapError> {
             .map(|i| pos + i)
             .unwrap_or(data.len());
         let line = core::str::from_utf8(&data[pos..line_end])
-            .map_err(|_| BitmapError::InvalidHeader("non-UTF8 in PAM header".into()))?
+            .map_err(|_| whereat::at!(BitmapError::InvalidHeader("non-UTF8 in PAM header".into())))?
             .trim();
 
         if line == "ENDHDR" {
@@ -151,25 +150,25 @@ fn parse_p7_header(data: &[u8]) -> Result<PnmHeader, BitmapError> {
             width = Some(
                 rest.trim()
                     .parse()
-                    .map_err(|_| BitmapError::InvalidHeader("bad WIDTH".into()))?,
+                    .map_err(|_| whereat::at!(BitmapError::InvalidHeader("bad WIDTH".into())))?,
             );
         } else if let Some(rest) = line.strip_prefix("HEIGHT ") {
             height = Some(
                 rest.trim()
                     .parse()
-                    .map_err(|_| BitmapError::InvalidHeader("bad HEIGHT".into()))?,
+                    .map_err(|_| whereat::at!(BitmapError::InvalidHeader("bad HEIGHT".into())))?,
             );
         } else if let Some(rest) = line.strip_prefix("DEPTH ") {
             depth = Some(
                 rest.trim()
                     .parse()
-                    .map_err(|_| BitmapError::InvalidHeader("bad DEPTH".into()))?,
+                    .map_err(|_| whereat::at!(BitmapError::InvalidHeader("bad DEPTH".into())))?,
             );
         } else if let Some(rest) = line.strip_prefix("MAXVAL ") {
             maxval = Some(
                 rest.trim()
                     .parse()
-                    .map_err(|_| BitmapError::InvalidHeader("bad MAXVAL".into()))?,
+                    .map_err(|_| whereat::at!(BitmapError::InvalidHeader("bad MAXVAL".into())))?,
             );
         } else if let Some(rest) = line.strip_prefix("TUPLTYPE ") {
             tupltype = Some(rest.trim().into());
@@ -183,22 +182,30 @@ fn parse_p7_header(data: &[u8]) -> Result<PnmHeader, BitmapError> {
             data.len()
         };
         if pos >= data.len() {
-            return Err(BitmapError::InvalidHeader("no ENDHDR found".into()));
+            return Err(whereat::at!(BitmapError::InvalidHeader(
+                "no ENDHDR found".into()
+            )));
         }
     }
 
-    let width = width.ok_or_else(|| BitmapError::InvalidHeader("missing WIDTH".into()))?;
-    let height = height.ok_or_else(|| BitmapError::InvalidHeader("missing HEIGHT".into()))?;
-    let depth = depth.ok_or_else(|| BitmapError::InvalidHeader("missing DEPTH".into()))?;
-    let maxval = maxval.ok_or_else(|| BitmapError::InvalidHeader("missing MAXVAL".into()))?;
+    let width =
+        width.ok_or_else(|| whereat::at!(BitmapError::InvalidHeader("missing WIDTH".into())))?;
+    let height =
+        height.ok_or_else(|| whereat::at!(BitmapError::InvalidHeader("missing HEIGHT".into())))?;
+    let depth =
+        depth.ok_or_else(|| whereat::at!(BitmapError::InvalidHeader("missing DEPTH".into())))?;
+    let maxval =
+        maxval.ok_or_else(|| whereat::at!(BitmapError::InvalidHeader("missing MAXVAL".into())))?;
 
     if width == 0 || height == 0 {
-        return Err(BitmapError::InvalidHeader(
+        return Err(whereat::at!(BitmapError::InvalidHeader(
             "width and height must be non-zero".into(),
-        ));
+        )));
     }
     if depth == 0 {
-        return Err(BitmapError::InvalidHeader("DEPTH must be non-zero".into()));
+        return Err(whereat::at!(BitmapError::InvalidHeader(
+            "DEPTH must be non-zero".into()
+        )));
     }
 
     let layout = match (depth, maxval > 255) {
@@ -209,8 +216,8 @@ fn parse_p7_header(data: &[u8]) -> Result<PnmHeader, BitmapError> {
         (4, false) => PixelLayout::Rgba8,
         (4, true) => PixelLayout::Rgba8,
         _ => {
-            return Err(BitmapError::UnsupportedVariant(alloc::format!(
-                "PAM DEPTH={depth} not supported"
+            return Err(whereat::at!(BitmapError::UnsupportedVariant(
+                alloc::format!("PAM DEPTH={depth} not supported")
             )));
         }
     };
@@ -229,7 +236,7 @@ fn parse_p7_header(data: &[u8]) -> Result<PnmHeader, BitmapError> {
     })
 }
 
-fn parse_pfm_header(data: &[u8]) -> Result<PnmHeader, BitmapError> {
+fn parse_pfm_header(data: &[u8]) -> crate::Result<PnmHeader> {
     let is_color = data[1] == b'F';
     let mut pos = 2;
 
@@ -245,11 +252,13 @@ fn parse_pfm_header(data: &[u8]) -> Result<PnmHeader, BitmapError> {
         .map(|i| pos + i)
         .unwrap_or(data.len());
     let scale_str = core::str::from_utf8(&data[pos..line_end])
-        .map_err(|_| BitmapError::InvalidHeader("non-UTF8 scale".into()))?
+        .map_err(|_| whereat::at!(BitmapError::InvalidHeader("non-UTF8 scale".into())))?
         .trim();
-    let scale: f32 = scale_str
-        .parse()
-        .map_err(|_| BitmapError::InvalidHeader(alloc::format!("bad scale: {scale_str}")))?;
+    let scale: f32 = scale_str.parse().map_err(|_| {
+        whereat::at!(BitmapError::InvalidHeader(alloc::format!(
+            "bad scale: {scale_str}"
+        )))
+    })?;
 
     // The PFM specification (Pat Hanrahan, "PFM image format") defines the
     // scale as a non-zero finite number whose sign communicates byte order
@@ -258,15 +267,15 @@ fn parse_pfm_header(data: &[u8]) -> Result<PnmHeader, BitmapError> {
     // poisons subsequent products; ±Inf saturates; zero is meaningless as
     // a scale factor and is excluded by spec).
     if !scale.is_finite() || scale == 0.0 {
-        return Err(BitmapError::InvalidHeader(alloc::format!(
+        return Err(whereat::at!(BitmapError::InvalidHeader(alloc::format!(
             "PFM scale must be a non-zero finite value, got: {scale_str}"
-        )));
+        ))));
     }
 
     if width == 0 || height == 0 {
-        return Err(BitmapError::InvalidHeader(
+        return Err(whereat::at!(BitmapError::InvalidHeader(
             "width and height must be non-zero".into(),
-        ));
+        )));
     }
 
     let data_offset = line_end + 1;
@@ -295,7 +304,7 @@ pub(crate) fn decode_integer_transform(
     header: &PnmHeader,
     expected_src: usize,
     stop: &dyn Stop,
-) -> Result<Vec<u8>, BitmapError> {
+) -> crate::Result<Vec<u8>> {
     let w = header.width as usize;
     let h = header.height as usize;
     let depth = header.depth as usize;
@@ -308,7 +317,8 @@ pub(crate) fn decode_integer_transform(
         let stop_interval = w.saturating_mul(depth).saturating_mul(16).max(1);
         for (i, &b) in pixel_data[..expected_src].iter().enumerate() {
             if i % stop_interval == 0 {
-                stop.check()?;
+                stop.check()
+                    .map_err(|r| whereat::at!(BitmapError::from(r)))?;
             }
             out.push((b as f32 * scale + 0.5) as u8);
         }
@@ -320,27 +330,29 @@ pub(crate) fn decode_integer_transform(
                 let num_samples = w
                     .checked_mul(h)
                     .and_then(|wh| wh.checked_mul(depth))
-                    .ok_or(BitmapError::DimensionsTooLarge {
-                        width: header.width,
-                        height: header.height,
-                    })?;
-                // Verify 2*num_samples fits and data is sufficient
-                let needed_bytes =
-                    num_samples
-                        .checked_mul(2)
-                        .ok_or(BitmapError::DimensionsTooLarge {
+                    .ok_or_else(|| {
+                        whereat::at!(BitmapError::DimensionsTooLarge {
                             width: header.width,
                             height: header.height,
-                        })?;
+                        })
+                    })?;
+                // Verify 2*num_samples fits and data is sufficient
+                let needed_bytes = num_samples.checked_mul(2).ok_or_else(|| {
+                    whereat::at!(BitmapError::DimensionsTooLarge {
+                        width: header.width,
+                        height: header.height,
+                    })
+                })?;
                 if pixel_data.len() < needed_bytes {
-                    return Err(BitmapError::UnexpectedEof);
+                    return Err(whereat::at!(BitmapError::UnexpectedEof));
                 }
                 let scale = 255.0 / header.maxval as f32;
                 let stop_interval = w.saturating_mul(depth).saturating_mul(16).max(1);
                 let mut out = Vec::with_capacity(num_samples);
                 for i in 0..num_samples {
                     if i % stop_interval == 0 {
-                        stop.check()?;
+                        stop.check()
+                            .map_err(|r| whereat::at!(BitmapError::from(r)))?;
                     }
                     let hi = pixel_data[i * 2] as u16;
                     let lo = pixel_data[i * 2 + 1] as u16;
@@ -358,49 +370,52 @@ pub(crate) fn decode_pfm(
     pixel_data: &[u8],
     header: &PnmHeader,
     stop: &dyn Stop,
-) -> Result<Vec<u8>, BitmapError> {
+) -> crate::Result<Vec<u8>> {
     let w = header.width as usize;
     let h = header.height as usize;
     let depth = header.depth as usize;
     let num_floats = w
         .checked_mul(h)
         .and_then(|wh| wh.checked_mul(depth))
-        .ok_or(BitmapError::DimensionsTooLarge {
+        .ok_or_else(|| {
+            whereat::at!(BitmapError::DimensionsTooLarge {
+                width: header.width,
+                height: header.height,
+            })
+        })?;
+    let expected_bytes = num_floats.checked_mul(4).ok_or_else(|| {
+        whereat::at!(BitmapError::DimensionsTooLarge {
             width: header.width,
             height: header.height,
-        })?;
-    let expected_bytes = num_floats
-        .checked_mul(4)
-        .ok_or(BitmapError::DimensionsTooLarge {
-            width: header.width,
-            height: header.height,
-        })?;
+        })
+    })?;
 
     if pixel_data.len() < expected_bytes {
-        return Err(BitmapError::UnexpectedEof);
+        return Err(whereat::at!(BitmapError::UnexpectedEof));
     }
 
     let is_little_endian = header.pfm_scale < 0.0;
     let scale = header.pfm_scale.abs();
 
     let mut out = Vec::with_capacity(expected_bytes);
-    let row_floats = w
-        .checked_mul(depth)
-        .ok_or(BitmapError::DimensionsTooLarge {
+    let row_floats = w.checked_mul(depth).ok_or_else(|| {
+        whereat::at!(BitmapError::DimensionsTooLarge {
             width: header.width,
             height: header.height,
-        })?;
-    let row_bytes = row_floats
-        .checked_mul(4)
-        .ok_or(BitmapError::DimensionsTooLarge {
+        })
+    })?;
+    let row_bytes = row_floats.checked_mul(4).ok_or_else(|| {
+        whereat::at!(BitmapError::DimensionsTooLarge {
             width: header.width,
             height: header.height,
-        })?;
+        })
+    })?;
 
     // PFM stores rows bottom-to-top
     for row in (0..h).rev() {
         if row % 16 == 0 {
-            stop.check()?;
+            stop.check()
+                .map_err(|r| whereat::at!(BitmapError::from(r)))?;
         }
         let row_start = row * row_bytes;
         for i in 0..row_floats {
@@ -433,12 +448,14 @@ pub(crate) fn decode_ascii_pbm(
     pixel_data: &[u8],
     header: &PnmHeader,
     stop: &dyn Stop,
-) -> Result<Vec<u8>, BitmapError> {
+) -> crate::Result<Vec<u8>> {
     let total = (header.width as usize)
         .checked_mul(header.height as usize)
-        .ok_or(BitmapError::DimensionsTooLarge {
-            width: header.width,
-            height: header.height,
+        .ok_or_else(|| {
+            whereat::at!(BitmapError::DimensionsTooLarge {
+                width: header.width,
+                height: header.height,
+            })
         })?;
 
     let mut out = Vec::with_capacity(total);
@@ -446,7 +463,8 @@ pub(crate) fn decode_ascii_pbm(
 
     for i in 0..total {
         if i % (header.width as usize * 16) == 0 {
-            stop.check()?;
+            stop.check()
+                .map_err(|r| whereat::at!(BitmapError::from(r)))?;
         }
         // Skip whitespace and comments
         while pos < pixel_data.len() {
@@ -461,17 +479,17 @@ pub(crate) fn decode_ascii_pbm(
             }
         }
         if pos >= pixel_data.len() {
-            return Err(BitmapError::UnexpectedEof);
+            return Err(whereat::at!(BitmapError::UnexpectedEof));
         }
         // PBM: 1 = black (0), 0 = white (255)
         let val = match pixel_data[pos] {
             b'0' => 255,
             b'1' => 0,
             c => {
-                return Err(BitmapError::InvalidData(alloc::format!(
+                return Err(whereat::at!(BitmapError::InvalidData(alloc::format!(
                     "P1: expected '0' or '1', got '{}'",
                     c as char
-                )));
+                ))));
             }
         };
         out.push(val);
@@ -487,30 +505,33 @@ pub(crate) fn decode_p4_bitpacked(
     pixel_data: &[u8],
     header: &PnmHeader,
     stop: &dyn Stop,
-) -> Result<Vec<u8>, BitmapError> {
+) -> crate::Result<Vec<u8>> {
     let w = header.width as usize;
     let h = header.height as usize;
     let row_bytes = w.div_ceil(8);
-    let total_bytes = row_bytes
-        .checked_mul(h)
-        .ok_or(BitmapError::DimensionsTooLarge {
+    let total_bytes = row_bytes.checked_mul(h).ok_or_else(|| {
+        whereat::at!(BitmapError::DimensionsTooLarge {
             width: header.width,
             height: header.height,
-        })?;
+        })
+    })?;
 
     if pixel_data.len() < total_bytes {
-        return Err(BitmapError::UnexpectedEof);
+        return Err(whereat::at!(BitmapError::UnexpectedEof));
     }
 
-    let out_size = w.checked_mul(h).ok_or(BitmapError::DimensionsTooLarge {
-        width: header.width,
-        height: header.height,
+    let out_size = w.checked_mul(h).ok_or_else(|| {
+        whereat::at!(BitmapError::DimensionsTooLarge {
+            width: header.width,
+            height: header.height,
+        })
     })?;
     let mut out = Vec::with_capacity(out_size);
 
     for row in 0..h {
         if row % 16 == 0 {
-            stop.check()?;
+            stop.check()
+                .map_err(|r| whereat::at!(BitmapError::from(r)))?;
         }
         let row_start = row * row_bytes;
         for col in 0..w {
@@ -531,16 +552,18 @@ pub(crate) fn decode_ascii_samples(
     pixel_data: &[u8],
     header: &PnmHeader,
     stop: &dyn Stop,
-) -> Result<Vec<u8>, BitmapError> {
+) -> crate::Result<Vec<u8>> {
     let w = header.width as usize;
     let h = header.height as usize;
     let depth = header.depth as usize;
     let total = w
         .checked_mul(h)
         .and_then(|wh| wh.checked_mul(depth))
-        .ok_or(BitmapError::DimensionsTooLarge {
-            width: header.width,
-            height: header.height,
+        .ok_or_else(|| {
+            whereat::at!(BitmapError::DimensionsTooLarge {
+                width: header.width,
+                height: header.height,
+            })
         })?;
 
     let is_16bit = header.maxval > 255;
@@ -560,7 +583,8 @@ pub(crate) fn decode_ascii_samples(
 
     for i in 0..total {
         if i % (w * depth * 16) == 0 {
-            stop.check()?;
+            stop.check()
+                .map_err(|r| whereat::at!(BitmapError::from(r)))?;
         }
         // Skip whitespace and comments
         while pos < pixel_data.len() {
@@ -580,13 +604,15 @@ pub(crate) fn decode_ascii_samples(
             pos += 1;
         }
         if pos == start {
-            return Err(BitmapError::UnexpectedEof);
+            return Err(whereat::at!(BitmapError::UnexpectedEof));
         }
         let s = core::str::from_utf8(&pixel_data[start..pos])
-            .map_err(|_| BitmapError::InvalidData("non-UTF8 in ASCII PNM".into()))?;
-        let val: u32 = s
-            .parse()
-            .map_err(|_| BitmapError::InvalidData(alloc::format!("bad sample value: {s}")))?;
+            .map_err(|_| whereat::at!(BitmapError::InvalidData("non-UTF8 in ASCII PNM".into())))?;
+        let val: u32 = s.parse().map_err(|_| {
+            whereat::at!(BitmapError::InvalidData(alloc::format!(
+                "bad sample value: {s}"
+            )))
+        })?;
 
         // Clamp out-of-range samples (a malformed ASCII value may exceed maxval).
         let val = val.min(header.maxval);
@@ -602,10 +628,10 @@ pub(crate) fn decode_ascii_samples(
     Ok(out)
 }
 
-fn skip_whitespace_and_comments(data: &[u8], mut pos: usize) -> Result<usize, BitmapError> {
+fn skip_whitespace_and_comments(data: &[u8], mut pos: usize) -> crate::Result<usize> {
     loop {
         if pos >= data.len() {
-            return Err(BitmapError::UnexpectedEof);
+            return Err(whereat::at!(BitmapError::UnexpectedEof));
         }
         match data[pos] {
             b' ' | b'\t' | b'\n' | b'\r' => pos += 1,
@@ -622,7 +648,7 @@ fn skip_whitespace_and_comments(data: &[u8], mut pos: usize) -> Result<usize, Bi
     }
 }
 
-fn parse_u32(data: &[u8], pos: usize) -> Result<(u32, usize), BitmapError> {
+fn parse_u32(data: &[u8], pos: usize) -> crate::Result<(u32, usize)> {
     let mut end = pos;
     // Limit to 10 digits (u32::MAX = 4294967295, 10 digits)
     let max_end = core::cmp::min(pos + 11, data.len());
@@ -630,13 +656,17 @@ fn parse_u32(data: &[u8], pos: usize) -> Result<(u32, usize), BitmapError> {
         end += 1;
     }
     if end == pos {
-        return Err(BitmapError::InvalidHeader("expected number".into()));
+        return Err(whereat::at!(BitmapError::InvalidHeader(
+            "expected number".into()
+        )));
     }
     let s = core::str::from_utf8(&data[pos..end])
-        .map_err(|_| BitmapError::InvalidHeader("non-UTF8 number".into()))?;
-    let val: u32 = s
-        .parse()
-        .map_err(|_| BitmapError::InvalidHeader(alloc::format!("number too large: {s}")))?;
+        .map_err(|_| whereat::at!(BitmapError::InvalidHeader("non-UTF8 number".into())))?;
+    let val: u32 = s.parse().map_err(|_| {
+        whereat::at!(BitmapError::InvalidHeader(alloc::format!(
+            "number too large: {s}"
+        )))
+    })?;
     Ok((val, end))
 }
 
@@ -657,8 +687,10 @@ mod tests {
         let data = pfm_header_with_scale(scale_text);
         match parse_pfm_header(&data) {
             Ok(_) => panic!("expected InvalidHeader for scale {scale_text:?}"),
-            Err(BitmapError::InvalidHeader(_)) => {}
-            Err(e) => panic!("expected InvalidHeader for scale {scale_text:?}, got {e}"),
+            Err(e) => match e.error() {
+                BitmapError::InvalidHeader(_) => {}
+                _ => panic!("expected InvalidHeader for scale {scale_text:?}, got {e}"),
+            },
         }
     }
 

@@ -18,22 +18,23 @@ pub(crate) fn encode_qoi(
     height: u32,
     layout: PixelLayout,
     stop: &dyn Stop,
-) -> Result<Vec<u8>, BitmapError> {
+) -> crate::Result<Vec<u8>> {
     let w = width as usize;
     let h = height as usize;
     let bpp = layout.bytes_per_pixel();
     let expected = w
         .checked_mul(h)
         .and_then(|wh| wh.checked_mul(bpp))
-        .ok_or(BitmapError::DimensionsTooLarge { width, height })?;
+        .ok_or_else(|| whereat::at!(BitmapError::DimensionsTooLarge { width, height }))?;
     if pixels.len() < expected {
-        return Err(BitmapError::BufferTooSmall {
+        return Err(whereat::at!(BitmapError::BufferTooSmall {
             needed: expected,
             actual: pixels.len(),
-        });
+        }));
     }
 
-    stop.check()?;
+    stop.check()
+        .map_err(|r| whereat::at!(BitmapError::from(r)))?;
 
     // Determine QOI color space and prepare pixel data
     let (qoi_pixels, colors) = match layout {
@@ -41,7 +42,8 @@ pub(crate) fn encode_qoi(
         PixelLayout::Rgba8 => (None, rapid_qoi::Colors::SrgbLinA),
         PixelLayout::Bgr8 => {
             // Swizzle BGR → RGB
-            stop.check()?;
+            stop.check()
+                .map_err(|r| whereat::at!(BitmapError::from(r)))?;
             let mut rgb = pixels[..expected].to_vec();
             #[cfg(feature = "simd")]
             {
@@ -55,7 +57,8 @@ pub(crate) fn encode_qoi(
         }
         PixelLayout::Bgra8 => {
             // Swizzle BGRA → RGBA
-            stop.check()?;
+            stop.check()
+                .map_err(|r| whereat::at!(BitmapError::from(r)))?;
             let mut rgba = pixels[..expected].to_vec();
             #[cfg(feature = "simd")]
             {
@@ -69,7 +72,8 @@ pub(crate) fn encode_qoi(
         }
         PixelLayout::Bgrx8 => {
             // Swizzle BGRX → RGBA (set alpha=255)
-            stop.check()?;
+            stop.check()
+                .map_err(|r| whereat::at!(BitmapError::from(r)))?;
             let mut rgba = pixels[..expected].to_vec();
             #[cfg(feature = "simd")]
             {
@@ -84,8 +88,10 @@ pub(crate) fn encode_qoi(
             (Some(rgba), rapid_qoi::Colors::SrgbLinA)
         }
         _ => {
-            return Err(BitmapError::UnsupportedVariant(alloc::format!(
-                "cannot encode {layout:?} as QOI (supported: Rgb8, Rgba8, Bgr8, Bgra8)"
+            return Err(whereat::at!(BitmapError::UnsupportedVariant(
+                alloc::format!(
+                    "cannot encode {layout:?} as QOI (supported: Rgb8, Rgba8, Bgr8, Bgra8)"
+                )
             )));
         }
     };
@@ -99,7 +105,7 @@ pub(crate) fn encode_qoi(
     let encode_data = qoi_pixels.as_deref().unwrap_or(&pixels[..expected]);
     let encoded = qoi
         .encode_alloc(encode_data)
-        .map_err(|e| BitmapError::InvalidData(alloc::format!("{e:?}")))?;
+        .map_err(|e| whereat::at!(BitmapError::InvalidData(alloc::format!("{e:?}"))))?;
 
     Ok(encoded)
 }

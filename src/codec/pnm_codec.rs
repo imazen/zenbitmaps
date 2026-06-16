@@ -1,4 +1,5 @@
 use super::*;
+use whereat::{At, at};
 
 use crate::pnm;
 
@@ -82,7 +83,7 @@ impl PnmEncoderConfig {
 }
 
 impl zencodec::encode::EncoderConfig for PnmEncoderConfig {
-    type Error = BitmapError;
+    type Error = At<BitmapError>;
     type Job = PnmEncodeJob;
 
     fn format() -> ImageFormat {
@@ -120,7 +121,7 @@ pub struct PnmEncodeJob {
 }
 
 impl zencodec::encode::EncodeJob for PnmEncodeJob {
-    type Error = BitmapError;
+    type Error = At<BitmapError>;
     type Enc = PnmEncoder;
     type AnimationFrameEnc = ();
 
@@ -138,7 +139,7 @@ impl zencodec::encode::EncodeJob for PnmEncodeJob {
         self
     }
 
-    fn encoder(self) -> Result<PnmEncoder, BitmapError> {
+    fn encoder(self) -> crate::Result<PnmEncoder> {
         Ok(PnmEncoder {
             config: self.config,
             limits: self.limits,
@@ -146,10 +147,10 @@ impl zencodec::encode::EncodeJob for PnmEncodeJob {
         })
     }
 
-    fn animation_frame_encoder(self) -> Result<(), BitmapError> {
-        Err(BitmapError::from(
+    fn animation_frame_encoder(self) -> crate::Result<()> {
+        Err(at!(BitmapError::from(
             zencodec::UnsupportedOperation::AnimationEncode,
-        ))
+        )))
     }
 }
 
@@ -180,13 +181,13 @@ impl PnmEncoder {
 }
 
 impl zencodec::encode::Encoder for PnmEncoder {
-    type Error = BitmapError;
+    type Error = At<BitmapError>;
 
-    fn reject(op: zencodec::UnsupportedOperation) -> BitmapError {
-        BitmapError::from(op)
+    fn reject(op: zencodec::UnsupportedOperation) -> At<BitmapError> {
+        at!(BitmapError::from(op))
     }
 
-    fn encode(self, pixels: PixelSlice<'_>) -> Result<EncodeOutput, BitmapError> {
+    fn encode(self, pixels: PixelSlice<'_>) -> crate::Result<EncodeOutput> {
         // Bit-exact load-bearing narrowing (dead alpha / chroma-free /
         // replicated-low-bits) before format mapping — see
         // `super::reduce_for_raw_encode`. PNM encodes grayscale, so every
@@ -301,10 +302,10 @@ impl zencodec::encode::Encoder for PnmEncoder {
                 )?;
                 Ok(EncodeOutput::new(encoded, ImageFormat::Pnm))
             }
-            _ => Err(BitmapError::UnsupportedVariant(alloc::format!(
+            _ => Err(at!(BitmapError::UnsupportedVariant(alloc::format!(
                 "unsupported pixel format: {:?}",
                 desc
-            ))),
+            )))),
         }
     }
 }
@@ -333,7 +334,7 @@ impl PnmDecoderConfig {
 }
 
 impl zencodec::decode::DecoderConfig for PnmDecoderConfig {
-    type Error = BitmapError;
+    type Error = At<BitmapError>;
     type Job<'a> = PnmDecodeJob;
 
     fn formats() -> &'static [ImageFormat] {
@@ -371,10 +372,10 @@ pub struct PnmDecodeJob {
 }
 
 impl<'a> zencodec::decode::DecodeJob<'a> for PnmDecodeJob {
-    type Error = BitmapError;
+    type Error = At<BitmapError>;
     type Dec = PnmDecoder<'a>;
-    type StreamDec = zencodec::Unsupported<BitmapError>;
-    type AnimationFrameDec = zencodec::Unsupported<BitmapError>;
+    type StreamDec = zencodec::Unsupported<At<BitmapError>>;
+    type AnimationFrameDec = zencodec::Unsupported<At<BitmapError>>;
 
     fn with_stop(mut self, stop: zencodec::StopToken) -> Self {
         self.stop = Some(stop);
@@ -392,12 +393,12 @@ impl<'a> zencodec::decode::DecodeJob<'a> for PnmDecodeJob {
         self
     }
 
-    fn probe(&self, data: &[u8]) -> Result<ImageInfo, BitmapError> {
+    fn probe(&self, data: &[u8]) -> crate::Result<ImageInfo> {
         let header = pnm::decode::parse_header(data)?;
         Ok(header_to_image_info(&header))
     }
 
-    fn output_info(&self, data: &[u8]) -> Result<OutputInfo, BitmapError> {
+    fn output_info(&self, data: &[u8]) -> crate::Result<OutputInfo> {
         let header = pnm::decode::parse_header(data)?;
         let has_alpha = matches!(
             header.layout,
@@ -414,14 +415,14 @@ impl<'a> zencodec::decode::DecodeJob<'a> for PnmDecodeJob {
         self,
         data: Cow<'a, [u8]>,
         _preferred: &[PixelDescriptor],
-    ) -> Result<PnmDecoder<'a>, BitmapError> {
+    ) -> crate::Result<PnmDecoder<'a>> {
         if let Some(max) = self.max_input_bytes
             && data.len() as u64 > max
         {
-            return Err(BitmapError::LimitExceeded(alloc::format!(
+            return Err(at!(BitmapError::LimitExceeded(alloc::format!(
                 "input size {} exceeds limit {max}",
                 data.len()
-            )));
+            ))));
         }
         Ok(PnmDecoder {
             config: self.config,
@@ -438,7 +439,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for PnmDecodeJob {
         preferred: &[PixelDescriptor],
     ) -> Result<OutputInfo, Self::Error> {
         zencodec::helpers::copy_decode_to_sink(self, data, sink, preferred, |e| {
-            BitmapError::InvalidData(e.to_string())
+            at!(BitmapError::InvalidData(e.to_string()))
         })
     }
 
@@ -446,20 +447,20 @@ impl<'a> zencodec::decode::DecodeJob<'a> for PnmDecodeJob {
         self,
         _data: Cow<'a, [u8]>,
         _preferred: &[PixelDescriptor],
-    ) -> Result<zencodec::Unsupported<BitmapError>, BitmapError> {
-        Err(BitmapError::from(
+    ) -> crate::Result<zencodec::Unsupported<At<BitmapError>>> {
+        Err(at!(BitmapError::from(
             zencodec::UnsupportedOperation::RowLevelDecode,
-        ))
+        )))
     }
 
     fn animation_frame_decoder(
         self,
         _data: Cow<'a, [u8]>,
         _preferred: &[PixelDescriptor],
-    ) -> Result<zencodec::Unsupported<BitmapError>, BitmapError> {
-        Err(BitmapError::from(
+    ) -> crate::Result<zencodec::Unsupported<At<BitmapError>>> {
+        Err(at!(BitmapError::from(
             zencodec::UnsupportedOperation::AnimationDecode,
-        ))
+        )))
     }
 }
 
@@ -480,9 +481,9 @@ impl PnmDecoder<'_> {
 }
 
 impl zencodec::decode::Decode for PnmDecoder<'_> {
-    type Error = BitmapError;
+    type Error = At<BitmapError>;
 
-    fn decode(self) -> Result<DecodeOutput, BitmapError> {
+    fn decode(self) -> crate::Result<DecodeOutput> {
         let limits = self.effective_limits();
         let stop: &dyn Stop = match &self.stop {
             Some(s) => s,

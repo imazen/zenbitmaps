@@ -2,6 +2,7 @@
 
 use alloc::vec::Vec;
 use enough::Stop;
+use whereat::at;
 
 use crate::error::BitmapError;
 
@@ -9,12 +10,12 @@ use crate::error::BitmapError;
 ///
 /// Validates the magic (`#?RADIANCE` or `#?RGBE`), skips key=value lines,
 /// and parses the resolution line (`-Y <height> +X <width>`).
-pub(crate) fn parse_header(data: &[u8]) -> Result<(u32, u32, usize), BitmapError> {
+pub(crate) fn parse_header(data: &[u8]) -> crate::Result<(u32, u32, usize)> {
     if data.len() < 10 {
-        return Err(BitmapError::UnexpectedEof);
+        return Err(at!(BitmapError::UnexpectedEof));
     }
     if !data.starts_with(b"#?RADIANCE") && !data.starts_with(b"#?RGBE") {
-        return Err(BitmapError::UnrecognizedFormat);
+        return Err(at!(BitmapError::UnrecognizedFormat));
     }
 
     // Find end of header: look for the empty line separating header from resolution.
@@ -37,61 +38,73 @@ pub(crate) fn parse_header(data: &[u8]) -> Result<(u32, u32, usize), BitmapError
                 break;
             }
         } else {
-            return Err(BitmapError::InvalidHeader(
+            return Err(at!(BitmapError::InvalidHeader(
                 "HDR header: no newline found".into(),
-            ));
+            )));
         }
     }
 
     if !found_empty_line {
-        return Err(BitmapError::InvalidHeader(
+        return Err(at!(BitmapError::InvalidHeader(
             "HDR header: missing empty line separator".into(),
-        ));
+        )));
     }
 
     // Now parse the resolution line: `-Y <height> +X <width>\n`
     let remaining = &data[pos..];
-    let nl = memchr_newline(remaining)
-        .ok_or_else(|| BitmapError::InvalidHeader("HDR: missing resolution line".into()))?;
-    let res_line = core::str::from_utf8(&remaining[..nl])
-        .map_err(|_| BitmapError::InvalidHeader("HDR: resolution line not UTF-8".into()))?;
+    let nl = memchr_newline(remaining).ok_or_else(|| {
+        at!(BitmapError::InvalidHeader(
+            "HDR: missing resolution line".into()
+        ))
+    })?;
+    let res_line = core::str::from_utf8(&remaining[..nl]).map_err(|_| {
+        at!(BitmapError::InvalidHeader(
+            "HDR: resolution line not UTF-8".into()
+        ))
+    })?;
     let res_offset = pos + nl + 1; // byte after the resolution line's \n
 
     let (width, height) = parse_resolution(res_line)?;
 
     if width == 0 || height == 0 {
-        return Err(BitmapError::InvalidHeader(
+        return Err(at!(BitmapError::InvalidHeader(
             "HDR: width or height is zero".into(),
-        ));
+        )));
     }
 
     Ok((width, height, res_offset))
 }
 
 /// Parse a resolution string like `-Y 600 +X 800`.
-fn parse_resolution(s: &str) -> Result<(u32, u32), BitmapError> {
+fn parse_resolution(s: &str) -> crate::Result<(u32, u32)> {
     let parts: Vec<&str> = s.split_whitespace().collect();
     if parts.len() != 4 {
-        return Err(BitmapError::InvalidHeader(alloc::format!(
+        return Err(at!(BitmapError::InvalidHeader(alloc::format!(
             "HDR: expected 4 tokens in resolution line, got {}: '{s}'",
             parts.len()
-        )));
+        ))));
     }
     // Standard orientation: -Y height +X width
     if parts[0] == "-Y" && parts[2] == "+X" {
         let height: u32 = parts[1].parse().map_err(|_| {
-            BitmapError::InvalidHeader(alloc::format!("HDR: invalid height '{}'", parts[1]))
+            at!(BitmapError::InvalidHeader(alloc::format!(
+                "HDR: invalid height '{}'",
+                parts[1]
+            )))
         })?;
         let width: u32 = parts[3].parse().map_err(|_| {
-            BitmapError::InvalidHeader(alloc::format!("HDR: invalid width '{}'", parts[3]))
+            at!(BitmapError::InvalidHeader(alloc::format!(
+                "HDR: invalid width '{}'",
+                parts[3]
+            )))
         })?;
         Ok((width, height))
     } else {
-        Err(BitmapError::UnsupportedVariant(alloc::format!(
+        Err(at!(BitmapError::UnsupportedVariant(alloc::format!(
             "HDR: unsupported orientation '{} {}'",
             parts[0],
             parts[2]
-        )))
+        ))))
     }
 }
 
@@ -104,13 +117,13 @@ pub(crate) fn decode_pixels(
     width: u32,
     height: u32,
     stop: &dyn Stop,
-) -> Result<Vec<u8>, BitmapError> {
+) -> crate::Result<Vec<u8>> {
     let w = width as usize;
     let h = height as usize;
     let out_bytes = w
         .checked_mul(h)
         .and_then(|px| px.checked_mul(12)) // 3 channels × 4 bytes per f32
-        .ok_or(BitmapError::DimensionsTooLarge { width, height })?;
+        .ok_or_else(|| at!(BitmapError::DimensionsTooLarge { width, height }))?;
 
     let mut out = alloc::vec![0u8; out_bytes];
     let mut out_pos = 0;
@@ -121,11 +134,11 @@ pub(crate) fn decode_pixels(
 
     for row in 0..h {
         if row % 16 == 0 {
-            stop.check()?;
+            stop.check().map_err(|r| at!(BitmapError::from(r)))?;
         }
 
         if pos + 4 > data.len() {
-            return Err(BitmapError::UnexpectedEof);
+            return Err(at!(BitmapError::UnexpectedEof));
         }
 
         // Check for new-style RLE marker
@@ -134,9 +147,9 @@ pub(crate) fn decode_pixels(
             // New-style RLE scanline
             let encoded_width = ((data[pos + 2] as usize) << 8) | (data[pos + 3] as usize);
             if encoded_width != w {
-                return Err(BitmapError::InvalidData(alloc::format!(
+                return Err(at!(BitmapError::InvalidData(alloc::format!(
                     "HDR RLE: scanline width mismatch (expected {w}, got {encoded_width})"
-                )));
+                ))));
             }
             pos += 4;
 
@@ -145,7 +158,7 @@ pub(crate) fn decode_pixels(
                 let mut col = 0;
                 while col < w {
                     if pos >= data.len() {
-                        return Err(BitmapError::UnexpectedEof);
+                        return Err(at!(BitmapError::UnexpectedEof));
                     }
                     let code = data[pos];
                     pos += 1;
@@ -154,12 +167,12 @@ pub(crate) fn decode_pixels(
                         // Run: (code - 128) copies of next byte
                         let count = (code - 128) as usize;
                         if col + count > w {
-                            return Err(BitmapError::InvalidData(
+                            return Err(at!(BitmapError::InvalidData(
                                 "HDR RLE: run overflows scanline".into(),
-                            ));
+                            )));
                         }
                         if pos >= data.len() {
-                            return Err(BitmapError::UnexpectedEof);
+                            return Err(at!(BitmapError::UnexpectedEof));
                         }
                         let val = data[pos];
                         pos += 1;
@@ -171,17 +184,17 @@ pub(crate) fn decode_pixels(
                         // Literal: `code` distinct values
                         let count = code as usize;
                         if count == 0 {
-                            return Err(BitmapError::InvalidData(
+                            return Err(at!(BitmapError::InvalidData(
                                 "HDR RLE: zero-length literal run".into(),
-                            ));
+                            )));
                         }
                         if col + count > w {
-                            return Err(BitmapError::InvalidData(
+                            return Err(at!(BitmapError::InvalidData(
                                 "HDR RLE: literal overflows scanline".into(),
-                            ));
+                            )));
                         }
                         if pos + count > data.len() {
-                            return Err(BitmapError::UnexpectedEof);
+                            return Err(at!(BitmapError::UnexpectedEof));
                         }
                         for i in 0..count {
                             scanline_buf[(col + i) * 4 + ch] = data[pos + i];
@@ -200,7 +213,7 @@ pub(crate) fn decode_pixels(
             // Uncompressed: read flat RGBE quads
             let needed = w * 4;
             if pos + needed > data.len() {
-                return Err(BitmapError::UnexpectedEof);
+                return Err(at!(BitmapError::UnexpectedEof));
             }
             let row_out = &mut out[out_pos..out_pos + w * 12];
             rgbe_scanline_to_f32(&data[pos..pos + needed], row_out);

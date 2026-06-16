@@ -48,9 +48,9 @@ pub BmpMetadata::dpi_y: core::option::Option<f32>
 pub BmpMetadata::height: u32
 pub BmpMetadata::layout: PixelLayout
 pub BmpMetadata::width: u32
-pub fn DecodeOutput<'a>::as_imgref<P: DecodePixel>(&self) -> core::result::Result<imgref::ImgRef<'_, P>, BitmapError> where [u8]: rgb::legacy::internal::convert::AsPixels<P>
-pub fn DecodeOutput<'a>::as_pixels<P: DecodePixel>(&self) -> core::result::Result<&[P], BitmapError> where [u8]: rgb::legacy::internal::convert::AsPixels<P>
-pub fn DecodeOutput<'a>::to_imgvec<P: DecodePixel>(&self) -> core::result::Result<imgref::ImgVec<P>, BitmapError> where [u8]: rgb::legacy::internal::convert::AsPixels<P>
+pub fn DecodeOutput<'a>::as_imgref<P: DecodePixel>(&self) -> Result<imgref::ImgRef<'_, P>> where [u8]: rgb::legacy::internal::convert::AsPixels<P>
+pub fn DecodeOutput<'a>::as_pixels<P: DecodePixel>(&self) -> Result<&[P]> where [u8]: rgb::legacy::internal::convert::AsPixels<P>
+pub fn DecodeOutput<'a>::to_imgvec<P: DecodePixel>(&self) -> Result<imgref::ImgVec<P>> where [u8]: rgb::legacy::internal::convert::AsPixels<P>
 pub struct FarbfeldDecodeJob
 pub struct FarbfeldDecoder<'a>
 pub struct FarbfeldDecoderConfig
@@ -95,46 +95,46 @@ pub trait DecodePixel: core::marker::Copy + 'static + pixel_traits::private::Sea
 pub fn DecodePixel::layout() -> PixelLayout
 pub trait EncodePixel: core::marker::Copy + 'static + pixel_traits::private::Sealed
 pub fn EncodePixel::layout() -> PixelLayout
-pub fn decode_bmp(&[u8], impl enough::Stop) -> core::result::Result<DecodeOutput<'_>, BitmapError>
-pub fn decode_bmp_img<P: DecodePixel>(&[u8], impl enough::Stop) -> core::result::Result<imgref::ImgVec<P>, BitmapError> where [u8]: rgb::legacy::internal::convert::AsPixels<P>
-pub fn decode_bmp_img_with_limits<P: DecodePixel>(&[u8], &Limits, impl enough::Stop) -> core::result::Result<imgref::ImgVec<P>, BitmapError> where [u8]: rgb::legacy::internal::convert::AsPixels<P>
-pub fn decode_bmp_into<P: DecodePixel>(&[u8], imgref::ImgRefMut<'_, P>, impl enough::Stop) -> core::result::Result<(), BitmapError> where [u8]: rgb::legacy::internal::convert::AsPixels<P>
-pub fn decode_bmp_native(&[u8], impl enough::Stop) -> core::result::Result<DecodeOutput<'_>, BitmapError>
-pub fn decode_bmp_native_with_limits<'a>(&'a [u8], &'a Limits, impl enough::Stop) -> core::result::Result<DecodeOutput<'a>, BitmapError>
-pub fn decode_bmp_permissive(&[u8], BmpPermissiveness, impl enough::Stop) -> core::result::Result<DecodeOutput<'_>, BitmapError>
-pub fn decode_bmp_permissive_with_limits<'a>(&'a [u8], BmpPermissiveness, &'a Limits, impl enough::Stop) -> core::result::Result<DecodeOutput<'a>, BitmapError>
-pub fn decode_bmp_pixels<P: DecodePixel>(&[u8], impl enough::Stop) -> core::result::Result<(alloc::vec::Vec<P>, u32, u32), BitmapError> where [u8]: rgb::legacy::internal::convert::AsPixels<P>
-pub fn decode_bmp_pixels_with_limits<P: DecodePixel>(&[u8], &Limits, impl enough::Stop) -> core::result::Result<(alloc::vec::Vec<P>, u32, u32), BitmapError> where [u8]: rgb::legacy::internal::convert::AsPixels<P>
-pub fn decode_bmp_with_limits<'a>(&'a [u8], &'a Limits, impl enough::Stop) -> core::result::Result<DecodeOutput<'a>, BitmapError>
-pub fn decode_hdr(&[u8], impl enough::Stop) -> core::result::Result<DecodeOutput<'_>, BitmapError>
-pub fn decode_hdr_with_limits<'a>(&'a [u8], &'a Limits, impl enough::Stop) -> core::result::Result<DecodeOutput<'a>, BitmapError>
-pub fn decode_img<P: DecodePixel>(&[u8], impl enough::Stop) -> core::result::Result<imgref::ImgVec<P>, BitmapError> where [u8]: rgb::legacy::internal::convert::AsPixels<P>
-pub fn decode_img_with_limits<P: DecodePixel>(&[u8], &Limits, impl enough::Stop) -> core::result::Result<imgref::ImgVec<P>, BitmapError> where [u8]: rgb::legacy::internal::convert::AsPixels<P>
-pub fn decode_into<P: DecodePixel>(&[u8], imgref::ImgRefMut<'_, P>, impl enough::Stop) -> core::result::Result<(), BitmapError> where [u8]: rgb::legacy::internal::convert::AsPixels<P>
-pub fn decode_pixels<P: DecodePixel>(&[u8], impl enough::Stop) -> core::result::Result<(alloc::vec::Vec<P>, u32, u32), BitmapError> where [u8]: rgb::legacy::internal::convert::AsPixels<P>
-pub fn decode_pixels_with_limits<P: DecodePixel>(&[u8], &Limits, impl enough::Stop) -> core::result::Result<(alloc::vec::Vec<P>, u32, u32), BitmapError> where [u8]: rgb::legacy::internal::convert::AsPixels<P>
-pub fn decode_qoi(&[u8], impl enough::Stop) -> core::result::Result<DecodeOutput<'_>, BitmapError>
-pub fn decode_qoi_with_limits<'a>(&'a [u8], &'a Limits, impl enough::Stop) -> core::result::Result<DecodeOutput<'a>, BitmapError>
-pub fn decode_tga(&[u8], impl enough::Stop) -> core::result::Result<DecodeOutput<'_>, BitmapError>
-pub fn decode_tga_with_limits<'a>(&'a [u8], &'a Limits, impl enough::Stop) -> core::result::Result<DecodeOutput<'a>, BitmapError>
-pub fn encode_bmp(&[u8], u32, u32, PixelLayout, impl enough::Stop) -> core::result::Result<alloc::vec::Vec<u8>, BitmapError>
-pub fn encode_bmp_img<P: EncodePixel>(imgref::ImgRef<'_, P>, impl enough::Stop) -> core::result::Result<alloc::vec::Vec<u8>, BitmapError> where [P]: rgb::legacy::internal::pixel::ComponentBytes<u8>
-pub fn encode_bmp_pixels<P: EncodePixel>(&[P], u32, u32, impl enough::Stop) -> core::result::Result<alloc::vec::Vec<u8>, BitmapError> where [P]: rgb::legacy::internal::pixel::ComponentBytes<u8>
-pub fn encode_bmp_rgba(&[u8], u32, u32, PixelLayout, impl enough::Stop) -> core::result::Result<alloc::vec::Vec<u8>, BitmapError>
-pub fn encode_bmp_rgba_img<P: EncodePixel>(imgref::ImgRef<'_, P>, impl enough::Stop) -> core::result::Result<alloc::vec::Vec<u8>, BitmapError> where [P]: rgb::legacy::internal::pixel::ComponentBytes<u8>
-pub fn encode_bmp_rgba_pixels<P: EncodePixel>(&[P], u32, u32, impl enough::Stop) -> core::result::Result<alloc::vec::Vec<u8>, BitmapError> where [P]: rgb::legacy::internal::pixel::ComponentBytes<u8>
-pub fn encode_hdr(&[u8], u32, u32, PixelLayout, impl enough::Stop) -> core::result::Result<alloc::vec::Vec<u8>, BitmapError>
-pub fn encode_pam_img<P: EncodePixel>(imgref::ImgRef<'_, P>, impl enough::Stop) -> core::result::Result<alloc::vec::Vec<u8>, BitmapError> where [P]: rgb::legacy::internal::pixel::ComponentBytes<u8>
-pub fn encode_pam_pixels<P: EncodePixel>(&[P], u32, u32, impl enough::Stop) -> core::result::Result<alloc::vec::Vec<u8>, BitmapError> where [P]: rgb::legacy::internal::pixel::ComponentBytes<u8>
-pub fn encode_pfm_img<P: EncodePixel>(imgref::ImgRef<'_, P>, impl enough::Stop) -> core::result::Result<alloc::vec::Vec<u8>, BitmapError> where [P]: rgb::legacy::internal::pixel::ComponentBytes<u8>
-pub fn encode_pfm_pixels<P: EncodePixel>(&[P], u32, u32, impl enough::Stop) -> core::result::Result<alloc::vec::Vec<u8>, BitmapError> where [P]: rgb::legacy::internal::pixel::ComponentBytes<u8>
-pub fn encode_pgm_img<P: EncodePixel>(imgref::ImgRef<'_, P>, impl enough::Stop) -> core::result::Result<alloc::vec::Vec<u8>, BitmapError> where [P]: rgb::legacy::internal::pixel::ComponentBytes<u8>
-pub fn encode_pgm_pixels<P: EncodePixel>(&[P], u32, u32, impl enough::Stop) -> core::result::Result<alloc::vec::Vec<u8>, BitmapError> where [P]: rgb::legacy::internal::pixel::ComponentBytes<u8>
-pub fn encode_ppm_img<P: EncodePixel>(imgref::ImgRef<'_, P>, impl enough::Stop) -> core::result::Result<alloc::vec::Vec<u8>, BitmapError> where [P]: rgb::legacy::internal::pixel::ComponentBytes<u8>
-pub fn encode_ppm_pixels<P: EncodePixel>(&[P], u32, u32, impl enough::Stop) -> core::result::Result<alloc::vec::Vec<u8>, BitmapError> where [P]: rgb::legacy::internal::pixel::ComponentBytes<u8>
-pub fn encode_qoi(&[u8], u32, u32, PixelLayout, impl enough::Stop) -> core::result::Result<alloc::vec::Vec<u8>, BitmapError>
-pub fn encode_tga(&[u8], u32, u32, PixelLayout, impl enough::Stop) -> core::result::Result<alloc::vec::Vec<u8>, BitmapError>
-pub fn probe_bmp(&[u8]) -> core::result::Result<BmpMetadata, BitmapError>
+pub fn decode_bmp(&[u8], impl enough::Stop) -> Result<DecodeOutput<'_>>
+pub fn decode_bmp_img<P: DecodePixel>(&[u8], impl enough::Stop) -> Result<imgref::ImgVec<P>> where [u8]: rgb::legacy::internal::convert::AsPixels<P>
+pub fn decode_bmp_img_with_limits<P: DecodePixel>(&[u8], &Limits, impl enough::Stop) -> Result<imgref::ImgVec<P>> where [u8]: rgb::legacy::internal::convert::AsPixels<P>
+pub fn decode_bmp_into<P: DecodePixel>(&[u8], imgref::ImgRefMut<'_, P>, impl enough::Stop) -> Result<()> where [u8]: rgb::legacy::internal::convert::AsPixels<P>
+pub fn decode_bmp_native(&[u8], impl enough::Stop) -> Result<DecodeOutput<'_>>
+pub fn decode_bmp_native_with_limits<'a>(&'a [u8], &'a Limits, impl enough::Stop) -> Result<DecodeOutput<'a>>
+pub fn decode_bmp_permissive(&[u8], BmpPermissiveness, impl enough::Stop) -> Result<DecodeOutput<'_>>
+pub fn decode_bmp_permissive_with_limits<'a>(&'a [u8], BmpPermissiveness, &'a Limits, impl enough::Stop) -> Result<DecodeOutput<'a>>
+pub fn decode_bmp_pixels<P: DecodePixel>(&[u8], impl enough::Stop) -> Result<(alloc::vec::Vec<P>, u32, u32)> where [u8]: rgb::legacy::internal::convert::AsPixels<P>
+pub fn decode_bmp_pixels_with_limits<P: DecodePixel>(&[u8], &Limits, impl enough::Stop) -> Result<(alloc::vec::Vec<P>, u32, u32)> where [u8]: rgb::legacy::internal::convert::AsPixels<P>
+pub fn decode_bmp_with_limits<'a>(&'a [u8], &'a Limits, impl enough::Stop) -> Result<DecodeOutput<'a>>
+pub fn decode_hdr(&[u8], impl enough::Stop) -> Result<DecodeOutput<'_>>
+pub fn decode_hdr_with_limits<'a>(&'a [u8], &'a Limits, impl enough::Stop) -> Result<DecodeOutput<'a>>
+pub fn decode_img<P: DecodePixel>(&[u8], impl enough::Stop) -> Result<imgref::ImgVec<P>> where [u8]: rgb::legacy::internal::convert::AsPixels<P>
+pub fn decode_img_with_limits<P: DecodePixel>(&[u8], &Limits, impl enough::Stop) -> Result<imgref::ImgVec<P>> where [u8]: rgb::legacy::internal::convert::AsPixels<P>
+pub fn decode_into<P: DecodePixel>(&[u8], imgref::ImgRefMut<'_, P>, impl enough::Stop) -> Result<()> where [u8]: rgb::legacy::internal::convert::AsPixels<P>
+pub fn decode_pixels<P: DecodePixel>(&[u8], impl enough::Stop) -> Result<(alloc::vec::Vec<P>, u32, u32)> where [u8]: rgb::legacy::internal::convert::AsPixels<P>
+pub fn decode_pixels_with_limits<P: DecodePixel>(&[u8], &Limits, impl enough::Stop) -> Result<(alloc::vec::Vec<P>, u32, u32)> where [u8]: rgb::legacy::internal::convert::AsPixels<P>
+pub fn decode_qoi(&[u8], impl enough::Stop) -> Result<DecodeOutput<'_>>
+pub fn decode_qoi_with_limits<'a>(&'a [u8], &'a Limits, impl enough::Stop) -> Result<DecodeOutput<'a>>
+pub fn decode_tga(&[u8], impl enough::Stop) -> Result<DecodeOutput<'_>>
+pub fn decode_tga_with_limits<'a>(&'a [u8], &'a Limits, impl enough::Stop) -> Result<DecodeOutput<'a>>
+pub fn encode_bmp(&[u8], u32, u32, PixelLayout, impl enough::Stop) -> Result<alloc::vec::Vec<u8>>
+pub fn encode_bmp_img<P: EncodePixel>(imgref::ImgRef<'_, P>, impl enough::Stop) -> Result<alloc::vec::Vec<u8>> where [P]: rgb::legacy::internal::pixel::ComponentBytes<u8>
+pub fn encode_bmp_pixels<P: EncodePixel>(&[P], u32, u32, impl enough::Stop) -> Result<alloc::vec::Vec<u8>> where [P]: rgb::legacy::internal::pixel::ComponentBytes<u8>
+pub fn encode_bmp_rgba(&[u8], u32, u32, PixelLayout, impl enough::Stop) -> Result<alloc::vec::Vec<u8>>
+pub fn encode_bmp_rgba_img<P: EncodePixel>(imgref::ImgRef<'_, P>, impl enough::Stop) -> Result<alloc::vec::Vec<u8>> where [P]: rgb::legacy::internal::pixel::ComponentBytes<u8>
+pub fn encode_bmp_rgba_pixels<P: EncodePixel>(&[P], u32, u32, impl enough::Stop) -> Result<alloc::vec::Vec<u8>> where [P]: rgb::legacy::internal::pixel::ComponentBytes<u8>
+pub fn encode_hdr(&[u8], u32, u32, PixelLayout, impl enough::Stop) -> Result<alloc::vec::Vec<u8>>
+pub fn encode_pam_img<P: EncodePixel>(imgref::ImgRef<'_, P>, impl enough::Stop) -> Result<alloc::vec::Vec<u8>> where [P]: rgb::legacy::internal::pixel::ComponentBytes<u8>
+pub fn encode_pam_pixels<P: EncodePixel>(&[P], u32, u32, impl enough::Stop) -> Result<alloc::vec::Vec<u8>> where [P]: rgb::legacy::internal::pixel::ComponentBytes<u8>
+pub fn encode_pfm_img<P: EncodePixel>(imgref::ImgRef<'_, P>, impl enough::Stop) -> Result<alloc::vec::Vec<u8>> where [P]: rgb::legacy::internal::pixel::ComponentBytes<u8>
+pub fn encode_pfm_pixels<P: EncodePixel>(&[P], u32, u32, impl enough::Stop) -> Result<alloc::vec::Vec<u8>> where [P]: rgb::legacy::internal::pixel::ComponentBytes<u8>
+pub fn encode_pgm_img<P: EncodePixel>(imgref::ImgRef<'_, P>, impl enough::Stop) -> Result<alloc::vec::Vec<u8>> where [P]: rgb::legacy::internal::pixel::ComponentBytes<u8>
+pub fn encode_pgm_pixels<P: EncodePixel>(&[P], u32, u32, impl enough::Stop) -> Result<alloc::vec::Vec<u8>> where [P]: rgb::legacy::internal::pixel::ComponentBytes<u8>
+pub fn encode_ppm_img<P: EncodePixel>(imgref::ImgRef<'_, P>, impl enough::Stop) -> Result<alloc::vec::Vec<u8>> where [P]: rgb::legacy::internal::pixel::ComponentBytes<u8>
+pub fn encode_ppm_pixels<P: EncodePixel>(&[P], u32, u32, impl enough::Stop) -> Result<alloc::vec::Vec<u8>> where [P]: rgb::legacy::internal::pixel::ComponentBytes<u8>
+pub fn encode_qoi(&[u8], u32, u32, PixelLayout, impl enough::Stop) -> Result<alloc::vec::Vec<u8>>
+pub fn encode_tga(&[u8], u32, u32, PixelLayout, impl enough::Stop) -> Result<alloc::vec::Vec<u8>>
+pub fn probe_bmp(&[u8]) -> Result<BmpMetadata>
 pub type BGR8 = rgb::formats::bgr::Bgr<u8>
 pub type BGRA8 = rgb::formats::bgra::Bgra<u8>
 pub type RGB8 = rgb::formats::rgb::Rgb<u8>

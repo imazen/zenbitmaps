@@ -1,4 +1,5 @@
 use super::*;
+use whereat::{At, at};
 
 // ══════════════════════════════════════════════════════════════════════
 // TGA capabilities and descriptors
@@ -62,7 +63,7 @@ impl TgaEncoderConfig {
 }
 
 impl zencodec::encode::EncoderConfig for TgaEncoderConfig {
-    type Error = BitmapError;
+    type Error = At<BitmapError>;
     type Job = TgaEncodeJob;
 
     fn format() -> ImageFormat {
@@ -100,7 +101,7 @@ pub struct TgaEncodeJob {
 }
 
 impl zencodec::encode::EncodeJob for TgaEncodeJob {
-    type Error = BitmapError;
+    type Error = At<BitmapError>;
     type Enc = TgaEncoder;
     type AnimationFrameEnc = ();
 
@@ -118,7 +119,7 @@ impl zencodec::encode::EncodeJob for TgaEncodeJob {
         self
     }
 
-    fn encoder(self) -> Result<TgaEncoder, BitmapError> {
+    fn encoder(self) -> crate::Result<TgaEncoder> {
         Ok(TgaEncoder {
             config: self.config,
             limits: self.limits,
@@ -127,10 +128,10 @@ impl zencodec::encode::EncodeJob for TgaEncodeJob {
         })
     }
 
-    fn animation_frame_encoder(self) -> Result<(), BitmapError> {
-        Err(BitmapError::from(
+    fn animation_frame_encoder(self) -> crate::Result<()> {
+        Err(at!(BitmapError::from(
             zencodec::UnsupportedOperation::AnimationEncode,
-        ))
+        )))
     }
 }
 
@@ -168,30 +169,30 @@ impl TgaEncoder {
     }
 }
 
-fn pixel_slice_to_tga_layout(desc: PixelDescriptor) -> Result<crate::PixelLayout, BitmapError> {
+fn pixel_slice_to_tga_layout(desc: PixelDescriptor) -> crate::Result<crate::PixelLayout> {
     match (desc.channel_type(), desc.layout()) {
         (ChannelType::U8, ChannelLayout::Rgb) => Ok(crate::PixelLayout::Rgb8),
         (ChannelType::U8, ChannelLayout::Rgba) => Ok(crate::PixelLayout::Rgba8),
         (ChannelType::U8, ChannelLayout::Gray) => Ok(crate::PixelLayout::Gray8),
         (ChannelType::U8, ChannelLayout::Bgra) => Ok(crate::PixelLayout::Bgra8),
-        _ => Err(BitmapError::UnsupportedVariant(alloc::format!(
+        _ => Err(at!(BitmapError::UnsupportedVariant(alloc::format!(
             "TGA encode: unsupported pixel format: {desc:?}"
-        ))),
+        )))),
     }
 }
 
 impl zencodec::encode::Encoder for TgaEncoder {
-    type Error = BitmapError;
+    type Error = At<BitmapError>;
 
-    fn reject(op: zencodec::UnsupportedOperation) -> BitmapError {
-        BitmapError::from(op)
+    fn reject(op: zencodec::UnsupportedOperation) -> At<BitmapError> {
+        at!(BitmapError::from(op))
     }
 
     fn preferred_strip_height(&self) -> u32 {
         1
     }
 
-    fn encode(self, pixels: PixelSlice<'_>) -> Result<EncodeOutput, BitmapError> {
+    fn encode(self, pixels: PixelSlice<'_>) -> crate::Result<EncodeOutput> {
         // Bit-exact load-bearing narrowing (dead alpha / chroma-free /
         // replicated-low-bits) before format mapping — see
         // `super::reduce_for_raw_encode`. TGA encodes grayscale, so every
@@ -218,7 +219,7 @@ impl zencodec::encode::Encoder for TgaEncoder {
         Ok(EncodeOutput::new(encoded, ImageFormat::Tga))
     }
 
-    fn push_rows(&mut self, rows: PixelSlice<'_>) -> Result<(), BitmapError> {
+    fn push_rows(&mut self, rows: PixelSlice<'_>) -> crate::Result<()> {
         let layout = pixel_slice_to_tga_layout(rows.descriptor())?;
 
         let acc = self
@@ -231,9 +232,9 @@ impl zencodec::encode::Encoder for TgaEncoder {
             });
 
         if acc.width != rows.width() || acc.layout != layout {
-            return Err(BitmapError::InvalidData(
+            return Err(at!(BitmapError::InvalidData(
                 "push_rows: width or pixel format changed".into(),
-            ));
+            )));
         }
 
         let bytes = rows.contiguous_bytes();
@@ -242,10 +243,12 @@ impl zencodec::encode::Encoder for TgaEncoder {
         Ok(())
     }
 
-    fn finish(self) -> Result<EncodeOutput, BitmapError> {
-        let acc = self
-            .accumulator
-            .ok_or_else(|| BitmapError::InvalidData("finish() without push_rows()".into()))?;
+    fn finish(self) -> crate::Result<EncodeOutput> {
+        let acc = self.accumulator.ok_or_else(|| {
+            at!(BitmapError::InvalidData(
+                "finish() without push_rows()".into()
+            ))
+        })?;
 
         let stop: &dyn Stop = match &self.stop {
             Some(s) => s,
@@ -279,7 +282,7 @@ impl TgaDecoderConfig {
 }
 
 impl zencodec::decode::DecoderConfig for TgaDecoderConfig {
-    type Error = BitmapError;
+    type Error = At<BitmapError>;
     type Job<'a> = TgaDecodeJob;
 
     fn formats() -> &'static [ImageFormat] {
@@ -317,10 +320,10 @@ pub struct TgaDecodeJob {
 }
 
 impl<'a> zencodec::decode::DecodeJob<'a> for TgaDecodeJob {
-    type Error = BitmapError;
+    type Error = At<BitmapError>;
     type Dec = TgaDecoder<'a>;
     type StreamDec = TgaStreamingDecoder;
-    type AnimationFrameDec = zencodec::Unsupported<BitmapError>;
+    type AnimationFrameDec = zencodec::Unsupported<At<BitmapError>>;
 
     fn with_stop(mut self, stop: zencodec::StopToken) -> Self {
         self.stop = Some(stop);
@@ -338,7 +341,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for TgaDecodeJob {
         self
     }
 
-    fn probe(&self, data: &[u8]) -> Result<ImageInfo, BitmapError> {
+    fn probe(&self, data: &[u8]) -> crate::Result<ImageInfo> {
         let header = crate::tga::decode::parse_header(data)?;
         let has_alpha = header.pixel_depth == 32
             || (header.is_color_mapped() && header.color_map_depth == 32)
@@ -360,7 +363,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for TgaDecodeJob {
         )
     }
 
-    fn output_info(&self, data: &[u8]) -> Result<OutputInfo, BitmapError> {
+    fn output_info(&self, data: &[u8]) -> crate::Result<OutputInfo> {
         let header = crate::tga::decode::parse_header(data)?;
         let has_alpha = header.pixel_depth == 32
             || (header.is_color_mapped() && header.color_map_depth == 32)
@@ -382,14 +385,14 @@ impl<'a> zencodec::decode::DecodeJob<'a> for TgaDecodeJob {
         self,
         data: Cow<'a, [u8]>,
         _preferred: &[PixelDescriptor],
-    ) -> Result<TgaDecoder<'a>, BitmapError> {
+    ) -> crate::Result<TgaDecoder<'a>> {
         if let Some(max) = self.max_input_bytes
             && data.len() as u64 > max
         {
-            return Err(BitmapError::LimitExceeded(alloc::format!(
+            return Err(at!(BitmapError::LimitExceeded(alloc::format!(
                 "input size {} exceeds limit {max}",
                 data.len()
-            )));
+            ))));
         }
         Ok(TgaDecoder {
             config: self.config,
@@ -406,7 +409,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for TgaDecodeJob {
         preferred: &[PixelDescriptor],
     ) -> Result<OutputInfo, Self::Error> {
         zencodec::helpers::copy_decode_to_sink(self, data, sink, preferred, |e| {
-            BitmapError::InvalidData(e.to_string())
+            at!(BitmapError::InvalidData(e.to_string()))
         })
     }
 
@@ -414,14 +417,14 @@ impl<'a> zencodec::decode::DecodeJob<'a> for TgaDecodeJob {
         self,
         data: Cow<'a, [u8]>,
         _preferred: &[PixelDescriptor],
-    ) -> Result<TgaStreamingDecoder, BitmapError> {
+    ) -> crate::Result<TgaStreamingDecoder> {
         if let Some(max) = self.max_input_bytes
             && data.len() as u64 > max
         {
-            return Err(BitmapError::LimitExceeded(alloc::format!(
+            return Err(at!(BitmapError::LimitExceeded(alloc::format!(
                 "input size {} exceeds limit {max}",
                 data.len()
-            )));
+            ))));
         }
 
         let limits = self.limits.or(self.config.limits);
@@ -465,10 +468,10 @@ impl<'a> zencodec::decode::DecodeJob<'a> for TgaDecodeJob {
         self,
         _data: Cow<'a, [u8]>,
         _preferred: &[PixelDescriptor],
-    ) -> Result<zencodec::Unsupported<BitmapError>, BitmapError> {
-        Err(BitmapError::from(
+    ) -> crate::Result<zencodec::Unsupported<At<BitmapError>>> {
+        Err(at!(BitmapError::from(
             zencodec::UnsupportedOperation::AnimationDecode,
-        ))
+        )))
     }
 }
 
@@ -489,9 +492,9 @@ impl TgaDecoder<'_> {
 }
 
 impl zencodec::decode::Decode for TgaDecoder<'_> {
-    type Error = BitmapError;
+    type Error = At<BitmapError>;
 
-    fn decode(self) -> Result<DecodeOutput, BitmapError> {
+    fn decode(self) -> crate::Result<DecodeOutput> {
         let limits = self.effective_limits();
         let stop: &dyn Stop = match &self.stop {
             Some(s) => s,
@@ -519,9 +522,9 @@ pub struct TgaStreamingDecoder {
 }
 
 impl zencodec::decode::StreamingDecode for TgaStreamingDecoder {
-    type Error = BitmapError;
+    type Error = At<BitmapError>;
 
-    fn next_batch(&mut self) -> Result<Option<(u32, PixelSlice<'_>)>, BitmapError> {
+    fn next_batch(&mut self) -> crate::Result<Option<(u32, PixelSlice<'_>)>> {
         if self.current_row >= self.height {
             return Ok(None);
         }
@@ -531,7 +534,7 @@ impl zencodec::decode::StreamingDecode for TgaStreamingDecoder {
         let row_data = &self.decoded_bytes[offset..offset + self.row_bytes];
 
         let slice = PixelSlice::new(row_data, self.width, 1, self.row_bytes, self.descriptor)
-            .map_err(|e| BitmapError::InvalidData(e.to_string()))?;
+            .map_err(|e| at!(BitmapError::InvalidData(e.to_string())))?;
 
         self.current_row += 1;
         Ok(Some((y, slice)))

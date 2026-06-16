@@ -602,14 +602,16 @@ fn limits_max_memory_hdr() {
 fn cancellation_decode_hdr() {
     struct AlreadyStopped;
     impl enough::Stop for AlreadyStopped {
-        fn check(&self) -> Result<(), enough::StopReason> {
+        fn check(&self) -> core::result::Result<(), enough::StopReason> {
             Err(enough::StopReason::Cancelled)
         }
     }
 
     let hdr = build_hdr_from_f32(1, 32, &vec![(1.0, 0.5, 0.25); 32]);
     assert!(matches!(
-        decode_hdr(&hdr, AlreadyStopped),
+        decode_hdr(&hdr, AlreadyStopped)
+            .as_ref()
+            .map_err(|e| e.error()),
         Err(BitmapError::Cancelled(_))
     ));
 }
@@ -618,7 +620,7 @@ fn cancellation_decode_hdr() {
 fn cancellation_encode_hdr() {
     struct AlreadyStopped;
     impl enough::Stop for AlreadyStopped {
-        fn check(&self) -> Result<(), enough::StopReason> {
+        fn check(&self) -> core::result::Result<(), enough::StopReason> {
             Err(enough::StopReason::Cancelled)
         }
     }
@@ -633,7 +635,9 @@ fn cancellation_encode_hdr() {
         })
         .collect();
     assert!(matches!(
-        encode_hdr(&pixels, 1, 32, PixelLayout::RgbF32, AlreadyStopped),
+        encode_hdr(&pixels, 1, 32, PixelLayout::RgbF32, AlreadyStopped)
+            .as_ref()
+            .map_err(|e| e.error()),
         Err(BitmapError::Cancelled(_))
     ));
 }
@@ -645,7 +649,9 @@ fn cancellation_encode_hdr() {
 #[test]
 fn encode_unsupported_gray8() {
     assert!(matches!(
-        encode_hdr(&[0], 1, 1, PixelLayout::Gray8, Unstoppable),
+        encode_hdr(&[0], 1, 1, PixelLayout::Gray8, Unstoppable)
+            .as_ref()
+            .map_err(|e| e.error()),
         Err(BitmapError::UnsupportedVariant(_))
     ));
 }
@@ -653,7 +659,9 @@ fn encode_unsupported_gray8() {
 #[test]
 fn encode_unsupported_rgba8() {
     assert!(matches!(
-        encode_hdr(&[0; 4], 1, 1, PixelLayout::Rgba8, Unstoppable),
+        encode_hdr(&[0; 4], 1, 1, PixelLayout::Rgba8, Unstoppable)
+            .as_ref()
+            .map_err(|e| e.error()),
         Err(BitmapError::UnsupportedVariant(_))
     ));
 }
@@ -662,7 +670,9 @@ fn encode_unsupported_rgba8() {
 fn encode_buffer_too_small() {
     // Claim 2x2 RgbF32 (48 bytes) but only provide 12
     assert!(matches!(
-        encode_hdr(&[0; 12], 2, 2, PixelLayout::RgbF32, Unstoppable),
+        encode_hdr(&[0; 12], 2, 2, PixelLayout::RgbF32, Unstoppable)
+            .as_ref()
+            .map_err(|e| e.error()),
         Err(BitmapError::BufferTooSmall { .. })
     ));
 }

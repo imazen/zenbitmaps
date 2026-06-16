@@ -151,7 +151,7 @@ pub(crate) fn layout_to_descriptor(layout: crate::PixelLayout) -> PixelDescripto
 
 pub(crate) fn layout_to_pixel_buffer(
     decoded: &crate::decode::DecodeOutput<'_>,
-) -> Result<PixelBuffer, BitmapError> {
+) -> crate::Result<PixelBuffer> {
     use crate::PixelLayout;
     use rgb::AsPixels as _;
 
@@ -246,7 +246,7 @@ pub(crate) fn layout_to_pixel_buffer(
 pub(crate) fn decode_output_from_internal(
     decoded: &crate::decode::DecodeOutput<'_>,
     format: ImageFormat,
-) -> Result<DecodeOutput, BitmapError> {
+) -> crate::Result<DecodeOutput> {
     let has_alpha = matches!(
         decoded.layout,
         crate::PixelLayout::Rgba8 | crate::PixelLayout::Bgra8 | crate::PixelLayout::Rgba16
