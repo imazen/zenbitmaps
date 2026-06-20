@@ -78,6 +78,17 @@ impl zencodec::encode::EncoderConfig for QoiEncoderConfig {
         Some(true)
     }
 
+    fn estimate_encode_resources(
+        &self,
+        image: &zencodec::estimate::ImageCharacteristics,
+        compute: &zencodec::estimate::ComputeEnvironment,
+    ) -> zencodec::estimate::ResourceEstimate {
+        // QOI runs/indices/diffs compress typical content; ~0.6× is a coarse
+        // structural guess (worst case is still bounded by input + a small
+        // per-pixel overhead, but typical output is smaller than the raw input).
+        trivial_encode_resources(image, compute, 0.6)
+    }
+
     fn job(self) -> QoiEncodeJob {
         QoiEncodeJob {
             config: self,

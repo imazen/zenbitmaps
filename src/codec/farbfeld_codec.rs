@@ -84,6 +84,15 @@ impl zencodec::encode::EncoderConfig for FarbfeldEncoderConfig {
         Some(true)
     }
 
+    fn estimate_encode_resources(
+        &self,
+        image: &zencodec::estimate::ImageCharacteristics,
+        compute: &zencodec::estimate::ComputeEnvironment,
+    ) -> zencodec::estimate::ResourceEstimate {
+        // Raw RGBA16 farbfeld: output ≈ input (no entropy coding).
+        trivial_encode_resources(image, compute, 1.0)
+    }
+
     fn job(self) -> FarbfeldEncodeJob {
         FarbfeldEncodeJob {
             config: self,

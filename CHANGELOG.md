@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### QUEUED BREAKING CHANGES
+<!-- Drop when zencodec 0.1.24 publishes. -->
+- Drop the `[patch.crates-io] zencodec = { git, rev = "0f71295" }` and lower the
+  `zencodec` dependency requirement from `0.1.24` back to a published version.
+  The patch pins zencodec to the unreleased `estimate` resource-estimation API.
+
+### Added
+
+- vCPU-aware resource estimation via zencodec's unified `estimate` API. All six
+  bitmap `EncoderConfig`s (PNM, BMP, farbfeld, HDR, TGA, QOI) now override
+  `estimate_encode_resources(&ImageCharacteristics, &ComputeEnvironment)`,
+  returning a core-adjusted `ResourceEstimate`. They share a
+  `codec::trivial_encode_resources` helper: these formats encode in a single
+  serial pass (`ThreadingInformation::SERIAL`) with peak ≈ input + output and a
+  linear pixel-count time term. The per-format output ratios (~1.0× for the raw
+  formats, ~0.6× for QOI) are structural placeholders, not a measured fit.
+
 ### Changed
 
 - **BREAKING (0.2.0):** the public error type is now `At<BitmapError>`

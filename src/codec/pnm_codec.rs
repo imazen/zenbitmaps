@@ -102,6 +102,15 @@ impl zencodec::encode::EncoderConfig for PnmEncoderConfig {
         Some(true)
     }
 
+    fn estimate_encode_resources(
+        &self,
+        image: &zencodec::estimate::ImageCharacteristics,
+        compute: &zencodec::estimate::ComputeEnvironment,
+    ) -> zencodec::estimate::ResourceEstimate {
+        // Raw binary PNM/PAM/PFM: output ≈ input (no entropy coding).
+        trivial_encode_resources(image, compute, 1.0)
+    }
+
     fn job(self) -> PnmEncodeJob {
         PnmEncodeJob {
             config: self,

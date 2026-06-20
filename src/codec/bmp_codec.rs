@@ -82,6 +82,15 @@ impl zencodec::encode::EncoderConfig for BmpEncoderConfig {
         Some(true)
     }
 
+    fn estimate_encode_resources(
+        &self,
+        image: &zencodec::estimate::ImageCharacteristics,
+        compute: &zencodec::estimate::ComputeEnvironment,
+    ) -> zencodec::estimate::ResourceEstimate {
+        // Uncompressed 24/32-bit BMP: output ≈ input (plus a small fixed header).
+        trivial_encode_resources(image, compute, 1.0)
+    }
+
     fn job(self) -> BmpEncodeJob {
         BmpEncodeJob {
             config: self,

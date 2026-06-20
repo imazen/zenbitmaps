@@ -75,6 +75,16 @@ impl zencodec::encode::EncoderConfig for HdrEncoderConfig {
         Some(false) // RGBE shared exponent is technically lossy
     }
 
+    fn estimate_encode_resources(
+        &self,
+        image: &zencodec::estimate::ImageCharacteristics,
+        compute: &zencodec::estimate::ComputeEnvironment,
+    ) -> zencodec::estimate::ResourceEstimate {
+        // Radiance RGBE (4 bytes/pixel): treat output ≈ input as a structural
+        // upper bound (any RLE run-encoding only ever shrinks it).
+        trivial_encode_resources(image, compute, 1.0)
+    }
+
     fn job(self) -> HdrEncodeJob {
         HdrEncodeJob {
             config: self,

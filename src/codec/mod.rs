@@ -33,6 +33,38 @@ impl zencodec::SourceEncodingDetails for BitmapSourceEncoding {
     }
 }
 
+/// Shared `estimate_encode_resources` body for the trivial bitmap encoders.
+///
+/// PNM/BMP/farbfeld/HDR/TGA/QOI all encode in a single serial pass with no
+/// meaningful working set — peak heap is essentially the input buffer plus the
+/// output buffer, and wall time tracks pixel count linearly. `out_ratio` scales
+/// the output estimate per format (raw/uncompressed formats are ~1.0× the input;
+/// RLE/QOI-style coders compress some content, so they get a lower fraction).
+///
+/// These numbers are **structural, not calibrated** — they exist so the unified
+/// `zencodec::estimate` API has a sane per-codec answer, not a measured fit. The
+/// `pixels / 400_000` time term is a coarse "MP-per-few-ms" placeholder; revisit
+/// with a real sweep if a consumer ever needs accuracy here.
+pub(crate) fn trivial_encode_resources(
+    image: &zencodec::estimate::ImageCharacteristics,
+    compute: &zencodec::estimate::ComputeEnvironment,
+    out_ratio: f64,
+) -> zencodec::estimate::ResourceEstimate {
+    use zencodec::estimate::{ResourceEstimate, ThreadingInformation};
+
+    let input = image.input_bytes();
+    let out = (input as f64 * out_ratio) as u64;
+    // Peak ≈ input held while the output buffer is built; typical = input + out.
+    let typ = input.saturating_add(out);
+    let time_ms = (image.pixels() as f64 / 400_000.0) as f32;
+
+    ResourceEstimate::new(typ, time_ms)
+        .with_peak_range(input, typ.saturating_add(input))
+        .with_output_bytes(out)
+        .with_threading(ThreadingInformation::SERIAL)
+        .at_cores(compute.cores())
+}
+
 // ══════════════════════════════════════════════════════════════════════
 // Per-format codec modules
 // ══════════════════════════════════════════════════════════════════════
