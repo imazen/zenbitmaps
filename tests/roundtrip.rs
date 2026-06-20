@@ -307,6 +307,516 @@ fn encode_pam_gray16_writes_big_endian_on_disk() {
     assert_eq!(decoded.pixels(), &native[..]);
 }
 
+#[test]
+fn gray16_nonmax_maxval_binary_ascii_agree() {
+    // maxval below 65535: `Gray16` keeps the RAW sample value (no scale to full
+    // 16-bit — only the 8-bit layouts scale). Both the binary and ASCII paths
+    // must agree on that, and on byte order. 12-bit (maxval 4095) is a common
+    // real case (medical / depth). All samples are ≤ maxval, so no clamping.
+    let vals: [u16; 4] = [0, 100, 2048, 4095];
+    let mut bin = Vec::from(&b"P5\n2 2\n4095\n"[..]);
+    for v in vals {
+        bin.extend_from_slice(&v.to_be_bytes());
+    }
+    let ascii = format!(
+        "P2\n2 2\n4095\n{} {} {} {}\n",
+        vals[0], vals[1], vals[2], vals[3]
+    );
+
+    let b = decode(&bin, Unstoppable).unwrap();
+    let a = decode(ascii.as_bytes(), Unstoppable).unwrap();
+    assert_eq!(b.layout, PixelLayout::Gray16);
+    assert_eq!(a.layout, PixelLayout::Gray16);
+    assert_eq!(
+        a.pixels(),
+        b.pixels(),
+        "binary and ASCII Gray16 must agree at a non-max maxval"
+    );
+    // Raw values survive — 4095 is NOT rescaled to 65535.
+    for (i, &expected) in vals.iter().enumerate() {
+        let got = u16::from_ne_bytes([b.pixels()[i * 2], b.pixels()[i * 2 + 1]]);
+        assert_eq!(got, expected, "Gray16 sample {i} must keep its raw value");
+    }
+}
+
+#[test]
+fn gray16_tall_crosses_stop_interval_and_roundtrips() {
+    // 2×40 = 80 samples; the decode stop-interval is w·depth·16 = 32 samples, so
+    // the new byte-swap loop runs the periodic stop.check() at i=0,32,64 — more
+    // than one row group. Distinct per-sample values catch any transposition or
+    // partial-loop bug, and the PAM roundtrip exercises the encode loop the same way.
+    let (w, h) = (2u32, 40u32);
+    let vals: Vec<u16> = (0..(w * h))
+        .map(|i| (i as u16).wrapping_mul(1657))
+        .collect();
+    let mut bin = format!("P5\n{w} {h}\n65535\n").into_bytes();
+    for &v in &vals {
+        bin.extend_from_slice(&v.to_be_bytes());
+    }
+
+    let d = decode(&bin, Unstoppable).unwrap();
+    assert_eq!(d.layout, PixelLayout::Gray16);
+    assert_eq!(d.pixels().len(), (w * h) as usize * 2);
+    for (i, &expected) in vals.iter().enumerate() {
+        let got = u16::from_ne_bytes([d.pixels()[i * 2], d.pixels()[i * 2 + 1]]);
+        assert_eq!(
+            got, expected,
+            "tall Gray16 sample {i} must survive native-endian"
+        );
+    }
+
+    // decode → encode_pam → decode is lossless across the multi-interval image.
+    let pam = encode_pam(d.pixels(), d.width, d.height, d.layout, Unstoppable).unwrap();
+    let d2 = decode(&pam, Unstoppable).unwrap();
+    assert_eq!(
+        d.pixels(),
+        d2.pixels(),
+        "tall Gray16 PAM roundtrip must be lossless"
+    );
+    assert_eq!((d2.width, d2.height), (w, h));
+}
+
+// A `Stop` that returns Ok for the first `n` calls, then Cancelled. Used to trip
+// the *periodic* check inside the Gray16 byte-swap loops (a plain always-stop
+// fires at the top-level guard before the loop is reached). `AtomicUsize`
+// because `enough::Stop` requires `Sync`.
+struct StopAfter(core::sync::atomic::AtomicUsize);
+impl StopAfter {
+    fn new(n: usize) -> Self {
+        Self(core::sync::atomic::AtomicUsize::new(n))
+    }
+}
+impl enough::Stop for StopAfter {
+    fn check(&self) -> core::result::Result<(), enough::StopReason> {
+        use core::sync::atomic::Ordering;
+        // Decrement-if-nonzero; once the budget hits zero, report Cancelled.
+        loop {
+            let r = self.0.load(Ordering::Relaxed);
+            if r == 0 {
+                return Err(enough::StopReason::Cancelled);
+            }
+            if self
+                .0
+                .compare_exchange_weak(r, r - 1, Ordering::Relaxed, Ordering::Relaxed)
+                .is_ok()
+            {
+                return Ok(());
+            }
+        }
+    }
+}
+
+fn gray16_tall_p5(w: u32, h: u32) -> Vec<u8> {
+    let mut bin = format!("P5\n{w} {h}\n65535\n").into_bytes();
+    for i in 0..(w * h) {
+        bin.extend_from_slice(&(i as u16).to_be_bytes());
+    }
+    bin
+}
+
+#[test]
+fn gray16_decode_cancellation_in_loop() {
+    // 2×40 → loop checks at i=0,32,64. remaining=2 passes the top-level guard
+    // and i=0, then trips inside the loop → Cancelled (and never completes).
+    let bin = gray16_tall_p5(2, 40);
+    let stop = StopAfter::new(2);
+    let result = decode(&bin, &stop);
+    assert!(
+        matches!(
+            result.as_ref().map_err(|e| e.error()),
+            Err(BitmapError::Cancelled(_))
+        ),
+        "Gray16 binary decode must honor cancellation in its byte-swap loop"
+    );
+}
+
+#[test]
+fn encode_pam_gray16_cancellation_in_loop() {
+    // Same shape on the encode side: the new Gray16 arm's periodic check must
+    // propagate cancellation. Native-endian input buffer of 80 samples.
+    let mut native = Vec::new();
+    for i in 0..80u16 {
+        native.extend_from_slice(&i.to_ne_bytes());
+    }
+    let stop = StopAfter::new(2);
+    let result = encode_pam(&native, 2, 40, PixelLayout::Gray16, &stop);
+    assert!(
+        matches!(
+            result.as_ref().map_err(|e| e.error()),
+            Err(BitmapError::Cancelled(_))
+        ),
+        "encode_pam Gray16 must honor cancellation in its byte-swap loop"
+    );
+}
+
+#[test]
+fn gray16_ascii_source_pam_roundtrip_lossless() {
+    // Complements pam_roundtrip_gray16_lossless: an ASCII-sourced Gray16 buffer
+    // must also survive decode → encode_pam → decode unchanged.
+    let ascii = gray16_p2_ascii();
+    let d = decode(ascii.as_bytes(), Unstoppable).unwrap();
+    assert_eq!(d.layout, PixelLayout::Gray16);
+    let pam = encode_pam(d.pixels(), d.width, d.height, d.layout, Unstoppable).unwrap();
+    let d2 = decode(&pam, Unstoppable).unwrap();
+    assert_eq!(
+        d.pixels(),
+        d2.pixels(),
+        "ASCII-sourced Gray16 PAM roundtrip must be lossless"
+    );
+}
+
+#[test]
+fn gray16_edge_dimensions() {
+    // 1×1 (single sample) and 3×1 (odd width) — guards off-by-one / transposition
+    // in the chunked byte-swap loop. Binary and ASCII must agree for both.
+    // 1×1
+    let one_bin = {
+        let mut v = Vec::from(&b"P5\n1 1\n65535\n"[..]);
+        v.extend_from_slice(&0xBEEFu16.to_be_bytes());
+        v
+    };
+    let d = decode(&one_bin, Unstoppable).unwrap();
+    assert_eq!(d.pixels().len(), 2);
+    assert_eq!(u16::from_ne_bytes([d.pixels()[0], d.pixels()[1]]), 0xBEEF);
+
+    // 3×1 odd width, binary vs ASCII
+    let three = [0x0102u16, 0x0304, 0x0506];
+    let mut three_bin = Vec::from(&b"P5\n3 1\n65535\n"[..]);
+    for v in three {
+        three_bin.extend_from_slice(&v.to_be_bytes());
+    }
+    let three_ascii = format!("P2\n3 1\n65535\n{} {} {}\n", three[0], three[1], three[2]);
+    let tb = decode(&three_bin, Unstoppable).unwrap();
+    let ta = decode(three_ascii.as_bytes(), Unstoppable).unwrap();
+    assert_eq!(
+        tb.pixels(),
+        ta.pixels(),
+        "3×1 Gray16 binary/ASCII must agree"
+    );
+    assert_eq!(tb.pixels().len(), 6);
+}
+
+#[test]
+fn gray16_binary_truncated_errors() {
+    // P5 declares 2×2 (8 bytes of 16-bit samples) but supplies only 6 — must be
+    // a clean Err (UnexpectedEof), not a panic or a short buffer.
+    let mut data = Vec::from(&b"P5\n2 2\n65535\n"[..]);
+    data.extend_from_slice(&[0x00, 0x10, 0x00, 0x20, 0x00]); // 5 bytes, need 8
+    let result = decode(&data, Unstoppable);
+    assert!(
+        matches!(
+            result.as_ref().map_err(|e| e.error()),
+            Err(BitmapError::UnexpectedEof)
+        ),
+        "truncated binary Gray16 must return UnexpectedEof, got {result:?}"
+    );
+}
+
+// ── PNM encode layout coverage ──────────────────────────────────────
+//
+// encode_pgm (color → luma) and encode_ppm (swizzle / drop-alpha / replicate)
+// accept several input layouts that previously had no test coverage. Luma uses
+// the integer Rec.601 weights `(r·299 + g·587 + b·114 + 500) / 1000`:
+// pure red → 76, green → 150, blue → 29, white → 255.
+
+fn assert_pgm_luma(pixels: &[u8], w: u32, h: u32, layout: PixelLayout, expected: &[u8]) {
+    let pgm = encode_pgm(pixels, w, h, layout, Unstoppable).unwrap();
+    let d = decode(&pgm, Unstoppable).unwrap();
+    assert_eq!(d.layout, PixelLayout::Gray8);
+    assert_eq!(d.pixels(), expected, "PGM luma mismatch for {layout:?}");
+}
+
+fn assert_ppm_rgb(pixels: &[u8], w: u32, h: u32, layout: PixelLayout, expected_rgb: &[u8]) {
+    let ppm = encode_ppm(pixels, w, h, layout, Unstoppable).unwrap();
+    let d = decode(&ppm, Unstoppable).unwrap();
+    assert_eq!(d.layout, PixelLayout::Rgb8);
+    assert_eq!(
+        d.pixels(),
+        expected_rgb,
+        "PPM output mismatch for {layout:?}"
+    );
+}
+
+#[test]
+fn encode_pgm_luma_from_color_layouts() {
+    let expected = [76u8, 150, 29, 255]; // red, green, blue, white
+    // Rgb8
+    assert_pgm_luma(
+        &[255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 255],
+        4,
+        1,
+        PixelLayout::Rgb8,
+        &expected,
+    );
+    // Bgr8: same pixels in B,G,R order → identical luma.
+    assert_pgm_luma(
+        &[0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255],
+        4,
+        1,
+        PixelLayout::Bgr8,
+        &expected,
+    );
+    // Rgba8: alpha is ignored by luma.
+    assert_pgm_luma(
+        &[
+            255, 0, 0, 10, 0, 255, 0, 20, 0, 0, 255, 30, 255, 255, 255, 40,
+        ],
+        4,
+        1,
+        PixelLayout::Rgba8,
+        &expected,
+    );
+    // Bgra8 and Bgrx8 share the encoder arm.
+    assert_pgm_luma(
+        &[
+            0, 0, 255, 10, 0, 255, 0, 20, 255, 0, 0, 30, 255, 255, 255, 40,
+        ],
+        4,
+        1,
+        PixelLayout::Bgra8,
+        &expected,
+    );
+    assert_pgm_luma(
+        &[0, 0, 255, 0, 0, 255, 0, 0, 255, 0, 0, 0, 255, 255, 255, 0],
+        4,
+        1,
+        PixelLayout::Bgrx8,
+        &expected,
+    );
+}
+
+#[test]
+fn encode_ppm_from_non_rgb_layouts() {
+    // Bgr8 → swizzle to RGB.
+    assert_ppm_rgb(&[10, 20, 30], 1, 1, PixelLayout::Bgr8, &[30, 20, 10]);
+    // Rgba8 → drop alpha.
+    assert_ppm_rgb(&[255, 0, 0, 128], 1, 1, PixelLayout::Rgba8, &[255, 0, 0]);
+    // Bgra8 → swizzle + drop alpha.
+    assert_ppm_rgb(
+        &[100, 150, 200, 255],
+        1,
+        1,
+        PixelLayout::Bgra8,
+        &[200, 150, 100],
+    );
+    // Bgrx8 → swizzle, ignore padding byte.
+    assert_ppm_rgb(
+        &[100, 150, 200, 0],
+        1,
+        1,
+        PixelLayout::Bgrx8,
+        &[200, 150, 100],
+    );
+    // Gray8 → replicate to 3 channels.
+    assert_ppm_rgb(&[128], 1, 1, PixelLayout::Gray8, &[128, 128, 128]);
+}
+
+#[test]
+fn pfm_roundtrip_grayf32_and_rgbf32() {
+    // encode_pfm writes a -1.0 (little-endian, unit) scale and bottom-to-top
+    // rows; decode reads the LE branch and normalizes back to top-down, so a
+    // roundtrip of exactly-representable values is byte-lossless. Exercises the
+    // PFM encode loop and decode's little-endian path together.
+    let gray: Vec<u8> = [1.0f32, 2.0, 3.0, 4.0]
+        .iter()
+        .flat_map(|f| f.to_ne_bytes())
+        .collect();
+    let pfm_g = encode_pfm(&gray, 2, 2, PixelLayout::GrayF32, Unstoppable).unwrap();
+    let dg = decode(&pfm_g, Unstoppable).unwrap();
+    assert_eq!(dg.layout, PixelLayout::GrayF32);
+    assert_eq!(
+        dg.pixels(),
+        &gray[..],
+        "GrayF32 PFM roundtrip must be lossless"
+    );
+
+    let rgb: Vec<u8> = [0.25f32, 0.5, 0.75, 1.0, 0.0, 0.125]
+        .iter()
+        .flat_map(|f| f.to_ne_bytes())
+        .collect();
+    let pfm_r = encode_pfm(&rgb, 2, 1, PixelLayout::RgbF32, Unstoppable).unwrap();
+    let dr = decode(&pfm_r, Unstoppable).unwrap();
+    assert_eq!(dr.layout, PixelLayout::RgbF32);
+    assert_eq!(
+        dr.pixels(),
+        &rgb[..],
+        "RgbF32 PFM roundtrip must be lossless"
+    );
+}
+
+#[test]
+fn encode_pnm_unsupported_layouts_error() {
+    // encode_pgm can't reduce a float layout to luma.
+    assert!(matches!(
+        encode_pgm(&[0u8; 4], 1, 1, PixelLayout::GrayF32, Unstoppable)
+            .as_ref()
+            .map_err(|e| e.error()),
+        Err(BitmapError::UnsupportedVariant(_))
+    ));
+    // encode_ppm has no 16-bit RGB path.
+    assert!(matches!(
+        encode_ppm(&[0u8; 2], 1, 1, PixelLayout::Gray16, Unstoppable)
+            .as_ref()
+            .map_err(|e| e.error()),
+        Err(BitmapError::UnsupportedVariant(_))
+    ));
+    // encode_pam rejects float layouts.
+    assert!(matches!(
+        encode_pam(&[0u8; 4], 1, 1, PixelLayout::GrayF32, Unstoppable)
+            .as_ref()
+            .map_err(|e| e.error()),
+        Err(BitmapError::UnsupportedVariant(_))
+    ));
+    // encode_pfm requires a float layout.
+    assert!(matches!(
+        encode_pfm(&[0u8; 1], 1, 1, PixelLayout::Gray8, Unstoppable)
+            .as_ref()
+            .map_err(|e| e.error()),
+        Err(BitmapError::UnsupportedVariant(_))
+    ));
+}
+
+#[test]
+fn encode_pnm_buffer_too_small_errors() {
+    // Claims 2×2 RGB (12 bytes) but supplies 6.
+    assert!(matches!(
+        encode_ppm(&[0u8; 6], 2, 2, PixelLayout::Rgb8, Unstoppable)
+            .as_ref()
+            .map_err(|e| e.error()),
+        Err(BitmapError::BufferTooSmall { .. })
+    ));
+    // Claims 2×2 Gray8 (4 bytes) but supplies 1.
+    assert!(matches!(
+        encode_pgm(&[0u8; 1], 2, 2, PixelLayout::Gray8, Unstoppable)
+            .as_ref()
+            .map_err(|e| e.error()),
+        Err(BitmapError::BufferTooSmall { .. })
+    ));
+}
+
+#[test]
+fn encode_color_arms_honor_in_loop_cancellation() {
+    // The per-pixel swizzle loops in encode_ppm/encode_pam must propagate
+    // cancellation. There are two pre-loop guards (the public wrapper and the
+    // internal encode_pnm entry), so StopAfter(2) passes both, then trips at the
+    // loop's first periodic check — exercising the map_err error closures each
+    // color arm shares. A tall 1×20 image guarantees the loop is entered.
+    let h = 20u32;
+    let rgba = vec![0u8; (h * 4) as usize];
+    let bgr = vec![0u8; (h * 3) as usize];
+    let attempts = [
+        encode_ppm(&rgba, 1, h, PixelLayout::Rgba8, StopAfter::new(2)),
+        encode_pam(&bgr, 1, h, PixelLayout::Bgr8, StopAfter::new(2)),
+        encode_pam(&rgba, 1, h, PixelLayout::Bgra8, StopAfter::new(2)),
+        encode_pam(&rgba, 1, h, PixelLayout::Bgrx8, StopAfter::new(2)),
+    ];
+    for r in &attempts {
+        assert!(
+            matches!(
+                r.as_ref().map_err(|e| e.error()),
+                Err(BitmapError::Cancelled(_))
+            ),
+            "encode color arm must honor in-loop cancellation"
+        );
+    }
+}
+
+// ── PNM decode error-path coverage ──────────────────────────────────
+//
+// Reachable validation/edge paths in the decoder that had no coverage: PAM
+// header validation and the PFM big-endian branch + truncation.
+
+#[test]
+fn pam_header_validation_errors() {
+    let cases: &[(&[u8], &str)] = &[
+        (
+            b"P7\nWIDTH 0\nHEIGHT 1\nDEPTH 1\nMAXVAL 255\nTUPLTYPE GRAYSCALE\nENDHDR\n",
+            "zero width",
+        ),
+        (
+            b"P7\nWIDTH 1\nHEIGHT 0\nDEPTH 1\nMAXVAL 255\nTUPLTYPE GRAYSCALE\nENDHDR\n",
+            "zero height",
+        ),
+        (
+            b"P7\nWIDTH 1\nHEIGHT 1\nDEPTH 0\nMAXVAL 255\nTUPLTYPE X\nENDHDR\n",
+            "zero depth",
+        ),
+        (
+            b"P7\nWIDTH 1\nHEIGHT 1\nDEPTH 5\nMAXVAL 255\nTUPLTYPE X\nENDHDR\n",
+            "unsupported depth 5",
+        ),
+        (b"P7\nWIDTH 1\nHEIGHT 1\nDEPTH 1\nMAXVAL 255\n", "no ENDHDR"),
+    ];
+    for (data, what) in cases {
+        assert!(
+            decode(data, Unstoppable).is_err(),
+            "PAM with {what} must be rejected"
+        );
+    }
+}
+
+#[test]
+fn pfm_big_endian_scale_applies_magnitude() {
+    // Positive scale ⇒ big-endian file (decode's BE branch). The scale magnitude
+    // multiplies every sample: 2.0 · [1,2,3] = [2,4,6]. 1×1 RGB so row order is moot.
+    let mut data = Vec::from(&b"PF\n1 1\n2.0\n"[..]);
+    for f in [1.0f32, 2.0, 3.0] {
+        data.extend_from_slice(&f.to_be_bytes());
+    }
+    let d = decode(&data, Unstoppable).unwrap();
+    assert_eq!(d.layout, PixelLayout::RgbF32);
+    let px = d.pixels();
+    let got: Vec<f32> = px
+        .chunks_exact(4)
+        .map(|c| f32::from_ne_bytes([c[0], c[1], c[2], c[3]]))
+        .collect();
+    assert_eq!(
+        got,
+        vec![2.0, 4.0, 6.0],
+        "BE PFM must apply scale magnitude"
+    );
+}
+
+#[test]
+fn pfm_truncated_pixel_data_errors() {
+    // Declares 2×2 grayscale (4 floats = 16 bytes) but supplies 4 — must error,
+    // not panic or read past the buffer.
+    let mut data = Vec::from(&b"Pf\n2 2\n-1.0\n"[..]);
+    data.extend_from_slice(&1.0f32.to_ne_bytes()); // 4 of 16 bytes
+    assert!(
+        matches!(
+            decode(&data, Unstoppable).as_ref().map_err(|e| e.error()),
+            Err(BitmapError::UnexpectedEof)
+        ),
+        "truncated PFM must return UnexpectedEof"
+    );
+}
+
+#[test]
+fn pam_16bit_rgb_and_rgba_downscale_to_8bit() {
+    // PAM with DEPTH 3/4 and MAXVAL > 255 has no 16-bit RGB(A) layout, so it
+    // downscales to Rgb8/Rgba8 (val·255/maxval). Big-endian samples on disk.
+    // [65535, 0, 32768] → [255, 0, 128].
+    let mut rgb =
+        Vec::from(&b"P7\nWIDTH 1\nHEIGHT 1\nDEPTH 3\nMAXVAL 65535\nTUPLTYPE RGB\nENDHDR\n"[..]);
+    for v in [65535u16, 0, 32768] {
+        rgb.extend_from_slice(&v.to_be_bytes());
+    }
+    let d = decode(&rgb, Unstoppable).unwrap();
+    assert_eq!(d.layout, PixelLayout::Rgb8);
+    assert_eq!(d.pixels(), &[255, 0, 128]);
+
+    let mut rgba = Vec::from(
+        &b"P7\nWIDTH 1\nHEIGHT 1\nDEPTH 4\nMAXVAL 65535\nTUPLTYPE RGB_ALPHA\nENDHDR\n"[..],
+    );
+    for v in [65535u16, 0, 32768, 65535] {
+        rgba.extend_from_slice(&v.to_be_bytes());
+    }
+    let d = decode(&rgba, Unstoppable).unwrap();
+    assert_eq!(d.layout, PixelLayout::Rgba8);
+    assert_eq!(d.pixels(), &[255, 0, 128, 255]);
+}
+
 // ── P4 (binary PBM) ────────────────────────────────────────────────
 
 #[test]
