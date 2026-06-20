@@ -116,6 +116,72 @@ fn p3_ascii_ppm_maxval_scaling() {
     assert_eq!(decoded.pixels()[2], 0);
 }
 
+// Regression for fuzz zenbitmaps#10: a 16-bit ASCII PPM (P3, maxval > 255) has
+// no 16-bit RGB layout, so it must DOWNSCALE to Rgb8 (one byte per channel),
+// byte-for-byte like the binary P6 16-bit path — NOT emit two bytes per sample
+// while still tagging the buffer `Rgb8`. The pre-fix path produced a 6-byte 1×1
+// "Rgb8" image; `encode_pam` then truncated it back to 3 bytes, so the
+// decode→encode_pam→decode roundtrip mismatched (left 6 bytes, right 3).
+#[test]
+fn p3_ascii_ppm_16bit_downscales_to_rgb8() {
+    // 1×1, maxval 1000, sample (500 500 500). 500·255/1000 + 0.5 = 128.
+    let data = b"P3\n1 1\n1000\n500 500 500\n";
+    let decoded = decode(data, Unstoppable).unwrap();
+    assert_eq!(
+        decoded.layout,
+        PixelLayout::Rgb8,
+        "16-bit P3 PPM has no Rgb16 layout, must be Rgb8"
+    );
+    assert_eq!(
+        decoded.pixels().len(),
+        3,
+        "1×1 Rgb8 = 3 bytes (one per channel), not 6 (16-bit byte count)"
+    );
+    assert_eq!(decoded.pixels(), &[128, 128, 128]);
+
+    // The exact fuzz invariant: PAM re-encode → re-decode is pixel-lossless.
+    let pam = encode_pam(
+        decoded.pixels(),
+        decoded.width,
+        decoded.height,
+        decoded.layout,
+        Unstoppable,
+    )
+    .unwrap();
+    let decoded2 = decode(&pam, Unstoppable).unwrap();
+    assert_eq!(
+        decoded.pixels(),
+        decoded2.pixels(),
+        "PAM roundtrip must be lossless"
+    );
+    assert_eq!(decoded.width, decoded2.width);
+    assert_eq!(decoded.height, decoded2.height);
+}
+
+// Companion: the binary P6 16-bit path already downscaled to Rgb8; assert the
+// ASCII path now produces the byte-identical buffer for the same logical image,
+// so the two code paths agree (the root inconsistency behind #10).
+#[test]
+fn p3_ascii_and_p6_binary_16bit_agree() {
+    let ascii = b"P3\n2 1\n65535\n65535 0 32768 0 65535 32768\n";
+    let a = decode(ascii, Unstoppable).unwrap();
+
+    // Same image as binary P6 (big-endian 16-bit samples).
+    let mut bin = Vec::from(&b"P6\n2 1\n65535\n"[..]);
+    for s in [65535u16, 0, 32768, 0, 65535, 32768] {
+        bin.extend_from_slice(&s.to_be_bytes());
+    }
+    let b = decode(&bin, Unstoppable).unwrap();
+
+    assert_eq!(a.layout, PixelLayout::Rgb8);
+    assert_eq!(b.layout, PixelLayout::Rgb8);
+    assert_eq!(
+        a.pixels(),
+        b.pixels(),
+        "ASCII and binary 16-bit PPM must decode to identical Rgb8 bytes"
+    );
+}
+
 // ── P4 (binary PBM) ────────────────────────────────────────────────
 
 #[test]

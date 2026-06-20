@@ -32,6 +32,25 @@ All notable changes to this project will be documented in this file.
   smaller `max_pixels` to lower the ceiling. Closes #13. Regression:
   `tests/default_pixel_cap.rs` + `limits::tests`.
 
+### Fixed
+
+- **PAM re-encode roundtrip is now lossless for 16-bit ASCII PPM (fuzz
+  zenbitmaps#10).** A binary P6 16-bit PPM downscales to `Rgb8` (there is no
+  16-bit RGB layout), but the ASCII P3 path keyed its output byte width on
+  `maxval > 255` alone and emitted *two* bytes per sample while still tagging the
+  buffer `Rgb8` — producing, e.g., a 6-byte 1×1 "Rgb8" image. `encode_pam` then
+  copied `width·height·channels` (3) bytes, truncating the buffer, so
+  `decode → encode_pam → decode` mismatched (left 6 bytes, right 3). The ASCII
+  decoder (`decode_ascii_samples`) now sizes output by the *layout*: 2 raw bytes
+  only for a genuinely 16-bit-per-channel layout (`Gray16`), and downscales
+  16-bit samples to one `u8` for 8-bit layouts (16-bit P3 PPM → `Rgb8`), byte-for-byte
+  matching the binary P6 path. The `Gray16` ASCII precision-preservation fix
+  (zenpipe#51) is unchanged. Regression: `tests/roundtrip.rs`
+  (`p3_ascii_ppm_16bit_downscales_to_rgb8`, `p3_ascii_and_p6_binary_16bit_agree`),
+  plus the strengthened `tests/fuzz_regression.rs` `roundtrip` target (now asserts
+  pixel-equality, not just no-panic) over seed
+  `fuzz/regression/fuzz_roundtrip/pnm-p3-16bit-rgb8-roundtrip-zenbitmaps-10`.
+
 ### Docs
 
 - README: document the byte conventions that were previously undocumented and

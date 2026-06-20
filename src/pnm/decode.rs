@@ -566,17 +566,27 @@ pub(crate) fn decode_ascii_samples(
             })
         })?;
 
-    let is_16bit = header.maxval > 255;
-    // 8-bit samples with a sub-255 maxval are normalized to the full 0..=255
-    // range (matching the binary 8-bit path). 16-bit samples (maxval > 255 → a
-    // 16-bit layout such as Gray16) are emitted as 2 raw native-endian bytes,
-    // matching the binary Gray16 path (`decode_integer_transform`). Emitting a
-    // single downscaled byte per 16-bit sample produced HALF the bytes the
-    // declared layout expects — an OOB panic in `PixelBuffer::as_slice` (the
-    // declared stride·height overran the short data) AND a silent 16-bit→8-bit
-    // precision loss (fuzz zenpipe#51).
-    let scale8 = (!is_16bit && header.maxval != 255).then(|| 255.0 / header.maxval as f32);
-    let bytes_per_sample = if is_16bit { 2 } else { 1 };
+    // The OUTPUT byte width is decided by the *layout*, not the source maxval,
+    // so the ASCII path produces byte-for-byte the same buffer the binary path
+    // (`decode_integer_transform`) does for the same logical image:
+    //
+    // * A genuinely 16-bit-per-channel layout (Gray16 — the only one the P2/P3
+    //   ASCII path produces; Rgba16 listed for completeness) keeps 2 raw
+    //   native-endian bytes per sample. Emitting a single downscaled u8 here
+    //   produced HALF the declared bytes — an OOB panic in
+    //   `PixelBuffer::as_slice` and silent 16-bit precision loss (fuzz zenpipe#51).
+    // * An 8-bit layout (Rgb8 — produced by 16-bit *P3 PPM*, since there is no
+    //   Rgb16 layout) downscales 16-bit samples to one u8 via `val·255/maxval`,
+    //   exactly like the binary P6 16-bit path. The pre-fix code keyed the byte
+    //   width on `maxval > 255` alone, so 16-bit P3 emitted 2 bytes/sample while
+    //   tagging the buffer Rgb8 (1 byte/channel) — a 6-byte 1×1 "Rgb8" image.
+    //   `encode_pam` then truncated it back to 3 bytes, breaking the roundtrip
+    //   (fuzz zenbitmaps#10).
+    let layout_is_16bit = header.layout.bytes_per_pixel() == 2 * header.layout.channels();
+    let bytes_per_sample = if layout_is_16bit { 2 } else { 1 };
+    // Downscale when the source is wider than the 8-bit target (16-bit samples
+    // into an 8-bit layout, or any sub-255 maxval into an 8-bit layout).
+    let scale8 = (!layout_is_16bit && header.maxval != 255).then(|| 255.0 / header.maxval as f32);
 
     let mut out = Vec::with_capacity(total.saturating_mul(bytes_per_sample));
     let mut pos = 0;
@@ -616,9 +626,12 @@ pub(crate) fn decode_ascii_samples(
 
         // Clamp out-of-range samples (a malformed ASCII value may exceed maxval).
         let val = val.min(header.maxval);
-        if is_16bit {
+        if layout_is_16bit {
+            // 16-bit-per-channel layout (Gray16): raw native-endian u16.
             out.extend_from_slice(&(val as u16).to_ne_bytes());
         } else if let Some(s) = scale8 {
+            // 8-bit layout fed by a wider maxval (incl. 16-bit P3 PPM →
+            // Rgb8): downscale to 0..=255, matching the binary 16-bit path.
             out.push((val as f32 * s + 0.5) as u8);
         } else {
             out.push(val as u8);
