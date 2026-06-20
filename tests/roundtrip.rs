@@ -182,6 +182,131 @@ fn p3_ascii_and_p6_binary_16bit_agree() {
     );
 }
 
+// ── Gray16 byte-order reconciliation (issue #12) ────────────────────
+//
+// `PixelLayout::Gray16` is documented native-endian. Before #12 the binary
+// P5/P7 decode path returned on-disk *big-endian* bytes verbatim while the
+// ASCII P2 path emitted *native-endian* `u16`, so the same logical 16-bit
+// image decoded to two different byte buffers on little-endian hosts — a
+// consumer reinterpreting `pixels()` as `&[u16]` got byte-swapped values from
+// binary inputs. Both paths now produce native-endian Gray16 (matching the
+// doc-comment and farbfeld's BE→native convention), and `encode_pam` writes
+// big-endian back out. Asymmetric, non-palindromic sample values so any
+// byte-swap, sample transposition, or truncation is detectable.
+
+const GRAY16_VALUES: [u16; 4] = [0x1234, 0xABCD, 0x00FF, 0xFF00];
+
+fn gray16_p5_binary() -> Vec<u8> {
+    let mut data = Vec::from(&b"P5\n2 2\n65535\n"[..]);
+    for v in GRAY16_VALUES {
+        data.extend_from_slice(&v.to_be_bytes()); // PGM 16-bit is big-endian on disk
+    }
+    data
+}
+
+fn gray16_p2_ascii() -> String {
+    format!(
+        "P2\n2 2\n65535\n{} {} {} {}\n",
+        GRAY16_VALUES[0], GRAY16_VALUES[1], GRAY16_VALUES[2], GRAY16_VALUES[3]
+    )
+}
+
+#[test]
+fn p5_binary_gray16_decodes_native_endian() {
+    let bin = gray16_p5_binary();
+    let d = decode(&bin, Unstoppable).unwrap();
+    assert_eq!(d.layout, PixelLayout::Gray16);
+    assert_eq!(d.pixels().len(), 8, "4 Gray16 samples = 8 bytes");
+    // Reinterpreting pixels() as native-endian u16 must yield the logical values.
+    for (i, &expected) in GRAY16_VALUES.iter().enumerate() {
+        let got = u16::from_ne_bytes([d.pixels()[i * 2], d.pixels()[i * 2 + 1]]);
+        assert_eq!(
+            got, expected,
+            "sample {i} must survive as native-endian u16"
+        );
+    }
+}
+
+#[test]
+fn p5_binary_and_p2_ascii_gray16_agree() {
+    let bin = gray16_p5_binary();
+    let ascii = gray16_p2_ascii();
+    let b = decode(&bin, Unstoppable).unwrap();
+    let a = decode(ascii.as_bytes(), Unstoppable).unwrap();
+    assert_eq!(b.layout, PixelLayout::Gray16);
+    assert_eq!(a.layout, PixelLayout::Gray16);
+    assert_eq!(
+        a.pixels(),
+        b.pixels(),
+        "binary P5 and ASCII P2 16-bit grayscale must decode to identical Gray16 bytes (#12)"
+    );
+}
+
+#[test]
+fn p7_pam_binary_gray16_agrees_with_ascii() {
+    // PAM (P7) binary Gray16, big-endian samples on disk.
+    let mut pam_in = Vec::from(
+        &b"P7\nWIDTH 2\nHEIGHT 2\nDEPTH 1\nMAXVAL 65535\nTUPLTYPE GRAYSCALE\nENDHDR\n"[..],
+    );
+    for v in GRAY16_VALUES {
+        pam_in.extend_from_slice(&v.to_be_bytes());
+    }
+    let ascii = gray16_p2_ascii();
+    let p = decode(&pam_in, Unstoppable).unwrap();
+    let a = decode(ascii.as_bytes(), Unstoppable).unwrap();
+    assert_eq!(p.layout, PixelLayout::Gray16);
+    assert_eq!(
+        p.pixels(),
+        a.pixels(),
+        "binary PAM and ASCII P2 16-bit grayscale must agree (#12)"
+    );
+}
+
+#[test]
+fn pam_roundtrip_gray16_lossless() {
+    // The fuzz_roundtrip invariant: decode → encode_pam → decode is pixel-lossless
+    // for Gray16. This only holds once decode (BE→native) and encode (native→BE)
+    // agree; with the pre-#12 verbatim encode against a native-endian decode it
+    // would byte-swap on every round.
+    let bin = gray16_p5_binary();
+    let d = decode(&bin, Unstoppable).unwrap();
+    let pam = encode_pam(d.pixels(), d.width, d.height, d.layout, Unstoppable).unwrap();
+    let d2 = decode(&pam, Unstoppable).unwrap();
+    assert_eq!(d2.layout, PixelLayout::Gray16);
+    assert_eq!(
+        d.pixels(),
+        d2.pixels(),
+        "Gray16 PAM roundtrip must be lossless"
+    );
+    assert_eq!(d.width, d2.width);
+    assert_eq!(d.height, d2.height);
+}
+
+#[test]
+fn encode_pam_gray16_writes_big_endian_on_disk() {
+    // A native-endian Gray16 buffer must serialize to big-endian on-disk bytes
+    // (PAM spec) so files are portable and match the decode convention.
+    let mut native = Vec::new();
+    for v in GRAY16_VALUES {
+        native.extend_from_slice(&v.to_ne_bytes());
+    }
+    let pam = encode_pam(&native, 2, 2, PixelLayout::Gray16, Unstoppable).unwrap();
+
+    // Body is the last 8 bytes (4 samples × 2 bytes); the header precedes it.
+    let body = &pam[pam.len() - 8..];
+    for (i, &expected) in GRAY16_VALUES.iter().enumerate() {
+        let on_disk = u16::from_be_bytes([body[i * 2], body[i * 2 + 1]]);
+        assert_eq!(
+            on_disk, expected,
+            "on-disk PAM 16-bit sample {i} must be big-endian"
+        );
+    }
+
+    // And it re-decodes losslessly back to the native-endian buffer.
+    let decoded = decode(&pam, Unstoppable).unwrap();
+    assert_eq!(decoded.pixels(), &native[..]);
+}
+
 // ── P4 (binary PBM) ────────────────────────────────────────────────
 
 #[test]

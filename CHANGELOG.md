@@ -50,6 +50,24 @@ All notable changes to this project will be documented in this file.
   plus the strengthened `tests/fuzz_regression.rs` `roundtrip` target (now asserts
   pixel-equality, not just no-panic) over seed
   `fuzz/regression/fuzz_roundtrip/pnm-p3-16bit-rgb8-roundtrip-zenbitmaps-10`.
+- **`Gray16` decode byte order is now consistent across binary and ASCII PNM
+  (#12).** `PixelLayout::Gray16` is documented native-endian, but the binary
+  P5/P7 path returned the on-disk *big-endian* bytes verbatim
+  (`decode_integer_transform`) while the ASCII P2 path emitted *native-endian*
+  `u16` (`decode_ascii_samples`), so the same logical 16-bit image decoded to two
+  different `pixels()` buffers on little-endian hosts — a consumer reinterpreting
+  the bytes as `&[u16]` got byte-swapped values from binary inputs. The binary
+  decode path now byte-swaps big-endian on-disk samples to host order, and
+  `encode_pam` writes `Gray16` back out big-endian (converting from the
+  native-endian buffer), mirroring the farbfeld `Rgba16` convention.
+  **Behavior change (little-endian hosts only):** `decode()` of a binary 16-bit
+  PGM/PAM now returns native-endian bytes where it previously returned
+  big-endian; the on-disk PAM produced by `encode_pam` is unchanged
+  (big-endian). `decode → encode_pam → decode` stays pixel-lossless, and is a
+  no-op on big-endian hosts. Regressions: `tests/roundtrip.rs`
+  (`p5_binary_gray16_decodes_native_endian`, `p5_binary_and_p2_ascii_gray16_agree`,
+  `p7_pam_binary_gray16_agrees_with_ascii`, `pam_roundtrip_gray16_lossless`,
+  `encode_pam_gray16_writes_big_endian_on_disk`).
 
 ### Docs
 
@@ -58,8 +76,10 @@ All notable changes to this project will be documented in this file.
   (decoder normalizes the on-disk bottom-to-top scanlines to top-down) and
   endianness (scale sign selects file byte order; samples returned as
   native-endian `f32` with the scale magnitude applied), and `Gray16` byte order
-  (binary P5/P7 returns big-endian on-disk bytes verbatim, while ASCII P2 returns
-  native-endian). Also added the real `encode_*`/`DecodeOutput` signatures and
+  (decode returns native-endian `u16` from both binary P5/P7 and ASCII P2;
+  `encode_pam` writes big-endian on disk — see #12, which reconciled the code
+  paths these docs originally described as divergent). Also added the real
+  `encode_*`/`DecodeOutput` signatures and
   field-vs-method shapes, the `encode_ppm` `maxval = 255` / RGB-only contract and
   its accepted/rejected layouts, the `Limits` units + the always-on 1 GiB
   `DEFAULT_MAX_MEMORY_BYTES` default cap (and that the zero-copy borrowed path is

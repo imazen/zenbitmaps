@@ -325,7 +325,26 @@ pub(crate) fn decode_integer_transform(
         Ok(out)
     } else {
         match header.layout {
-            PixelLayout::Gray16 => Ok(pixel_data[..expected_src].to_vec()),
+            PixelLayout::Gray16 => {
+                // PNM binary 16-bit samples are big-endian on disk (PGM/PAM
+                // spec: "the most significant byte is first"). `Gray16` is
+                // documented native-endian, and the ASCII P2 path
+                // (`decode_ascii_samples`) emits native-endian `u16`, so convert
+                // here to keep the binary and ASCII paths byte-identical for the
+                // same logical image (issue #12). Mirrors farbfeld's BE→native
+                // decode; a no-op on big-endian hosts, a byte-swap on LE.
+                let mut out = Vec::with_capacity(expected_src);
+                let stop_interval = w.saturating_mul(depth).saturating_mul(16).max(1);
+                for (i, pair) in pixel_data[..expected_src].chunks_exact(2).enumerate() {
+                    if i % stop_interval == 0 {
+                        stop.check()
+                            .map_err(|r| whereat::at!(BitmapError::from(r)))?;
+                    }
+                    let val = u16::from_be_bytes([pair[0], pair[1]]);
+                    out.extend_from_slice(&val.to_ne_bytes());
+                }
+                Ok(out)
+            }
             _ => {
                 let num_samples = w
                     .checked_mul(h)

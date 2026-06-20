@@ -226,7 +226,9 @@ fn encode_pam(
     );
 
     let pixel_count = w * h;
-    let out_bytes = pixel_count * depth;
+    // Capacity by byte width, not channel count: `Gray16` has DEPTH 1 but two
+    // bytes per pixel, so `pixel_count * depth` would under-allocate by half.
+    let out_bytes = pixel_count * layout.bytes_per_pixel();
     let mut out = Vec::with_capacity(header.len() + out_bytes);
     out.extend_from_slice(header.as_bytes());
 
@@ -270,6 +272,22 @@ fn encode_pam(
                 out.push(pixels[off + 1]); // G
                 out.push(pixels[off]); // B
                 out.push(255); // A (opaque)
+            }
+        }
+        PixelLayout::Gray16 => {
+            // 16-bit samples are stored big-endian on disk (PAM spec); `Gray16`
+            // is native-endian in memory (issue #12). Convert native → big-endian,
+            // mirroring the decode path (`decode_integer_transform`) and farbfeld
+            // so `decode → encode_pam → decode` stays pixel-lossless and the
+            // on-disk bytes are spec-compliant. A no-op on big-endian hosts.
+            for i in 0..pixel_count {
+                if i % w.saturating_mul(16).max(1) == 0 {
+                    stop.check()
+                        .map_err(|r| whereat::at!(BitmapError::from(r)))?;
+                }
+                let off = i * 2;
+                let val = u16::from_ne_bytes([pixels[off], pixels[off + 1]]);
+                out.extend_from_slice(&val.to_be_bytes());
             }
         }
         _ => {

@@ -106,16 +106,18 @@ here. (`decoded.pixels()` always returns packed bytes in `decoded.layout`.)
 - `encode_pfm` always writes a scale of `-1.0` (little-endian, unit scale).
 
 **16-bit integer (`Gray16`):**
-- **Binary PGM/PAM (P5/P7) 16-bit is returned big-endian** — the on-disk bytes
-  (PNM stores 16-bit samples most-significant-byte first) are preserved verbatim.
-- **ASCII PGM (P2) 16-bit is returned native-endian** (samples are parsed to
-  `u16` and written in host order).
-- So for `Gray16` the byte order **depends on whether the source was binary or
-  ASCII**. If you reinterpret `decoded.pixels()` as `&[u16]`, account for this:
-  on a little-endian host, P5 samples need a `u16::swap_bytes`/`from_be_bytes`,
-  P2 samples do not. When in doubt, read each pair with `u16::from_be_bytes` for
-  P5 and `u16::from_ne_bytes` for P2. (16-bit P6/PPM and other 16-bit layouts are
-  downscaled to 8-bit during decode, so this only concerns `Gray16`.)
+- **Samples are returned as native-endian `u16`**, regardless of whether the
+  source was binary (P5/P7) or ASCII (P2). PNM stores binary 16-bit samples
+  big-endian on disk (most-significant-byte first); the decoder byte-swaps to
+  host order so every path produces the same buffer for the same logical image.
+  Reinterpret `decoded.pixels()` as `&[u16]` directly (or read each pair with
+  `u16::from_ne_bytes`) — no per-format byte-swap needed. (16-bit P6/PPM and
+  other 16-bit layouts are downscaled to 8-bit during decode, so this only
+  concerns `Gray16`.)
+- `encode_pam` writes `Gray16` back out **big-endian** (the PNM on-disk
+  convention), converting from the native-endian in-memory buffer, so a
+  `decode → encode → decode` round-trip is byte-lossless and the file is
+  portable across hosts.
 
 ## Format detection
 

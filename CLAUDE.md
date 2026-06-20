@@ -58,6 +58,27 @@ Same as other zen* codecs — see codec-design/README.md. Key points:
 
 ### Fixed
 
+- **Gray16 decode byte-order divergence between binary and ASCII PNM #12.**
+  `PixelLayout::Gray16` is documented native-endian, but binary P5/P7 decode
+  returned the on-disk *big-endian* bytes verbatim (`decode_integer_transform`,
+  `src/pnm/decode.rs`) while ASCII P2 emitted *native-endian* `u16`
+  (`decode_ascii_samples`), so the same logical 16-bit image decoded to two
+  different `pixels()` buffers on little-endian hosts — reinterpreting as
+  `&[u16]` gave byte-swapped values from binary inputs. **Fix:** the binary
+  Gray16 arm now byte-swaps big-endian on-disk samples to host order
+  (`u16::from_be_bytes` → `to_ne_bytes`), and `encode_pam`'s new Gray16 arm
+  writes big-endian back out (`from_ne_bytes` → `to_be_bytes`), mirroring
+  farbfeld's `Rgba16` convention — so both decode paths agree, the
+  `decode → encode_pam → decode` roundtrip stays pixel-lossless, and the on-disk
+  PAM is spec-compliant. No-op on big-endian hosts. Also corrected the
+  `encode_pam` capacity hint (was `pixel_count·depth`, which under-allocated
+  Gray16 by half since DEPTH 1 ≠ 2 bytes/px). Regressions in `tests/roundtrip.rs`
+  (`p5_binary_gray16_decodes_native_endian`, `p5_binary_and_p2_ascii_gray16_agree`,
+  `p7_pam_binary_gray16_agrees_with_ascii`, `pam_roundtrip_gray16_lossless`,
+  `encode_pam_gray16_writes_big_endian_on_disk`). Verified the regressions catch
+  it: reverting the decode arm makes all five fail with the byte-swap signature
+  (`[52,18,…]` vs `[18,52,…]`).
+
 - **fuzz_roundtrip libFuzzer OOM #7 (rss_limit 2048MB) — verified fixed on main.**
   The decode-bomb (>2 GiB RSS from ~8 KB inputs) is closed by the layered
   guards now present on every decode path: (a) the always-on 120 MP pixel cap
