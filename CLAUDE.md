@@ -54,19 +54,47 @@ Same as other zen* codecs — see codec-design/README.md. Key points:
 
 ## Known Bugs
 
-- **fuzz_roundtrip libFuzzer OOM (rss_limit 2048MB) — Fuzz CI red since 2026-06-11.**
-  Three consecutive failures: push run on d18de98 (zencodec 0.1.22 / zenpixels
-  0.2.13 dep bump; used 2074MB), push run on 2903572f (api-doc migration, no
-  crate-source changes; used 2179MB), scheduled run 2026-06-12 (used 2049MB,
-  artifact `oom-3c97c90cb3ced560de7602e7e88c14872c489d92` uploaded by CI run
-  27394559018; also wrote `slow-unit-caad5849…`). Scheduled-only runs on 06-04
-  and 06-09 also failed (flaky before), but the push-run pattern flipping red
-  at d18de98 suggests the dep bump made the OOM much easier to hit. Resource
-  bug (unbounded allocation in the roundtrip path), not a security issue.
-  Repro: download the CI artifact, then
-  `cargo fuzz run fuzz_roundtrip fuzz/artifacts/fuzz_roundtrip/oom-3c97c90c…`.
+(none currently open)
 
 ### Fixed
+
+- **fuzz_roundtrip libFuzzer OOM #7 (rss_limit 2048MB) — verified fixed on main.**
+  The decode-bomb (>2 GiB RSS from ~8 KB inputs) is closed by the layered
+  guards now present on every decode path: (a) the always-on 120 MP pixel cap
+  (`DEFAULT_MAX_PIXELS`, landed b52a9d5 / #14 — *after* the 06-11/06-12 CI
+  failures, which is why those OOMed) plus the 1 GiB byte cap
+  (`DEFAULT_MAX_MEMORY_BYTES`); and (b) input-proportional guards —
+  uncompressed BMP output ≤ 1024× input (`src/bmp/decode.rs:784`), RLE ≤ 256×
+  input (`:1212`), and binary PNM / farbfeld require the declared pixel bytes to
+  be present before allocating. The encoders are bounded by the (already-capped)
+  decoded buffer, so the worst small-input roundtrip holds ≤3 capped buffers.
+  **Measured:** the full `fuzz_roundtrip` logic over all 294 farm crashes + the
+  local `oom-*` artifacts peaks at 0.14 GiB RSS (was the OOM corpus); the old
+  `oom-012c6491…` artifact now returns `Err` at ~3 MB RSS. No code change was
+  needed — only regression coverage was added. Regressions:
+  `tests/default_pixel_cap.rs` (`pnm_binary_over_cap_*`, `pnm_ascii_over_cap_*`,
+  `farbfeld_over_cap_*`, `pnm_binary_truncated_under_cap_*`), the existing
+  `amplification-bomb-{16,32}bpp` BMP seeds, and `tests/bmp_rle_dos_regression.rs`.
+
+- **fuzz_roundtrip PNM PAM roundtrip pixel mismatch #10.** `fuzz_roundtrip`
+  asserted `decode → encode_pam → decode` is pixel-identical and failed on
+  16-bit ASCII PPM (P3, maxval > 255). **Root cause:** `decode_ascii_samples`
+  (`src/pnm/decode.rs`) keyed its output byte width on `maxval > 255` and emitted
+  2 bytes/sample for a P3 PPM whose layout is `Rgb8` (no Rgb16 layout exists) —
+  a 6-byte 1×1 "Rgb8" buffer. `encode_pam` then copied `w·h·channels` (3) bytes,
+  truncating, so the roundtrip mismatched (left 6 bytes, right 3). The binary P6
+  16-bit path was always correct (downscales to `Rgb8`); only ASCII disagreed.
+  **Fix:** the ASCII decoder now sizes output by the *layout* — 2 raw bytes only
+  for a 16-bit-per-channel layout (`Gray16`), else downscale 16-bit samples to one
+  `u8` (`val·255/maxval`), byte-for-byte matching the binary path. The Gray16
+  precision fix (zenpipe#51) is unchanged. Regressions: `tests/roundtrip.rs`
+  (`p3_ascii_ppm_16bit_downscales_to_rgb8`, `p3_ascii_and_p6_binary_16bit_agree`)
+  + strengthened `tests/fuzz_regression.rs` roundtrip target (asserts
+  pixel-equality) over seed `pnm-p3-16bit-rgb8-roundtrip-zenbitmaps-10`.
+  Verified the regression catches it: re-introducing the maxval-keyed logic makes
+  `fuzz_regression` fail with "PNM PAM roundtrip pixel mismatch".
+
+### Previously Fixed
 
 - **BMP 8bpp decode roundtrip pixel corruption (fuzz).** `fuzz_roundtrip`
   (`fuzz/fuzz_targets/fuzz_roundtrip.rs:56`) asserted `decode_bmp` →

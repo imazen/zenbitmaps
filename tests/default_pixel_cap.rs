@@ -130,3 +130,77 @@ fn explicit_lower_cap_overrides_default() {
         "an explicit 1 MP cap must reject a 100 MP header; got {r:?}"
     );
 }
+
+// ── PNM / farbfeld decode-bomb coverage (fuzz zenbitmaps#7) ──────────
+//
+// #7 was a libFuzzer OOM (>2 GiB RSS from ~8 KB inputs): a decode path sized
+// its output buffer from the *declared* dimensions before any plausibility
+// check, so a tiny header claiming an enormous image drove a multi-GB write.
+// The fix layers (a) the always-on 120 MP pixel cap + 1 GiB byte cap on every
+// decode and (b) input-proportional guards (uncompressed BMP ≤1024×, RLE
+// ≤256×; binary PNM / farbfeld require the pixel bytes to be present). These
+// assert the non-BMP decode paths reject an over-cap header *before*
+// allocating, returning a typed error rather than OOMing.
+
+/// A tiny (~25-byte) header declaring 20000×20000 = 400 MP — over the 120 MP
+/// default — with no pixel data. Each decode must reject it on the pixel cap
+/// (or EOF) *before* trying to allocate ~hundreds of MB.
+#[test]
+fn pnm_binary_over_cap_header_rejected_without_huge_alloc() {
+    // Binary P6 (PPM): 20000×20000, maxval 255 → Rgb8. ~1.1 GB if allocated.
+    let data = b"P6\n20000 20000\n255\n";
+    let r = zenbitmaps::decode(data, Unstoppable);
+    assert!(
+        r.is_err(),
+        "over-cap binary PPM header must be rejected, got {r:?}"
+    );
+    assert!(
+        is_pixel_count_limit_err(&r),
+        "rejection must be the pixel-count cap (fires before allocation), got {r:?}"
+    );
+}
+
+#[test]
+fn pnm_ascii_over_cap_header_rejected_without_huge_alloc() {
+    // ASCII P3 (PPM), 16-bit (maxval 65535): pre-fix this path sized capacity
+    // from declared dims with a 2× sample width. The pixel cap fires first.
+    let data = b"P3\n20000 20000\n65535\n1 2 3 ";
+    let r = zenbitmaps::decode(data, Unstoppable);
+    assert!(
+        is_pixel_count_limit_err(&r),
+        "over-cap ASCII PPM must hit the pixel-count cap before allocating, got {r:?}"
+    );
+}
+
+#[test]
+fn farbfeld_over_cap_header_rejected_without_huge_alloc() {
+    // farbfeld: 8-byte magic + u32 BE width/height, then RGBA16 pixels.
+    // 20000×20000 RGBA16 = ~3.2 GB if allocated; reject on the pixel cap.
+    let mut data = Vec::from(&b"farbfeld"[..]);
+    data.extend_from_slice(&20_000u32.to_be_bytes());
+    data.extend_from_slice(&20_000u32.to_be_bytes());
+    // no pixel bytes
+    let r = zenbitmaps::decode_farbfeld(&data, Unstoppable);
+    assert!(
+        is_pixel_count_limit_err(&r),
+        "over-cap farbfeld must hit the pixel-count cap before allocating, got {r:?}"
+    );
+}
+
+/// A binary PNM that is *under* the pixel cap but whose declared pixel data is
+/// absent must fail on EOF (input-proportional guard), NOT allocate-then-fault.
+#[test]
+fn pnm_binary_truncated_under_cap_fails_on_eof_not_alloc() {
+    // 5000×5000 = 25 MP (< 120 MP), Rgb8 → ~75 MB declared, but zero pixel data.
+    let data = b"P6\n5000 5000\n255\n";
+    let r = zenbitmaps::decode(data, Unstoppable);
+    assert!(r.is_err(), "truncated PPM must error, got {r:?}");
+    // Must be EOF (no pixel bytes), not a pixel-cap rejection (it's under cap).
+    assert!(
+        matches!(
+            r.as_ref().map_err(|e| e.error()),
+            Err(BitmapError::UnexpectedEof)
+        ),
+        "under-cap truncated binary PPM must fail on EOF (data absent), got {r:?}"
+    );
+}
