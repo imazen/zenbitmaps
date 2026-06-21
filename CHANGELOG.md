@@ -4,12 +4,6 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-### QUEUED BREAKING CHANGES
-<!-- Drop when zencodec 0.1.24 publishes. -->
-- Drop the `[patch.crates-io] zencodec = { git, rev = "0f71295" }` and lower the
-  `zencodec` dependency requirement from `0.1.24` back to a published version.
-  The patch pins zencodec to the unreleased `estimate` resource-estimation API.
-
 ### Added
 
 - vCPU-aware resource estimation via zencodec's unified `estimate` API. All six
@@ -23,6 +17,13 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- deps: migrate to published zencodec 0.1.24 estimate API; drop the temporary
+  `[patch.crates-io] zencodec = { git, rev = "0f71295" }` pin (the `estimate` API
+  is now on crates.io). The shared `codec::trivial_encode_resources` helper follows
+  the refined `ResourceEstimate` API: `ResourceEstimate::new(typ, time_ms as u64)`
+  (`wall_ms` is now `u64`, was `f32`), `.with_peak_max(typ + input)` (replaces the
+  dropped `.with_peak_range(min, max)`), and the `.with_output_bytes(..)` call is
+  gone. All six codec configs delegate to it, so the change is one site.
 - **BREAKING (0.2.0):** the public error type is now `At<BitmapError>`
   (`whereat::At` wrapping the `BitmapError` enum), re-exported as
   `zenbitmaps::At` alongside a `pub type Result<T> = Result<T, At<BitmapError>>`.

@@ -56,11 +56,10 @@ pub(crate) fn trivial_encode_resources(
     let out = (input as f64 * out_ratio) as u64;
     // Peak ≈ input held while the output buffer is built; typical = input + out.
     let typ = input.saturating_add(out);
-    let time_ms = (image.pixels() as f64 / 400_000.0) as f32;
+    let time_ms = (image.pixels() as f64 / 400_000.0) as u64;
 
     ResourceEstimate::new(typ, time_ms)
-        .with_peak_range(input, typ.saturating_add(input))
-        .with_output_bytes(out)
+        .with_peak_max(typ.saturating_add(input))
         .with_threading(ThreadingInformation::SERIAL)
         .at_cores(compute.cores())
 }
