@@ -6,6 +6,20 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Honor `zencodec::AllocPreference` (3-mode, per-site) at untrusted decode
+  allocations, and implement `estimate_decode_resources` for all six bitmap
+  `DecoderConfig`s. Each format's full-image output buffer (sized from the
+  untrusted header dimensions) now defaults to the fallible `try_reserve` path —
+  a malicious header gets a graceful `BitmapError::LimitExceeded` rather than an
+  abort — while bounded per-row / palette scratch keeps the fast infallible
+  `vec!`. `ResourceLimits::prefer_fallible_allocations` overrides every site at
+  the zencodec decode boundary (`Fallible`/`Infallible` force one path,
+  `CodecDefault` keeps each site's default); the bare `decode()` API is
+  unchanged. New crate-local `AllocPref` (mirror of `AllocPreference`, so the
+  always-compiled decode pipeline needn't name the optional dep) + `alloc_util`
+  helpers. `estimate_decode_resources` delegates to a shared
+  `codec::trivial_decode_resources`: working set ≈ output buffer only
+  (`ThreadingInformation::SERIAL`, core-adjusted), structural not calibrated.
 - vCPU-aware resource estimation via zencodec's unified `estimate` API. All six
   bitmap `EncoderConfig`s (PNM, BMP, farbfeld, HDR, TGA, QOI) now override
   `estimate_encode_resources(&ImageCharacteristics, &ComputeEnvironment)`,

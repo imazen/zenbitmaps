@@ -10,6 +10,7 @@ use alloc::vec::Vec;
 use enough::Stop;
 
 use super::utils::{expand_bits_to_byte, shift_signed};
+use crate::alloc_util::{self, AllocPref};
 use crate::error::BitmapError;
 use crate::pixel::PixelLayout;
 use whereat::at;
@@ -266,8 +267,14 @@ pub(crate) struct BmpHeader {
 /// on size; the decode path passes the caller's resolved [`crate::Limits`]).
 pub(crate) fn parse_bmp_header(data: &[u8], max_pixels: u64) -> crate::Result<BmpHeader> {
     // Header probing uses Permissive to avoid rejecting files before
-    // the caller has chosen a permissiveness level.
-    let mut dec = BmpDecoderState::new(data, BmpPermissiveness::Permissive, max_pixels);
+    // the caller has chosen a permissiveness level. No output buffer is
+    // allocated here, so the alloc preference is irrelevant — pass the default.
+    let mut dec = BmpDecoderState::new(
+        data,
+        BmpPermissiveness::Permissive,
+        max_pixels,
+        AllocPref::CodecDefault,
+    );
     dec.decode_headers()?;
 
     let layout = match dec.pix_fmt {
@@ -315,13 +322,16 @@ pub(crate) fn decode_bmp_pixels(
     data: &[u8],
     permissiveness: BmpPermissiveness,
     max_pixels: u64,
+    alloc_pref: AllocPref,
     stop: &dyn Stop,
 ) -> crate::Result<(Vec<u8>, PixelLayout)> {
-    let mut dec = BmpDecoderState::new(data, permissiveness, max_pixels);
+    let mut dec = BmpDecoderState::new(data, permissiveness, max_pixels, alloc_pref);
     dec.decode_headers()?;
 
+    // Output buffer sized from the (untrusted) header dimensions → default
+    // fallible.
     let output_size = dec.output_buf_size()?;
-    let mut buf = vec![0u8; output_size];
+    let mut buf = alloc_util::alloc_zeroed(alloc_pref, true, output_size)?;
 
     stop.check().map_err(|r| at!(BitmapError::from(r)))?;
     dec.decode_into::<false>(&mut buf, stop)?;
@@ -349,13 +359,16 @@ pub(crate) fn decode_bmp_pixels_native(
     data: &[u8],
     permissiveness: BmpPermissiveness,
     max_pixels: u64,
+    alloc_pref: AllocPref,
     stop: &dyn Stop,
 ) -> crate::Result<(Vec<u8>, PixelLayout)> {
-    let mut dec = BmpDecoderState::new(data, permissiveness, max_pixels);
+    let mut dec = BmpDecoderState::new(data, permissiveness, max_pixels, alloc_pref);
     dec.decode_headers()?;
 
+    // Output buffer sized from the (untrusted) header dimensions → default
+    // fallible.
     let output_size = dec.output_buf_size()?;
-    let mut buf = vec![0u8; output_size];
+    let mut buf = alloc_util::alloc_zeroed(alloc_pref, true, output_size)?;
 
     stop.check().map_err(|r| at!(BitmapError::from(r)))?;
     dec.decode_into::<true>(&mut buf, stop)?;
@@ -405,6 +418,9 @@ struct BmpDecoderState<'a> {
     /// resource error rather than masked by a downstream truncation error.
     /// `u64::MAX` opts out (header-probe path uses this).
     max_pixels: u64,
+    /// Allocation-fallibility preference for the RLE-decompressed output buffer
+    /// (the only buffer this state allocates from untrusted-derived sizes).
+    alloc_pref: AllocPref,
 }
 
 impl<'a> BmpDecoderState<'a> {
@@ -413,7 +429,12 @@ impl<'a> BmpDecoderState<'a> {
     /// via the `Limits` API. This limit is independent of system memory.
     const MAX_OUTPUT_BYTES: usize = 1024 * 1024 * 1024;
 
-    fn new(data: &'a [u8], permissiveness: BmpPermissiveness, max_pixels: u64) -> Self {
+    fn new(
+        data: &'a [u8],
+        permissiveness: BmpPermissiveness,
+        max_pixels: u64,
+        alloc_pref: AllocPref,
+    ) -> Self {
         let mut cursor = Cursor::new(data);
         cursor.permissive = permissiveness == BmpPermissiveness::Permissive;
         Self {
@@ -436,6 +457,7 @@ impl<'a> BmpDecoderState<'a> {
             x_pels_per_meter: 0,
             y_pels_per_meter: 0,
             max_pixels,
+            alloc_pref,
         }
     }
 
@@ -1222,7 +1244,9 @@ impl<'a> BmpDecoderState<'a> {
             )));
         }
 
-        let mut pixels = vec![0u8; alloc_size];
+        // RLE-decompressed output sized from the header-declared `alloc_size`
+        // (already bomb-ratio-guarded above) → default fallible.
+        let mut pixels = alloc_util::alloc_zeroed(self.alloc_pref, true, alloc_size)?;
         let mut line = (self.height - 1) as i32;
         let mut pos = 0usize;
 

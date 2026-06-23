@@ -7,6 +7,7 @@
 pub(crate) mod decode;
 mod encode;
 
+use crate::alloc_util::AllocPref;
 use crate::decode::DecodeOutput;
 use crate::error::BitmapError;
 use crate::limits::{self, Limits};
@@ -15,9 +16,24 @@ use alloc::vec::Vec;
 use enough::Stop;
 
 /// Decode TGA data to RGB8, RGBA8, or Gray8 pixels.
+///
+/// Allocations use each site's default fallibility; for the zencodec path that
+/// honors [`AllocPreference`](zencodec::AllocPreference), call
+/// [`decode_with_alloc_pref`].
 pub(crate) fn decode<'a>(
     data: &'a [u8],
     limits: Option<&Limits>,
+    stop: &dyn Stop,
+) -> crate::Result<DecodeOutput<'a>> {
+    decode_with_alloc_pref(data, limits, AllocPref::CodecDefault, stop)
+}
+
+/// Decode TGA data, honoring an explicit [`AllocPref`] at the output-buffer
+/// allocation.
+pub(crate) fn decode_with_alloc_pref<'a>(
+    data: &'a [u8],
+    limits: Option<&Limits>,
+    alloc_pref: AllocPref,
     stop: &dyn Stop,
 ) -> crate::Result<DecodeOutput<'a>> {
     let header = decode::parse_header(data)?;
@@ -50,7 +66,7 @@ pub(crate) fn decode<'a>(
     stop.check()
         .map_err(|r| whereat::at!(BitmapError::from(r)))?;
 
-    let (pixels, layout) = decode::decode_pixels(data, &header, stop)?;
+    let (pixels, layout) = decode::decode_pixels(data, &header, alloc_pref, stop)?;
     Ok(DecodeOutput::owned(pixels, width, height, layout))
 }
 

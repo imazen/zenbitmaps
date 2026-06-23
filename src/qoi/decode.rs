@@ -4,10 +4,10 @@
 //! pixel chunks are decoded by the same vendored `decode_range` kernel (runs
 //! are clamped to the output and carried across rows via [`QoiDecodeState`]).
 
-use alloc::vec;
 use alloc::vec::Vec;
 use enough::Stop;
 
+use crate::alloc_util::{self, AllocPref};
 use crate::error::BitmapError;
 use crate::qoi::rapid_qoi;
 
@@ -48,11 +48,15 @@ pub(crate) fn parse_header(data: &[u8]) -> crate::Result<QoiHeaderInfo> {
 }
 
 /// Decode QOI pixel data with row-level cancellation.
+///
+/// The output buffer is sized from the (untrusted) header dimensions →
+/// `alloc_pref` with site default `true` (fallible).
 pub(crate) fn decode_pixels(
     data: &[u8],
     width: u32,
     height: u32,
     has_alpha: bool,
+    alloc_pref: AllocPref,
     stop: &dyn Stop,
 ) -> crate::Result<Vec<u8>> {
     let channels: usize = if has_alpha { 4 } else { 3 };
@@ -63,7 +67,7 @@ pub(crate) fn decode_pixels(
         .checked_mul(height as usize)
         .ok_or_else(|| whereat::at!(BitmapError::DimensionsTooLarge { width, height }))?;
 
-    let mut output = vec![0u8; total_bytes];
+    let mut output = alloc_util::alloc_zeroed(alloc_pref, true, total_bytes)?;
 
     // Row-level streaming decode with cancellation checks, using the vendored
     // QOI kernel via `QoiDecodeState` (runs are clamped to the remaining output

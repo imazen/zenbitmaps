@@ -6,6 +6,7 @@ pub(crate) mod decode;
 mod encode;
 mod utils;
 
+use crate::alloc_util::AllocPref;
 use crate::decode::DecodeOutput;
 use crate::error::BitmapError;
 use crate::limits::Limits;
@@ -58,10 +59,32 @@ pub(crate) fn decode<'a>(
 }
 
 /// Decode BMP data with a specific permissiveness level.
+///
+/// Allocations use each site's default fallibility; for the zencodec path that
+/// honors [`AllocPreference`](zencodec::AllocPreference), call
+/// [`decode_with_permissiveness_and_alloc_pref`].
 pub(crate) fn decode_with_permissiveness<'a>(
     data: &'a [u8],
     limits: Option<&Limits>,
     permissiveness: BmpPermissiveness,
+    stop: &dyn Stop,
+) -> crate::Result<DecodeOutput<'a>> {
+    decode_with_permissiveness_and_alloc_pref(
+        data,
+        limits,
+        permissiveness,
+        AllocPref::CodecDefault,
+        stop,
+    )
+}
+
+/// Decode BMP data with a specific permissiveness level, honoring an explicit
+/// [`AllocPref`] at the output-buffer (and RLE-output) allocations.
+pub(crate) fn decode_with_permissiveness_and_alloc_pref<'a>(
+    data: &'a [u8],
+    limits: Option<&Limits>,
+    permissiveness: BmpPermissiveness,
+    alloc_pref: AllocPref,
     stop: &dyn Stop,
 ) -> crate::Result<DecodeOutput<'a>> {
     // Resolve the pixel-count ceiling up front and parse the header *with* it,
@@ -73,7 +96,8 @@ pub(crate) fn decode_with_permissiveness<'a>(
     check_limits(limits, header.width, header.height, &header.layout)?;
     stop.check()
         .map_err(|r| whereat::at!(BitmapError::from(r)))?;
-    let (pixels, layout) = decode::decode_bmp_pixels(data, permissiveness, max_pixels, stop)?;
+    let (pixels, layout) =
+        decode::decode_bmp_pixels(data, permissiveness, max_pixels, alloc_pref, stop)?;
     Ok(DecodeOutput::owned(
         pixels,
         header.width,
@@ -93,8 +117,13 @@ pub(crate) fn decode_native<'a>(
     check_limits(limits, header.width, header.height, &header.layout)?;
     stop.check()
         .map_err(|r| whereat::at!(BitmapError::from(r)))?;
-    let (pixels, native_layout) =
-        decode::decode_bmp_pixels_native(data, BmpPermissiveness::Standard, max_pixels, stop)?;
+    let (pixels, native_layout) = decode::decode_bmp_pixels_native(
+        data,
+        BmpPermissiveness::Standard,
+        max_pixels,
+        AllocPref::CodecDefault,
+        stop,
+    )?;
     Ok(DecodeOutput::owned(
         pixels,
         header.width,

@@ -165,6 +165,7 @@ whereat::define_at_crate_info!();
 use rgb::{AsPixels as _, ComponentBytes as _};
 use whereat::at;
 
+mod alloc_util;
 mod decode;
 mod error;
 mod limits;

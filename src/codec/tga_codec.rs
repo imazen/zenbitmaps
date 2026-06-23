@@ -1,6 +1,8 @@
 use super::*;
 use whereat::{At, ResultAtExt, at};
 
+use crate::alloc_util::AllocPref;
+
 // ══════════════════════════════════════════════════════════════════════
 // TGA capabilities and descriptors
 // ══════════════════════════════════════════════════════════════════════
@@ -306,12 +308,22 @@ impl zencodec::decode::DecoderConfig for TgaDecoderConfig {
         &TGA_DECODE_CAPS
     }
 
+    fn estimate_decode_resources(
+        &self,
+        image: &zencodec::estimate::ImageCharacteristics,
+        compute: &zencodec::estimate::ComputeEnvironment,
+    ) -> zencodec::estimate::ResourceEstimate {
+        // TGA working set ≈ output buffer only (serial; RLE/raw write in place).
+        super::trivial_decode_resources(image, compute)
+    }
+
     fn job<'a>(self) -> Self::Job<'a> {
         TgaDecodeJob {
             config: self,
             limits: None,
             stop: None,
             max_input_bytes: None,
+            alloc_pref: AllocPref::CodecDefault,
             policy: None,
         }
     }
@@ -325,6 +337,9 @@ pub struct TgaDecodeJob {
     limits: Option<Limits>,
     stop: Option<zencodec::StopToken>,
     max_input_bytes: Option<u64>,
+    /// Allocation-fallibility preference from
+    /// [`ResourceLimits::prefer_fallible_allocations`].
+    alloc_pref: AllocPref,
     policy: Option<DecodePolicy>,
 }
 
@@ -341,6 +356,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for TgaDecodeJob {
 
     fn with_limits(mut self, limits: ResourceLimits) -> Self {
         self.max_input_bytes = limits.max_input_bytes;
+        self.alloc_pref = AllocPref::from(limits.prefer_fallible_allocations);
         self.limits = Some(convert_limits(&limits));
         self
     }
@@ -408,6 +424,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for TgaDecodeJob {
             limits: self.limits,
             data,
             stop: self.stop,
+            alloc_pref: self.alloc_pref,
         })
     }
 
@@ -437,13 +454,14 @@ impl<'a> zencodec::decode::DecodeJob<'a> for TgaDecodeJob {
         }
 
         let limits = self.limits.or(self.config.limits);
+        let alloc_pref = self.alloc_pref;
 
         // Buffer-and-yield: decode full image, yield rows from next_batch()
         let stop: &dyn Stop = match &self.stop {
             Some(s) => s,
             None => &enough::Unstoppable,
         };
-        let decoded = crate::tga::decode(&data, limits.as_ref(), stop)?;
+        let decoded = crate::tga::decode_with_alloc_pref(&data, limits.as_ref(), alloc_pref, stop)?;
 
         let width = decoded.width;
         let height = decoded.height;
@@ -492,6 +510,7 @@ pub struct TgaDecoder<'a> {
     limits: Option<Limits>,
     data: Cow<'a, [u8]>,
     stop: Option<zencodec::StopToken>,
+    alloc_pref: AllocPref,
 }
 
 impl TgaDecoder<'_> {
@@ -509,7 +528,8 @@ impl zencodec::decode::Decode for TgaDecoder<'_> {
             Some(s) => s,
             None => &enough::Unstoppable,
         };
-        let decoded = crate::tga::decode(&self.data, limits, stop)?;
+        let decoded =
+            crate::tga::decode_with_alloc_pref(&self.data, limits, self.alloc_pref, stop)?;
         decode_output_from_internal(&decoded, ImageFormat::Tga)
     }
 }

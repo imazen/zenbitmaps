@@ -8,6 +8,7 @@
 //! Credits: Draws from zune-ppm by Caleb Etemesi (MIT/Apache-2.0/Zlib).
 
 use super::PnmHeader;
+use crate::alloc_util::{self, AllocPref};
 use crate::error::BitmapError;
 use crate::pixel::PixelLayout;
 use crate::pnm::PnmFormat;
@@ -299,10 +300,14 @@ fn parse_pfm_header(data: &[u8]) -> crate::Result<PnmHeader> {
 }
 
 /// Decode integer data that needs transformation (non-255 maxval or 16-bit).
+///
+/// The output buffer is sized from the (untrusted) header dimensions →
+/// `alloc_pref` with site default `true` (fallible).
 pub(crate) fn decode_integer_transform(
     pixel_data: &[u8],
     header: &PnmHeader,
     expected_src: usize,
+    alloc_pref: AllocPref,
     stop: &dyn Stop,
 ) -> crate::Result<Vec<u8>> {
     let w = header.width as usize;
@@ -313,7 +318,7 @@ pub(crate) fn decode_integer_transform(
     if !is_16bit {
         // Scale from maxval to 255
         let scale = 255.0 / header.maxval as f32;
-        let mut out = Vec::with_capacity(expected_src);
+        let mut out = alloc_util::vec_with_capacity(alloc_pref, true, expected_src)?;
         let stop_interval = w.saturating_mul(depth).saturating_mul(16).max(1);
         for (i, &b) in pixel_data[..expected_src].iter().enumerate() {
             if i % stop_interval == 0 {
@@ -333,7 +338,7 @@ pub(crate) fn decode_integer_transform(
                 // here to keep the binary and ASCII paths byte-identical for the
                 // same logical image (issue #12). Mirrors farbfeld's BE→native
                 // decode; a no-op on big-endian hosts, a byte-swap on LE.
-                let mut out = Vec::with_capacity(expected_src);
+                let mut out = alloc_util::vec_with_capacity(alloc_pref, true, expected_src)?;
                 let stop_interval = w.saturating_mul(depth).saturating_mul(16).max(1);
                 for (i, pair) in pixel_data[..expected_src].chunks_exact(2).enumerate() {
                     if i % stop_interval == 0 {
@@ -367,7 +372,7 @@ pub(crate) fn decode_integer_transform(
                 }
                 let scale = 255.0 / header.maxval as f32;
                 let stop_interval = w.saturating_mul(depth).saturating_mul(16).max(1);
-                let mut out = Vec::with_capacity(num_samples);
+                let mut out = alloc_util::vec_with_capacity(alloc_pref, true, num_samples)?;
                 for i in 0..num_samples {
                     if i % stop_interval == 0 {
                         stop.check()
@@ -385,9 +390,13 @@ pub(crate) fn decode_integer_transform(
 }
 
 /// Decode PFM float pixel data.
+///
+/// The output buffer is sized from the (untrusted) header dimensions →
+/// `alloc_pref` with site default `true` (fallible).
 pub(crate) fn decode_pfm(
     pixel_data: &[u8],
     header: &PnmHeader,
+    alloc_pref: AllocPref,
     stop: &dyn Stop,
 ) -> crate::Result<Vec<u8>> {
     let w = header.width as usize;
@@ -416,7 +425,7 @@ pub(crate) fn decode_pfm(
     let is_little_endian = header.pfm_scale < 0.0;
     let scale = header.pfm_scale.abs();
 
-    let mut out = Vec::with_capacity(expected_bytes);
+    let mut out = alloc_util::vec_with_capacity(alloc_pref, true, expected_bytes)?;
     let row_floats = w.checked_mul(depth).ok_or_else(|| {
         whereat::at!(BitmapError::DimensionsTooLarge {
             width: header.width,
@@ -463,9 +472,13 @@ pub(crate) fn decode_pfm(
 }
 
 /// Decode ASCII PBM (P1): `0` = white (255), `1` = black (0).
+///
+/// The output buffer is sized from the (untrusted) header dimensions →
+/// `alloc_pref` with site default `true` (fallible).
 pub(crate) fn decode_ascii_pbm(
     pixel_data: &[u8],
     header: &PnmHeader,
+    alloc_pref: AllocPref,
     stop: &dyn Stop,
 ) -> crate::Result<Vec<u8>> {
     let total = (header.width as usize)
@@ -477,7 +490,7 @@ pub(crate) fn decode_ascii_pbm(
             })
         })?;
 
-    let mut out = Vec::with_capacity(total);
+    let mut out = alloc_util::vec_with_capacity(alloc_pref, true, total)?;
     let mut pos = 0;
 
     for i in 0..total {
@@ -520,9 +533,13 @@ pub(crate) fn decode_ascii_pbm(
 
 /// Decode binary PBM (P4): 8 pixels per byte, MSB first.
 /// 1 = black (0), 0 = white (255). Rows are padded to byte boundaries.
+///
+/// The output buffer is sized from the (untrusted) header dimensions →
+/// `alloc_pref` with site default `true` (fallible).
 pub(crate) fn decode_p4_bitpacked(
     pixel_data: &[u8],
     header: &PnmHeader,
+    alloc_pref: AllocPref,
     stop: &dyn Stop,
 ) -> crate::Result<Vec<u8>> {
     let w = header.width as usize;
@@ -545,7 +562,7 @@ pub(crate) fn decode_p4_bitpacked(
             height: header.height,
         })
     })?;
-    let mut out = Vec::with_capacity(out_size);
+    let mut out = alloc_util::vec_with_capacity(alloc_pref, true, out_size)?;
 
     for row in 0..h {
         if row % 16 == 0 {
@@ -567,9 +584,13 @@ pub(crate) fn decode_p4_bitpacked(
 
 /// Decode ASCII PGM/PPM (P2/P3): whitespace-separated decimal values.
 /// Scales to 0-255 if maxval != 255.
+///
+/// The output buffer is sized from the (untrusted) header dimensions →
+/// `alloc_pref` with site default `true` (fallible).
 pub(crate) fn decode_ascii_samples(
     pixel_data: &[u8],
     header: &PnmHeader,
+    alloc_pref: AllocPref,
     stop: &dyn Stop,
 ) -> crate::Result<Vec<u8>> {
     let w = header.width as usize;
@@ -607,7 +628,8 @@ pub(crate) fn decode_ascii_samples(
     // into an 8-bit layout, or any sub-255 maxval into an 8-bit layout).
     let scale8 = (!layout_is_16bit && header.maxval != 255).then(|| 255.0 / header.maxval as f32);
 
-    let mut out = Vec::with_capacity(total.saturating_mul(bytes_per_sample));
+    let mut out =
+        alloc_util::vec_with_capacity(alloc_pref, true, total.saturating_mul(bytes_per_sample))?;
     let mut pos = 0;
 
     for i in 0..total {

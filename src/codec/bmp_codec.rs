@@ -1,6 +1,8 @@
 use super::*;
 use whereat::{At, at};
 
+use crate::alloc_util::AllocPref;
+
 // ══════════════════════════════════════════════════════════════════════
 // BMP capabilities and descriptors
 // ══════════════════════════════════════════════════════════════════════
@@ -261,12 +263,24 @@ impl zencodec::decode::DecoderConfig for BmpDecoderConfig {
         &BMP_DECODE_CAPS
     }
 
+    fn estimate_decode_resources(
+        &self,
+        image: &zencodec::estimate::ImageCharacteristics,
+        compute: &zencodec::estimate::ComputeEnvironment,
+    ) -> zencodec::estimate::ResourceEstimate {
+        // BMP working set ≈ output buffer + one scanline + ≤256-entry palette
+        // (serial; RLE expands into a second output-sized buffer but the
+        // bomb-ratio guard keeps it bounded).
+        super::trivial_decode_resources(image, compute)
+    }
+
     fn job<'a>(self) -> Self::Job<'a> {
         BmpDecodeJob {
             config: self,
             limits: None,
             stop: None,
             max_input_bytes: None,
+            alloc_pref: AllocPref::CodecDefault,
             policy: None,
         }
     }
@@ -280,6 +294,9 @@ pub struct BmpDecodeJob {
     limits: Option<Limits>,
     stop: Option<zencodec::StopToken>,
     max_input_bytes: Option<u64>,
+    /// Allocation-fallibility preference from
+    /// [`ResourceLimits::prefer_fallible_allocations`].
+    alloc_pref: AllocPref,
     policy: Option<DecodePolicy>,
 }
 
@@ -296,6 +313,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for BmpDecodeJob {
 
     fn with_limits(mut self, limits: ResourceLimits) -> Self {
         self.max_input_bytes = limits.max_input_bytes;
+        self.alloc_pref = AllocPref::from(limits.prefer_fallible_allocations);
         self.limits = Some(convert_limits(&limits));
         self
     }
@@ -369,6 +387,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for BmpDecodeJob {
             data,
             stop: self.stop,
             permissiveness,
+            alloc_pref: self.alloc_pref,
         })
     }
 
@@ -413,6 +432,7 @@ pub struct BmpDecoder<'a> {
     data: Cow<'a, [u8]>,
     stop: Option<zencodec::StopToken>,
     permissiveness: crate::bmp::BmpPermissiveness,
+    alloc_pref: AllocPref,
 }
 
 impl BmpDecoder<'_> {
@@ -430,8 +450,13 @@ impl zencodec::decode::Decode for BmpDecoder<'_> {
             Some(s) => s,
             None => &enough::Unstoppable,
         };
-        let decoded =
-            crate::bmp::decode_with_permissiveness(&self.data, limits, self.permissiveness, stop)?;
+        let decoded = crate::bmp::decode_with_permissiveness_and_alloc_pref(
+            &self.data,
+            limits,
+            self.permissiveness,
+            self.alloc_pref,
+            stop,
+        )?;
         decode_output_from_internal(&decoded, ImageFormat::Bmp)
     }
 }

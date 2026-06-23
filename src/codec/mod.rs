@@ -64,6 +64,41 @@ pub(crate) fn trivial_encode_resources(
         .at_cores(compute.cores())
 }
 
+/// Shared `estimate_decode_resources` body for the trivial bitmap decoders.
+///
+/// PNM/BMP/farbfeld/HDR/TGA/QOI decode in a single serial pass whose working
+/// set is **essentially the output pixel buffer only** — there is no entropy
+/// coder, no multi-pass transform, no tile assembly. Peak heap is the decoded
+/// buffer plus a small fixed overhead (one scanline of scratch, the ≤256-entry
+/// BMP palette, the encoded input still mapped). [`ImageCharacteristics`]
+/// reports the *decoded* descriptor, so `image.input_bytes()` is exactly that
+/// output buffer (`pixels × bytes_per_pixel`).
+///
+/// Like [`trivial_encode_resources`] these numbers are **structural, not
+/// calibrated**; the `pixels / 400_000` time term is a coarse placeholder.
+///
+/// [`ImageCharacteristics`]: zencodec::estimate::ImageCharacteristics
+pub(crate) fn trivial_decode_resources(
+    image: &zencodec::estimate::ImageCharacteristics,
+    compute: &zencodec::estimate::ComputeEnvironment,
+) -> zencodec::estimate::ResourceEstimate {
+    use zencodec::estimate::{ResourceEstimate, ThreadingInformation};
+
+    // Fixed scratch overhead: one wide scanline + palette + small bookkeeping.
+    // 64 KiB comfortably covers the bounded per-row / palette buffers these
+    // formats allocate alongside the output.
+    const FIXED_OVERHEAD: u64 = 64 * 1024;
+
+    let output = image.input_bytes();
+    let typ = output.saturating_add(FIXED_OVERHEAD);
+    let time_ms = (image.pixels() as f64 / 400_000.0) as u64;
+
+    ResourceEstimate::new(typ, time_ms)
+        .with_peak_max(typ.saturating_add(FIXED_OVERHEAD))
+        .with_threading(ThreadingInformation::SERIAL)
+        .at_cores(compute.cores())
+}
+
 // ══════════════════════════════════════════════════════════════════════
 // Per-format codec modules
 // ══════════════════════════════════════════════════════════════════════
@@ -683,6 +718,117 @@ mod tests {
             .unwrap();
         assert_eq!(decoded.width(), 2);
         assert_eq!(decoded.height(), 2);
+    }
+
+    /// Decoding under `AllocPreference::Fallible` (the `try_reserve` path) and
+    /// `Infallible` (the `vec!` path) must each produce pixels byte-identical to
+    /// the default (`CodecDefault`) decode — the allocation preference changes
+    /// *how* the buffer is obtained, never *what* it contains.
+    #[test]
+    fn fallible_alloc_decode_matches_default_pnm() {
+        use zencodec::{AllocPreference, ResourceLimits};
+
+        // Decode `encoded` with a PnmDecoder under the given preference and
+        // return the raw decoded bytes (format-agnostic).
+        let decode_bytes = |encoded: &[u8], pref: Option<AllocPreference>| -> Vec<u8> {
+            let job = PnmDecoderConfig::new().job();
+            let job = match pref {
+                Some(p) => {
+                    job.with_limits(ResourceLimits::none().with_prefer_fallible_allocations(p))
+                }
+                None => job,
+            };
+            let out = job
+                .decoder(Cow::Borrowed(encoded), &[])
+                .unwrap()
+                .decode()
+                .unwrap();
+            out.into_buffer().as_slice().contiguous_bytes().to_vec()
+        };
+
+        let assert_all_modes_agree = |encoded: &[u8]| {
+            let default = decode_bytes(encoded, None); // CodecDefault
+            let fallible = decode_bytes(encoded, Some(AllocPreference::Fallible));
+            let infallible = decode_bytes(encoded, Some(AllocPreference::Infallible));
+            assert_eq!(
+                default, fallible,
+                "Fallible PNM decode must be byte-identical to the default decode"
+            );
+            assert_eq!(
+                default, infallible,
+                "Infallible PNM decode must be byte-identical to the default decode"
+            );
+        };
+
+        // (1) RGB8 PPM (maxval 255) → the borrowed passthrough fast path.
+        let rgb8: Vec<rgb::Rgb<u8>> = (0..(4 * 3))
+            .map(|i| rgb::Rgb {
+                r: (i % 251) as u8,
+                g: ((i * 7) % 253) as u8,
+                b: ((i * 13) % 249) as u8,
+            })
+            .collect();
+        let img8 = imgref::ImgVec::new(rgb8, 4, 3);
+        let enc8 = encode_pixels(PixelSlice::from(img8.as_ref()).erase());
+        assert_all_modes_agree(enc8.data());
+
+        // (2) ASCII PGM (P2) with maxval != 255 → the owned
+        //     `decode_ascii_samples` allocation path (distinct from the
+        //     passthrough), so an explicit override actually exercises the
+        //     fallible helper.
+        let ascii_pgm = b"P2 3 2 100 0 25 50 75 100 50\n";
+        assert_all_modes_agree(ascii_pgm);
+    }
+
+    #[cfg(feature = "qoi")]
+    #[test]
+    fn fallible_alloc_decode_matches_default_qoi() {
+        use zencodec::encode::{EncodeJob, Encoder, EncoderConfig};
+        use zencodec::{AllocPreference, ResourceLimits};
+
+        let pixels: Vec<rgb::Rgba<u8>> = (0..(5 * 4))
+            .map(|i| rgb::Rgba {
+                r: (i % 251) as u8,
+                g: ((i * 7) % 253) as u8,
+                b: ((i * 13) % 249) as u8,
+                a: ((i * 17) % 255) as u8,
+            })
+            .collect();
+        let img = imgref::ImgVec::new(pixels, 5, 4);
+        let encoded = QoiEncoderConfig::new()
+            .job()
+            .encoder()
+            .unwrap()
+            .encode(PixelSlice::from(img.as_ref()).erase())
+            .unwrap();
+
+        let decode_bytes = |pref: Option<AllocPreference>| -> Vec<u8> {
+            let job = QoiDecoderConfig::new().job();
+            let job = match pref {
+                Some(p) => {
+                    job.with_limits(ResourceLimits::none().with_prefer_fallible_allocations(p))
+                }
+                None => job,
+            };
+            let out = job
+                .decoder(Cow::Borrowed(encoded.data()), &[])
+                .unwrap()
+                .decode()
+                .unwrap();
+            out.into_buffer().as_slice().contiguous_bytes().to_vec()
+        };
+
+        let default = decode_bytes(None);
+        let fallible = decode_bytes(Some(AllocPreference::Fallible));
+        let infallible = decode_bytes(Some(AllocPreference::Infallible));
+        assert_eq!(
+            default, fallible,
+            "Fallible QOI decode must be byte-identical to the default decode"
+        );
+        assert_eq!(
+            default, infallible,
+            "Infallible QOI decode must be byte-identical to the default decode"
+        );
     }
 
     #[test]

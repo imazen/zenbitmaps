@@ -2,10 +2,10 @@
 //!
 //! Forked from zune-farbfeld 0.5.2 by Caleb Etemesi (MIT/Apache-2.0/Zlib).
 
-use alloc::vec;
 use enough::Stop;
 use whereat::at;
 
+use crate::alloc_util::{self, AllocPref};
 use crate::error::BitmapError;
 
 /// Parse farbfeld header, returning (width, height).
@@ -33,10 +33,14 @@ pub(crate) fn parse_header(data: &[u8]) -> crate::Result<(u32, u32)> {
 }
 
 /// Decode farbfeld pixel data from big-endian to native endian u16 (as bytes).
+///
+/// The output buffer is sized from the (untrusted) header dimensions →
+/// `alloc_pref` with site default `true` (fallible).
 pub(crate) fn decode_pixels(
     data: &[u8],
     width: u32,
     height: u32,
+    alloc_pref: AllocPref,
     stop: &dyn Stop,
 ) -> crate::Result<alloc::vec::Vec<u8>> {
     let pixel_count = (width as usize)
@@ -54,7 +58,7 @@ pub(crate) fn decode_pixels(
         .ok_or_else(|| at!(BitmapError::UnexpectedEof))?;
 
     // Pre-allocate output and write directly — no Vec growth
-    let mut out = vec![0u8; input_bytes];
+    let mut out = alloc_util::alloc_zeroed(alloc_pref, true, input_bytes)?;
     let row_bytes = width as usize * 8; // 4 channels × 2 bytes
 
     for (row_idx, (src_row, dst_row)) in pixel_data

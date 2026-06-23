@@ -1,6 +1,8 @@
 use super::*;
 use whereat::{At, ResultAtExt, at};
 
+use crate::alloc_util::AllocPref;
+
 // ══════════════════════════════════════════════════════════════════════
 // QOI capabilities and descriptors
 // ══════════════════════════════════════════════════════════════════════
@@ -341,12 +343,22 @@ impl zencodec::decode::DecoderConfig for QoiDecoderConfig {
         &QOI_DECODE_CAPS
     }
 
+    fn estimate_decode_resources(
+        &self,
+        image: &zencodec::estimate::ImageCharacteristics,
+        compute: &zencodec::estimate::ComputeEnvironment,
+    ) -> zencodec::estimate::ResourceEstimate {
+        // QOI working set ≈ output buffer only (serial; runs decode in place).
+        super::trivial_decode_resources(image, compute)
+    }
+
     fn job<'a>(self) -> Self::Job<'a> {
         QoiDecodeJob {
             config: self,
             limits: None,
             stop: None,
             max_input_bytes: None,
+            alloc_pref: AllocPref::CodecDefault,
             policy: None,
         }
     }
@@ -360,6 +372,9 @@ pub struct QoiDecodeJob {
     limits: Option<Limits>,
     stop: Option<zencodec::StopToken>,
     max_input_bytes: Option<u64>,
+    /// Allocation-fallibility preference from
+    /// [`ResourceLimits::prefer_fallible_allocations`].
+    alloc_pref: AllocPref,
     policy: Option<DecodePolicy>,
 }
 
@@ -376,6 +391,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for QoiDecodeJob {
 
     fn with_limits(mut self, limits: ResourceLimits) -> Self {
         self.max_input_bytes = limits.max_input_bytes;
+        self.alloc_pref = AllocPref::from(limits.prefer_fallible_allocations);
         self.limits = Some(convert_limits(&limits));
         self
     }
@@ -429,6 +445,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for QoiDecodeJob {
             limits: self.limits,
             data,
             stop: self.stop,
+            alloc_pref: self.alloc_pref,
         })
     }
 
@@ -509,6 +526,7 @@ pub struct QoiDecoder<'a> {
     limits: Option<Limits>,
     data: Cow<'a, [u8]>,
     stop: Option<zencodec::StopToken>,
+    alloc_pref: AllocPref,
 }
 
 impl QoiDecoder<'_> {
@@ -526,7 +544,8 @@ impl zencodec::decode::Decode for QoiDecoder<'_> {
             Some(s) => s,
             None => &enough::Unstoppable,
         };
-        let decoded = crate::qoi::decode(&self.data, limits, stop)?;
+        let decoded =
+            crate::qoi::decode_with_alloc_pref(&self.data, limits, self.alloc_pref, stop)?;
         decode_output_from_internal(&decoded, ImageFormat::Qoi)
     }
 }

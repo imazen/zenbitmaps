@@ -4,6 +4,7 @@ use alloc::vec::Vec;
 use enough::Stop;
 use whereat::at;
 
+use crate::alloc_util::{self, AllocPref};
 use crate::error::BitmapError;
 
 /// Parse a Radiance HDR header, returning (width, height, data_offset).
@@ -116,6 +117,7 @@ pub(crate) fn decode_pixels(
     offset: usize,
     width: u32,
     height: u32,
+    alloc_pref: AllocPref,
     stop: &dyn Stop,
 ) -> crate::Result<Vec<u8>> {
     let w = width as usize;
@@ -125,12 +127,15 @@ pub(crate) fn decode_pixels(
         .and_then(|px| px.checked_mul(12)) // 3 channels × 4 bytes per f32
         .ok_or_else(|| at!(BitmapError::DimensionsTooLarge { width, height }))?;
 
-    let mut out = alloc::vec![0u8; out_bytes];
+    // Output buffer sized from the (untrusted) header dimensions → default
+    // fallible; the scanline buffer is bounded by the row width → default
+    // infallible.
+    let mut out = alloc_util::alloc_zeroed(alloc_pref, true, out_bytes)?;
     let mut out_pos = 0;
     let mut pos = offset;
 
     // Scanline buffer for new-style RLE (4 channels × width)
-    let mut scanline_buf = alloc::vec![0u8; w * 4];
+    let mut scanline_buf = alloc_util::alloc_zeroed(alloc_pref, false, w * 4)?;
 
     for row in 0..h {
         if row % 16 == 0 {

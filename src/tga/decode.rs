@@ -4,10 +4,10 @@
 //! Supports uncompressed and RLE-compressed truecolor, grayscale,
 //! and color-mapped images at 8, 15, 16, 24, and 32 bits per pixel.
 
-use alloc::vec;
 use alloc::vec::Vec;
 use enough::Stop;
 
+use crate::alloc_util::{self, AllocPref};
 use crate::error::BitmapError;
 use crate::pixel::PixelLayout;
 
@@ -170,6 +170,7 @@ pub(crate) fn parse_header(data: &[u8]) -> crate::Result<TgaHeader> {
 pub(crate) fn decode_pixels(
     data: &[u8],
     header: &TgaHeader,
+    alloc_pref: AllocPref,
     stop: &dyn Stop,
 ) -> crate::Result<(Vec<u8>, PixelLayout)> {
     let w = header.width as usize;
@@ -239,7 +240,9 @@ pub(crate) fn decode_pixels(
         })
     })?;
 
-    let mut out = vec![0u8; out_size];
+    // Output buffer sized from the (untrusted) header dimensions → default
+    // fallible.
+    let mut out = alloc_util::alloc_zeroed(alloc_pref, true, out_size)?;
 
     // Bytes per pixel in the source data
     let src_bpp: usize = match header.pixel_depth {

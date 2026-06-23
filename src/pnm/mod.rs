@@ -6,6 +6,7 @@
 pub(crate) mod decode;
 mod encode;
 
+use crate::alloc_util::AllocPref;
 use crate::decode::DecodeOutput;
 use crate::error::BitmapError;
 use crate::limits::{self, Limits};
@@ -35,9 +36,30 @@ pub(crate) struct PnmHeader {
 }
 
 /// Decode PNM data (called from top-level decode functions).
+///
+/// Allocations use each call site's default fallibility (big output buffers
+/// fallible, bounded scratch infallible). For the zencodec path that honors
+/// [`AllocPreference`](zencodec::AllocPreference), call
+/// [`decode_with_alloc_pref`].
 pub(crate) fn decode<'a>(
     data: &'a [u8],
     limits: Option<&Limits>,
+    stop: &dyn Stop,
+) -> crate::Result<DecodeOutput<'a>> {
+    decode_with_alloc_pref(data, limits, AllocPref::CodecDefault, stop)
+}
+
+/// Decode PNM data, honoring an explicit [`AllocPref`] at every allocation site.
+///
+/// `alloc_pref` overrides the per-site default fallibility:
+/// [`Fallible`](AllocPref::Fallible) forces the graceful-OOM `try_reserve`
+/// path everywhere, [`Infallible`](AllocPref::Infallible) forces the fast
+/// `vec!` path, [`CodecDefault`](AllocPref::CodecDefault) keeps each site's own
+/// default (identical behaviour to [`decode`]).
+pub(crate) fn decode_with_alloc_pref<'a>(
+    data: &'a [u8],
+    limits: Option<&Limits>,
+    alloc_pref: AllocPref,
     stop: &dyn Stop,
 ) -> crate::Result<DecodeOutput<'a>> {
     if data.len() < 3 {
@@ -77,9 +99,9 @@ pub(crate) fn decode<'a>(
             })?;
             limits::check_output_size(out_bytes, limits)?;
             let pixels = if is_ascii {
-                decode::decode_ascii_pbm(pixel_data, &header, stop)?
+                decode::decode_ascii_pbm(pixel_data, &header, alloc_pref, stop)?
             } else {
-                decode::decode_p4_bitpacked(pixel_data, &header, stop)?
+                decode::decode_p4_bitpacked(pixel_data, &header, alloc_pref, stop)?
             };
             Ok(DecodeOutput::owned(
                 pixels,
@@ -100,7 +122,7 @@ pub(crate) fn decode<'a>(
                     })
                 })?;
             limits::check_output_size(out_bytes, limits)?;
-            let pixels = decode::decode_pfm(pixel_data, &header, stop)?;
+            let pixels = decode::decode_pfm(pixel_data, &header, alloc_pref, stop)?;
             Ok(DecodeOutput::owned(
                 pixels,
                 header.width,
@@ -121,7 +143,7 @@ pub(crate) fn decode<'a>(
                         })
                     })?;
                 limits::check_output_size(out_bytes, limits)?;
-                let pixels = decode::decode_ascii_samples(pixel_data, &header, stop)?;
+                let pixels = decode::decode_ascii_samples(pixel_data, &header, alloc_pref, stop)?;
                 Ok(DecodeOutput::owned(
                     pixels,
                     header.width,
@@ -165,8 +187,13 @@ pub(crate) fn decode<'a>(
                             })
                         })?;
                     limits::check_output_size(out_bytes, limits)?;
-                    let pixels =
-                        decode::decode_integer_transform(pixel_data, &header, expected_src, stop)?;
+                    let pixels = decode::decode_integer_transform(
+                        pixel_data,
+                        &header,
+                        expected_src,
+                        alloc_pref,
+                        stop,
+                    )?;
                     Ok(DecodeOutput::owned(
                         pixels,
                         header.width,
@@ -211,8 +238,13 @@ pub(crate) fn decode<'a>(
                         })
                     })?;
                 limits::check_output_size(out_bytes, limits)?;
-                let pixels =
-                    decode::decode_integer_transform(pixel_data, &header, expected_src, stop)?;
+                let pixels = decode::decode_integer_transform(
+                    pixel_data,
+                    &header,
+                    expected_src,
+                    alloc_pref,
+                    stop,
+                )?;
                 Ok(DecodeOutput::owned(
                     pixels,
                     header.width,
