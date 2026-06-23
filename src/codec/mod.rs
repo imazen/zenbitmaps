@@ -371,6 +371,30 @@ mod tests {
         config.job().encoder().unwrap().encode(slice).unwrap()
     }
 
+    #[test]
+    fn fidelity_is_always_lossless() {
+        use zencodec::encode::Fidelity;
+        // zenbitmaps formats are lossless-only: every Fidelity request resolves
+        // to Lossless (the zencodec 0.1.25 default bridge, driven by
+        // is_lossless() == Some(true)). A lossy target is best-effort lossless.
+        assert_eq!(
+            PnmEncoderConfig::new().resolved_target_fidelity(),
+            Some(Fidelity::Lossless)
+        );
+        assert_eq!(
+            PnmEncoderConfig::new()
+                .with_fidelity(Fidelity::codec_quality(50.0))
+                .resolved_target_fidelity(),
+            Some(Fidelity::Lossless)
+        );
+        assert_eq!(
+            PnmEncoderConfig::new()
+                .with_fidelity(Fidelity::butteraugli(1.0))
+                .resolved_target_fidelity(),
+            Some(Fidelity::Lossless)
+        );
+    }
+
     /// Helper: decode via the four-layer flow.
     fn decode_bytes(data: &[u8]) -> DecodeOutput {
         let config = PnmDecoderConfig::new();
