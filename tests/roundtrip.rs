@@ -651,28 +651,28 @@ fn encode_pnm_unsupported_layouts_error() {
         encode_pgm(&[0u8; 4], 1, 1, PixelLayout::GrayF32, Unstoppable)
             .as_ref()
             .map_err(|e| e.error()),
-        Err(BitmapError::UnsupportedVariant(_))
+        Err(BitmapError::UnsupportedPixelFormat(_))
     ));
     // encode_ppm has no 16-bit RGB path.
     assert!(matches!(
         encode_ppm(&[0u8; 2], 1, 1, PixelLayout::Gray16, Unstoppable)
             .as_ref()
             .map_err(|e| e.error()),
-        Err(BitmapError::UnsupportedVariant(_))
+        Err(BitmapError::UnsupportedPixelFormat(_))
     ));
     // encode_pam rejects float layouts.
     assert!(matches!(
         encode_pam(&[0u8; 4], 1, 1, PixelLayout::GrayF32, Unstoppable)
             .as_ref()
             .map_err(|e| e.error()),
-        Err(BitmapError::UnsupportedVariant(_))
+        Err(BitmapError::UnsupportedPixelFormat(_))
     ));
     // encode_pfm requires a float layout.
     assert!(matches!(
         encode_pfm(&[0u8; 1], 1, 1, PixelLayout::Gray8, Unstoppable)
             .as_ref()
             .map_err(|e| e.error()),
-        Err(BitmapError::UnsupportedVariant(_))
+        Err(BitmapError::UnsupportedPixelFormat(_))
     ));
 }
 
@@ -1566,7 +1566,7 @@ fn qoi_encode_unsupported_layout_gray8() {
     let result = encode_qoi(&[128u8], 1, 1, PixelLayout::Gray8, Unstoppable);
     assert!(matches!(
         result.as_ref().map_err(|e| e.error()),
-        Err(BitmapError::UnsupportedVariant(_))
+        Err(BitmapError::UnsupportedPixelFormat(_))
     ));
 }
 
@@ -1576,7 +1576,7 @@ fn qoi_encode_unsupported_layout_rgba16() {
     let result = encode_qoi(&[0u8; 8], 1, 1, PixelLayout::Rgba16, Unstoppable);
     assert!(matches!(
         result.as_ref().map_err(|e| e.error()),
-        Err(BitmapError::UnsupportedVariant(_))
+        Err(BitmapError::UnsupportedPixelFormat(_))
     ));
 }
 
@@ -1586,7 +1586,7 @@ fn qoi_encode_unsupported_layout_grayf32() {
     let result = encode_qoi(&[0u8; 4], 1, 1, PixelLayout::GrayF32, Unstoppable);
     assert!(matches!(
         result.as_ref().map_err(|e| e.error()),
-        Err(BitmapError::UnsupportedVariant(_))
+        Err(BitmapError::UnsupportedPixelFormat(_))
     ));
 }
 
@@ -1596,7 +1596,7 @@ fn qoi_encode_unsupported_layout_rgbf32() {
     let result = encode_qoi(&[0u8; 12], 1, 1, PixelLayout::RgbF32, Unstoppable);
     assert!(matches!(
         result.as_ref().map_err(|e| e.error()),
-        Err(BitmapError::UnsupportedVariant(_))
+        Err(BitmapError::UnsupportedPixelFormat(_))
     ));
 }
 
@@ -1861,19 +1861,19 @@ fn tga_encode_unsupported_layout() {
     let result = encode_tga(&[0u8; 12], 1, 1, PixelLayout::RgbF32, Unstoppable);
     assert!(matches!(
         result.as_ref().map_err(|e| e.error()),
-        Err(BitmapError::UnsupportedVariant(_))
+        Err(BitmapError::UnsupportedPixelFormat(_))
     ));
 
     let result = encode_tga(&[0u8; 8], 1, 1, PixelLayout::Rgba16, Unstoppable);
     assert!(matches!(
         result.as_ref().map_err(|e| e.error()),
-        Err(BitmapError::UnsupportedVariant(_))
+        Err(BitmapError::UnsupportedPixelFormat(_))
     ));
 
     let result = encode_tga(&[0u8; 4], 1, 1, PixelLayout::GrayF32, Unstoppable);
     assert!(matches!(
         result.as_ref().map_err(|e| e.error()),
-        Err(BitmapError::UnsupportedVariant(_))
+        Err(BitmapError::UnsupportedPixelFormat(_))
     ));
 }
 
@@ -2104,7 +2104,7 @@ fn hdr_encode_unsupported_layout() {
     let result = encode_hdr(&[0u8; 4], 1, 1, PixelLayout::Rgba8, Unstoppable);
     assert!(matches!(
         result.as_ref().map_err(|e| e.error()),
-        Err(BitmapError::UnsupportedVariant(_))
+        Err(BitmapError::UnsupportedPixelFormat(_))
     ));
 }
 

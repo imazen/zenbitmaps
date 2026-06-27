@@ -179,7 +179,7 @@ fn pixel_slice_to_hdr_layout(desc: PixelDescriptor) -> crate::Result<crate::Pixe
     match (desc.channel_type(), desc.layout()) {
         (ChannelType::F32, ChannelLayout::Rgb) => Ok(crate::PixelLayout::RgbF32),
         (ChannelType::U8, ChannelLayout::Rgb) => Ok(crate::PixelLayout::Rgb8),
-        _ => Err(at!(BitmapError::UnsupportedVariant(alloc::format!(
+        _ => Err(at!(BitmapError::UnsupportedPixelFormat(alloc::format!(
             "HDR encode: unsupported pixel format: {desc:?}"
         )))),
     }

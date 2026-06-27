@@ -200,7 +200,7 @@ impl zencodec::encode::Encoder for FarbfeldEncoder {
             (ChannelType::U8, ChannelLayout::Rgb) => crate::PixelLayout::Rgb8,
             (ChannelType::U8, ChannelLayout::Gray) => crate::PixelLayout::Gray8,
             _ => {
-                return Err(at!(BitmapError::UnsupportedVariant(alloc::format!(
+                return Err(at!(BitmapError::UnsupportedPixelFormat(alloc::format!(
                     "farbfeld encode: unsupported pixel format: {:?}",
                     desc
                 ))));

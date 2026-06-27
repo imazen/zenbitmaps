@@ -92,7 +92,7 @@ pub(crate) fn encode_hdr(
                 }
             }
             _ => {
-                return Err(at!(BitmapError::UnsupportedVariant(alloc::format!(
+                return Err(at!(BitmapError::UnsupportedPixelFormat(alloc::format!(
                     "cannot encode {layout:?} as HDR (supported: RgbF32, Rgb8)"
                 ))));
             }

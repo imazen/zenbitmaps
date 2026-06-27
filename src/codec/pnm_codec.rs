@@ -312,7 +312,7 @@ impl zencodec::encode::Encoder for PnmEncoder {
                 )?;
                 Ok(EncodeOutput::new(encoded, ImageFormat::Pnm))
             }
-            _ => Err(at!(BitmapError::UnsupportedVariant(alloc::format!(
+            _ => Err(at!(BitmapError::UnsupportedPixelFormat(alloc::format!(
                 "unsupported pixel format: {:?}",
                 desc
             )))),

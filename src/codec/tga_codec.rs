@@ -186,7 +186,7 @@ fn pixel_slice_to_tga_layout(desc: PixelDescriptor) -> crate::Result<crate::Pixe
         (ChannelType::U8, ChannelLayout::Rgba) => Ok(crate::PixelLayout::Rgba8),
         (ChannelType::U8, ChannelLayout::Gray) => Ok(crate::PixelLayout::Gray8),
         (ChannelType::U8, ChannelLayout::Bgra) => Ok(crate::PixelLayout::Bgra8),
-        _ => Err(at!(BitmapError::UnsupportedVariant(alloc::format!(
+        _ => Err(at!(BitmapError::UnsupportedPixelFormat(alloc::format!(
             "TGA encode: unsupported pixel format: {desc:?}"
         )))),
     }

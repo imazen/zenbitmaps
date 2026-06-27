@@ -50,7 +50,7 @@ pub(crate) fn encode_tga(
         PixelLayout::Rgb8 | PixelLayout::Bgr8 => (2, 24, 3),
         PixelLayout::Rgba8 | PixelLayout::Bgra8 => (2, 32, 4),
         _ => {
-            return Err(whereat::at!(BitmapError::UnsupportedVariant(
+            return Err(whereat::at!(BitmapError::UnsupportedPixelFormat(
                 alloc::format!(
                     "cannot encode {:?} as TGA (supported: Gray8, Rgb8, Rgba8, Bgr8, Bgra8)",
                     layout

@@ -652,7 +652,7 @@ fn encode_unsupported_gray8() {
         encode_hdr(&[0], 1, 1, PixelLayout::Gray8, Unstoppable)
             .as_ref()
             .map_err(|e| e.error()),
-        Err(BitmapError::UnsupportedVariant(_))
+        Err(BitmapError::UnsupportedPixelFormat(_))
     ));
 }
 
@@ -662,7 +662,7 @@ fn encode_unsupported_rgba8() {
         encode_hdr(&[0; 4], 1, 1, PixelLayout::Rgba8, Unstoppable)
             .as_ref()
             .map_err(|e| e.error()),
-        Err(BitmapError::UnsupportedVariant(_))
+        Err(BitmapError::UnsupportedPixelFormat(_))
     ));
 }
 

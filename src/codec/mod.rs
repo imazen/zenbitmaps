@@ -140,7 +140,7 @@ mod tga_codec;
 /// Codec-aware: the reduction can narrow chroma-free RGB(A) down to
 /// grayscale, but QOI and BMP have no grayscale encode path, so a blind
 /// reduction would turn an encodable all-gray RGB buffer into an
-/// `UnsupportedVariant` error. `can_encode` is the codec's own
+/// `UnsupportedPixelFormat` error. `can_encode` is the codec's own
 /// encode-format predicate — the reduced buffer is used only if the codec
 /// can actually encode it; otherwise `None` is returned and the caller
 /// encodes the original (broader) view. Narrowing only ever loses
@@ -970,7 +970,7 @@ mod tests {
     // Regression (fuzz farm 2026-06): the load-bearing reduction narrows
     // chroma-free RGB down to Gray8, but QOI and BMP have no grayscale
     // encode path. A blind reduction turned an encodable all-gray RGB
-    // buffer into an `UnsupportedVariant` error (the `qoi_with_limits_*`
+    // buffer into an `UnsupportedPixelFormat` error (the `qoi_with_limits_*`
     // tests panicked on `.unwrap()`). The codec-aware `reduce_for_raw_encode`
     // predicate must forbid the →Gray narrowing for these two formats.
     #[cfg(feature = "qoi")]
@@ -1021,7 +1021,7 @@ mod tests {
             100
         ];
         let img = imgref::ImgVec::new(pixels, 10, 10);
-        // Must not fail with UnsupportedVariant (BMP encodes 24-bit RGB,
+        // Must not fail with UnsupportedPixelFormat (BMP encodes 24-bit RGB,
         // not grayscale — the reduction must stay RGB).
         let encoded = BmpEncoderConfig::new()
             .job()

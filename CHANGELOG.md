@@ -6,6 +6,30 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **Adopt the `zencodec` `CategorizedError` taxonomy (PR #103).** `BitmapError`
+  now `impl zencodec::CategorizedError` (gated on the `zencodec` feature) with
+  `CODEC_NAME = "zenbitmaps"` and an exhaustive `category()` mapping every
+  variant to one coarse `ErrorCategory`, so consumers route on the category
+  (HTTP status, retry policy, logging) without naming the enum. `Cancelled`
+  delegates to `StopReason` (`Cancelled`/`TimedOut`) and `UnsupportedOperation`
+  delegates to the zencodec cause type. Limits map to the representative
+  `LimitKind` (`DimensionsTooLarge`/`LimitExceeded` → `Pixels`, since both are
+  size/overflow guards and the always-on default pixel cap dominates;
+  `LimitExceeded` is a stringly catch-all whose precise sub-kind lives in the
+  message). `InvalidHeader`/`InvalidData` → `MalformedImage`,
+  `UnexpectedEof` → `UnexpectedEof`, `BufferTooSmall`/`LayoutMismatch` →
+  `InvalidBuffer`, `UnrecognizedFormat` → `UnsupportedImageType`.
+- New `BitmapError::UnsupportedPixelFormat(String)` variant, split out from the
+  encode-side cases of `UnsupportedVariant`: it is the "the caller's pixel
+  buffer format can't be encoded to this output format" negotiation failure
+  (mapping to `ErrorCategory::UnsupportedPixelFormat`), distinct from the
+  residual `UnsupportedVariant` "a feature within a recognized format isn't
+  supported" (→ `UnsupportedImageFeature`). Wired at all 17 encode-side
+  construction sites (PNM/BMP/QOI/TGA/HDR/farbfeld encoders + the `zencodec`
+  encode adapters); the 14 encode-layout-rejection tests were updated to match
+  the narrower variant. Additive — `UnsupportedVariant` is retained for the
+  decode-side feature cases, so this is non-breaking on the `#[non_exhaustive]`
+  enum.
 - Honor `zencodec::AllocPreference` (3-mode, per-site) at untrusted decode
   allocations, and implement `estimate_decode_resources` for all six bitmap
   `DecoderConfig`s. Each format's full-image output buffer (sized from the
@@ -31,6 +55,10 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- deps: TEMP `[patch.crates-io] zencodec = { git, branch =
+  "cancellation-classification-99" }` to pull the unreleased `CategorizedError`
+  taxonomy (PR #103). Remove this patch and bump the `zencodec` version
+  dependency once 0.1.26 is published.
 - deps: migrate to published zencodec 0.1.24 estimate API; drop the temporary
   `[patch.crates-io] zencodec = { git, rev = "0f71295" }` pin (the `estimate` API
   is now on crates.io). The shared `codec::trivial_encode_resources` helper follows

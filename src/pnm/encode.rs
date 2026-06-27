@@ -115,7 +115,7 @@ fn encode_pgm(
             }
         }
         _ => {
-            return Err(whereat::at!(BitmapError::UnsupportedVariant(format!(
+            return Err(whereat::at!(BitmapError::UnsupportedPixelFormat(format!(
                 "cannot encode {:?} as PGM",
                 layout
             ))));
@@ -186,7 +186,7 @@ fn encode_ppm(
             }
         }
         _ => {
-            return Err(whereat::at!(BitmapError::UnsupportedVariant(format!(
+            return Err(whereat::at!(BitmapError::UnsupportedPixelFormat(format!(
                 "cannot encode {:?} as PPM",
                 layout
             ))));
@@ -214,7 +214,7 @@ fn encode_pam(
         PixelLayout::Bgra8 => (4, "RGB_ALPHA", 255),
         PixelLayout::Bgrx8 => (4, "RGB_ALPHA", 255),
         _ => {
-            return Err(whereat::at!(BitmapError::UnsupportedVariant(format!(
+            return Err(whereat::at!(BitmapError::UnsupportedPixelFormat(format!(
                 "cannot encode {:?} as PAM",
                 layout
             ))));
@@ -313,7 +313,7 @@ fn encode_pfm(
         PixelLayout::GrayF32 => ("Pf", 1),
         PixelLayout::RgbF32 => ("PF", 3),
         _ => {
-            return Err(whereat::at!(BitmapError::UnsupportedVariant(format!(
+            return Err(whereat::at!(BitmapError::UnsupportedPixelFormat(format!(
                 "PFM requires GrayF32 or RgbF32, got {:?}",
                 layout
             ))));

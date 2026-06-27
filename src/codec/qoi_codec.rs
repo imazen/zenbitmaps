@@ -227,7 +227,7 @@ impl zencodec::encode::Encoder for QoiEncoder {
             (ChannelType::U8, ChannelLayout::Rgba) => crate::PixelLayout::Rgba8,
             (ChannelType::U8, ChannelLayout::Bgra) => crate::PixelLayout::Bgra8,
             _ => {
-                return Err(at!(BitmapError::UnsupportedVariant(alloc::format!(
+                return Err(at!(BitmapError::UnsupportedPixelFormat(alloc::format!(
                     "QOI encode: unsupported pixel format: {desc:?}"
                 ))));
             }
@@ -244,7 +244,7 @@ impl zencodec::encode::Encoder for QoiEncoder {
             (ChannelType::U8, ChannelLayout::Rgba) => 4,
             (ChannelType::U8, ChannelLayout::Bgra) => 4,
             _ => {
-                return Err(at!(BitmapError::UnsupportedVariant(alloc::format!(
+                return Err(at!(BitmapError::UnsupportedPixelFormat(alloc::format!(
                     "QOI push_rows: unsupported pixel format: {desc:?}"
                 ))));
             }

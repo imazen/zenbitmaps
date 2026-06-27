@@ -214,7 +214,7 @@ impl zencodec::encode::Encoder for BmpEncoder {
             (ChannelType::U8, ChannelLayout::Rgba) => (crate::PixelLayout::Rgba8, true),
             (ChannelType::U8, ChannelLayout::Bgra) => (crate::PixelLayout::Bgra8, true),
             _ => {
-                return Err(at!(BitmapError::UnsupportedVariant(alloc::format!(
+                return Err(at!(BitmapError::UnsupportedPixelFormat(alloc::format!(
                     "BMP encode: unsupported pixel format: {:?}",
                     desc
                 ))));

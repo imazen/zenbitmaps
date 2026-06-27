@@ -246,7 +246,7 @@ fn get_rgb(pixels: &[u8], idx: usize, layout: PixelLayout) -> crate::Result<(u8,
             (g, g, g)
         }
         _ => {
-            return Err(at!(BitmapError::UnsupportedVariant(alloc::format!(
+            return Err(at!(BitmapError::UnsupportedPixelFormat(alloc::format!(
                 "cannot get RGB from {:?}",
                 layout
             ))));
@@ -291,7 +291,7 @@ fn get_rgba(pixels: &[u8], idx: usize, layout: PixelLayout) -> crate::Result<(u8
             (g, g, g, 255)
         }
         _ => {
-            return Err(at!(BitmapError::UnsupportedVariant(alloc::format!(
+            return Err(at!(BitmapError::UnsupportedPixelFormat(alloc::format!(
                 "cannot get RGBA from {:?}",
                 layout
             ))));
