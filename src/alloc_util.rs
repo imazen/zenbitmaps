@@ -39,6 +39,11 @@ use crate::error::BitmapError;
 /// why it is duplicated). [`CodecDefault`](Self::CodecDefault) is the default:
 /// each allocation site keeps its own default fallibility.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+// `Fallible`/`Infallible` are constructed only by the `zencodec`-gated
+// `From<AllocPreference>` impl below; without that feature they are
+// unconstructed (but remain a valid part of the type). Allow it so the
+// default-feature `-D warnings` clippy build stays green.
+#[cfg_attr(not(feature = "zencodec"), allow(dead_code))]
 pub(crate) enum AllocPref {
     /// Let each site keep its own default (big untrusted buffers fallible,
     /// small bounded scratch infallible). Default — preserves existing

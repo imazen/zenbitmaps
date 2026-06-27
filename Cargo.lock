@@ -854,7 +854,7 @@ dependencies = [
 [[package]]
 name = "zencodec"
 version = "0.1.25"
-source = "git+https://github.com/imazen/zencodec?branch=cancellation-classification-99#e2faa4d5fabd591436f3534452de96a7884d2b24"
+source = "git+https://github.com/imazen/zencodec?branch=cancellation-classification-99#2c7fb39840ed03c02423554f8fe621b07055267f"
 dependencies = [
  "almost-enough",
  "enough",

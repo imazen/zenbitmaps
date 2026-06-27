@@ -8,7 +8,7 @@ All notable changes to this project will be documented in this file.
 
 - **Adopt the `zencodec` `CategorizedError` taxonomy (PR #103).** `BitmapError`
   now `impl zencodec::CategorizedError` (gated on the `zencodec` feature) with
-  `CODEC_NAME = "zenbitmaps"` and an exhaustive `category()` mapping every
+  `codec_name() = Some("zenbitmaps")` and an exhaustive `category()` mapping every
   variant to one coarse `ErrorCategory`, so consumers route on the category
   (HTTP status, retry policy, logging) without naming the enum. `Cancelled`
   delegates to `StopReason` (`Cancelled`/`TimedOut`) and `UnsupportedOperation`

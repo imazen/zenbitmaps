@@ -89,7 +89,9 @@ impl From<StopReason> for BitmapError {
 // category (HTTP status, retry policy, logging) without naming this enum.
 #[cfg(feature = "zencodec")]
 impl zencodec::CategorizedError for BitmapError {
-    const CODEC_NAME: &'static str = "zenbitmaps";
+    fn codec_name(&self) -> Option<&'static str> {
+        Some("zenbitmaps")
+    }
 
     fn category(&self) -> zencodec::ErrorCategory {
         use zencodec::ErrorCategory as C;
@@ -153,7 +155,10 @@ mod tests {
     fn error_category_mapping() {
         use zencodec::{CategorizedError, ErrorCategory as C, LimitKind as L};
 
-        assert_eq!(BitmapError::CODEC_NAME, "zenbitmaps");
+        assert_eq!(
+            BitmapError::UnrecognizedFormat.codec_name(),
+            Some("zenbitmaps")
+        );
 
         // Image type / format not handled at all.
         assert_eq!(
@@ -241,9 +246,6 @@ mod tests {
         // The `At<E>` blanket impl forwards both the category and the codec name.
         let traced = whereat::at!(BitmapError::UnrecognizedFormat);
         assert_eq!(traced.category(), C::UnsupportedImageType);
-        assert_eq!(
-            <At<BitmapError> as CategorizedError>::CODEC_NAME,
-            "zenbitmaps"
-        );
+        assert_eq!(traced.codec_name(), Some("zenbitmaps"));
     }
 }
