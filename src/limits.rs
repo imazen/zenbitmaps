@@ -35,10 +35,8 @@ pub struct Limits {
 impl Limits {
     /// Check dimensions against limits. Returns Ok(()) or LimitExceeded error.
     ///
-    /// Only the `zencodec` codec adapters call this directly; gate it so the
-    /// default-feature lib build (whose decoders go through `check_dimensions`)
-    /// does not flag it as dead code.
-    #[cfg(any(feature = "zencodec", test))]
+    /// The codec adapters call this directly before allocating; the bare
+    /// decode/encode entry points go through [`check_dimensions`] instead.
     pub(crate) fn check(&self, width: u32, height: u32) -> crate::Result<()> {
         check_dimensions(width, height, Some(self))
     }

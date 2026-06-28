@@ -20,12 +20,11 @@
 //! therefore take the caller's preference *and* the site default, and resolve
 //! them together.
 //!
-//! `AllocPref` is a crate-local mirror of
-//! [`zencodec::AllocPreference`](https://docs.rs/zencodec): the internal decode
-//! pipeline is always compiled (the bare `decode()` API needs no `zencodec`
-//! feature), so it cannot name the optional-dependency type directly. The
-//! zencodec codec boundary converts `AllocPreference` → `AllocPref` via the
-//! gated [`From`] impl below.
+//! `AllocPref` is a crate-local 3-mode mirror of
+//! [`zencodec::AllocPreference`](https://docs.rs/zencodec). The internal decode
+//! pipeline uses this local type so it stays decoupled from the codec-boundary
+//! enum (the bare `decode()` API never touches it); the zencodec codec boundary
+//! converts `AllocPreference` → `AllocPref` via the [`From`] impl below.
 
 use alloc::vec;
 use alloc::vec::Vec;
@@ -52,7 +51,6 @@ pub(crate) enum AllocPref {
     Infallible,
 }
 
-#[cfg(feature = "zencodec")]
 impl From<zencodec::AllocPreference> for AllocPref {
     fn from(p: zencodec::AllocPreference) -> Self {
         match p {
@@ -209,7 +207,6 @@ mod tests {
         ));
     }
 
-    #[cfg(feature = "zencodec")]
     #[test]
     fn from_zencodec_alloc_preference_maps_each_mode() {
         use zencodec::AllocPreference;

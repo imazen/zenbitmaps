@@ -17,6 +17,52 @@ use zenpixels::{ChannelLayout, ChannelType, PixelBuffer, PixelDescriptor, PixelS
 use crate::error::BitmapError;
 use crate::limits::Limits;
 
+// ══════════════════════════════════════════════════════════════════════
+// Trait-boundary error envelope (Pattern B)
+// ══════════════════════════════════════════════════════════════════════
+//
+// The per-format adapters return the **shared zencodec envelope**,
+// `At<zencodec::CodecError>`, rather than the native `At<BitmapError>`. The
+// envelope carries the `ErrorCategory` + codec name as data, so a generic
+// consumer recovers them *through `Dyn*` dispatch* (after the concrete error is
+// erased to `Box<dyn Error>`) — which the bare native error cannot survive.
+// `BitmapError` stays the detail + category source (see `error.rs`), and the
+// crate's public bare API keeps returning `crate::Result` (= `At<BitmapError>`).
+
+/// Result alias for the `zencodec` trait boundary: the shared `CodecError`
+/// envelope, located.
+pub(crate) type CodecResult<T> = Result<T, whereat::At<zencodec::CodecError>>;
+
+/// Construct a **located envelope error** (`At<CodecError>`) from a
+/// [`BitmapError`] expression — the trait-boundary analogue of
+/// [`whereat::at!`]. `whereat::at!` captures the call site; [`CodecError::of`]
+/// then reads the category + codec name from the value and keeps the trace
+/// outside. Used by the per-format adapters whose `type Error` is the envelope.
+///
+/// [`CodecError::of`]: zencodec::CodecError::of
+// Textual `macro_rules!` scoping makes `cerr!` visible to the per-format
+// adapter submodules declared (out-of-line) further down this file.
+macro_rules! cerr {
+    ($e:expr $(,)?) => {
+        zencodec::CodecError::of(::whereat::at!($e))
+    };
+}
+
+/// Wrap a located native [`BitmapError`] result in the shared envelope,
+/// preserving the location trace — the trait-boundary conversion for the
+/// per-format adapters (`native(..)?` becomes `native(..).envelope()?`).
+pub(crate) trait ResultEnvelopeExt<T> {
+    /// Convert `Result<T, At<BitmapError>>` into [`CodecResult<T>`].
+    fn envelope(self) -> CodecResult<T>;
+}
+
+impl<T> ResultEnvelopeExt<T> for crate::Result<T> {
+    #[inline]
+    fn envelope(self) -> CodecResult<T> {
+        self.map_err(zencodec::CodecError::of)
+    }
+}
+
 /// Source encoding details shared by all bitmap formats (PNM, BMP, Farbfeld).
 ///
 /// All three are lossless and have no meaningful quality metric.
@@ -140,7 +186,7 @@ mod tga_codec;
 /// Codec-aware: the reduction can narrow chroma-free RGB(A) down to
 /// grayscale, but QOI and BMP have no grayscale encode path, so a blind
 /// reduction would turn an encodable all-gray RGB buffer into an
-/// `UnsupportedVariant` error. `can_encode` is the codec's own
+/// `UnsupportedPixelFormat` error. `can_encode` is the codec's own
 /// encode-format predicate — the reduced buffer is used only if the codec
 /// can actually encode it; otherwise `None` is returned and the caller
 /// encodes the original (broader) view. Narrowing only ever loses
@@ -217,7 +263,7 @@ pub(crate) fn layout_to_descriptor(layout: crate::PixelLayout) -> PixelDescripto
 
 pub(crate) fn layout_to_pixel_buffer(
     decoded: &crate::decode::DecodeOutput<'_>,
-) -> crate::Result<PixelBuffer> {
+) -> CodecResult<PixelBuffer> {
     use crate::PixelLayout;
     use rgb::AsPixels as _;
 
@@ -312,7 +358,7 @@ pub(crate) fn layout_to_pixel_buffer(
 pub(crate) fn decode_output_from_internal(
     decoded: &crate::decode::DecodeOutput<'_>,
     format: ImageFormat,
-) -> crate::Result<DecodeOutput> {
+) -> CodecResult<DecodeOutput> {
     let has_alpha = matches!(
         decoded.layout,
         crate::PixelLayout::Rgba8 | crate::PixelLayout::Bgra8 | crate::PixelLayout::Rgba16
@@ -547,6 +593,49 @@ mod tests {
         assert_eq!(info.height, 2);
         assert_eq!(info.format, ImageFormat::Pnm);
         assert!(!info.has_alpha);
+    }
+
+    /// **Pattern B proof — the envelope survives `Dyn*` dispatch.** Driving a
+    /// zenbitmaps decoder through the type-erased [`DynDecoderConfig`] surface
+    /// erases its `type Error = At<CodecError>` to `BoxedError`
+    /// (`Box<dyn Error>`). A generic consumer holding only that box still
+    /// recovers the [`ErrorCategory`] *and* the originating codec name via
+    /// [`CodecErrorExt`] — exactly what the bare native `At<BitmapError>` could
+    /// **not** survive once erased (it becomes a `dyn Error` with no shared
+    /// concrete type to downcast to). Under Pattern A both recoveries are
+    /// `None`; the envelope is what makes them `Some`. If this regresses to
+    /// `None`, the trait-boundary conversion is incomplete.
+    ///
+    /// [`DynDecoderConfig`]: zencodec::decode::DynDecoderConfig
+    /// [`ErrorCategory`]: zencodec::ErrorCategory
+    /// [`CodecErrorExt`]: zencodec::CodecErrorExt
+    #[test]
+    fn envelope_category_survives_dyn_erasure() {
+        use zencodec::decode::DynDecoderConfig;
+        use zencodec::{CodecError, CodecErrorExt, ErrorCategory};
+
+        // PNM is always available; drive it entirely through the dyn surface.
+        let cfg = PnmDecoderConfig::new();
+        let dyn_cfg: &dyn DynDecoderConfig = &cfg;
+        let erased = dyn_cfg
+            .dyn_job()
+            .probe(b"not an image")
+            .expect_err("malformed input must fail");
+
+        // Bad magic -> BitmapError::UnrecognizedFormat -> UnsupportedImageType,
+        // recovered from the erased `Box<dyn Error>`.
+        assert_eq!(
+            erased.error_category(),
+            Some(ErrorCategory::UnsupportedImageType),
+            "category must survive dyn erasure (envelope/Pattern B)"
+        );
+        // ...and the originating codec name comes through too, so a generic
+        // consumer can tell zenbitmaps' errors apart without naming BitmapError.
+        assert_eq!(
+            erased.codec_error().and_then(CodecError::codec),
+            Some("zenbitmaps"),
+            "codec name must survive dyn erasure (envelope/Pattern B)"
+        );
     }
 
     #[test]
@@ -970,7 +1059,7 @@ mod tests {
     // Regression (fuzz farm 2026-06): the load-bearing reduction narrows
     // chroma-free RGB down to Gray8, but QOI and BMP have no grayscale
     // encode path. A blind reduction turned an encodable all-gray RGB
-    // buffer into an `UnsupportedVariant` error (the `qoi_with_limits_*`
+    // buffer into an `UnsupportedPixelFormat` error (the `qoi_with_limits_*`
     // tests panicked on `.unwrap()`). The codec-aware `reduce_for_raw_encode`
     // predicate must forbid the →Gray narrowing for these two formats.
     #[cfg(feature = "qoi")]
@@ -1021,7 +1110,7 @@ mod tests {
             100
         ];
         let img = imgref::ImgVec::new(pixels, 10, 10);
-        // Must not fail with UnsupportedVariant (BMP encodes 24-bit RGB,
+        // Must not fail with UnsupportedPixelFormat (BMP encodes 24-bit RGB,
         // not grayscale — the reduction must stay RGB).
         let encoded = BmpEncoderConfig::new()
             .job()

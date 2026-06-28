@@ -162,7 +162,7 @@ pub(crate) fn encode_farbfeld(
             }
         }
         _ => {
-            return Err(at!(BitmapError::UnsupportedVariant(alloc::format!(
+            return Err(at!(BitmapError::UnsupportedPixelFormat(alloc::format!(
                 "cannot encode {:?} as farbfeld (supported: Rgba16, Rgba8, Rgb8, Gray8)",
                 layout
             ))));

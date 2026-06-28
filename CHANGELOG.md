@@ -6,6 +6,44 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **Adopt the `zencodec` `CategorizedError` taxonomy (PR #103).** `BitmapError`
+  now `impl zencodec::CategorizedError` with
+  `codec_name() = Some("zenbitmaps")` and an exhaustive `category()` mapping every
+  variant to one coarse `ErrorCategory`, so consumers route on the category
+  (HTTP status, retry policy, logging) without naming the enum. `Cancelled`
+  delegates to `StopReason` (`Cancelled`/`TimedOut`) and `UnsupportedOperation`
+  delegates to the zencodec cause type. Limits map to the representative
+  `LimitKind` (`DimensionsTooLarge`/`LimitExceeded` → `Pixels`, since both are
+  size/overflow guards and the always-on default pixel cap dominates;
+  `LimitExceeded` is a stringly catch-all whose precise sub-kind lives in the
+  message). `InvalidHeader`/`InvalidData` → `MalformedImage`,
+  `UnexpectedEof` → `UnexpectedEof`, `BufferTooSmall`/`LayoutMismatch` →
+  `InvalidBuffer`, `UnrecognizedFormat` → `UnsupportedImageType`.
+- **The six per-format codec adapters now return the shared
+  `whereat::At<zencodec::CodecError>` envelope (Pattern B) at the `zencodec`
+  trait boundary**, instead of the native `At<BitmapError>`. The envelope carries
+  the `ErrorCategory` + codec name as data, so a generic consumer recovers them
+  *through `Dyn*` dispatch* — after `DynDecoderConfig`/`DynEncoderConfig` erases
+  the concrete error to `Box<dyn Error>`, the category and `Some("zenbitmaps")`
+  are still recoverable via `CodecErrorExt` (`error_category()` / `codec_error()`),
+  which the bare `At<BitmapError>` could not survive once erased. A
+  `From<BitmapError> for At<CodecError>` bridge (`CodecError::of` + `start_at`)
+  drives the conversion; `BitmapError` is unchanged and stays the **native** error
+  of the crate's bare `decode()`/`encode()` API (`crate::Result` is still
+  `At<BitmapError>`) and the detail + category source behind the envelope. A
+  `Dyn`-dispatch test asserts the category + codec name survive erasure (the proof
+  the native error could not pass). (#18)
+- New `BitmapError::UnsupportedPixelFormat(String)` variant, split out from the
+  encode-side cases of `UnsupportedVariant`: it is the "the caller's pixel
+  buffer format can't be encoded to this output format" negotiation failure
+  (mapping to `ErrorCategory::UnsupportedPixelFormat`), distinct from the
+  residual `UnsupportedVariant` "a feature within a recognized format isn't
+  supported" (→ `UnsupportedImageFeature`). Wired at all 17 encode-side
+  construction sites (PNM/BMP/QOI/TGA/HDR/farbfeld encoders + the `zencodec`
+  encode adapters); the 14 encode-layout-rejection tests were updated to match
+  the narrower variant. Additive — `UnsupportedVariant` is retained for the
+  decode-side feature cases, so this is non-breaking on the `#[non_exhaustive]`
+  enum.
 - Honor `zencodec::AllocPreference` (3-mode, per-site) at untrusted decode
   allocations, and implement `estimate_decode_resources` for all six bitmap
   `DecoderConfig`s. Each format's full-image output buffer (sized from the
@@ -15,8 +53,9 @@ All notable changes to this project will be documented in this file.
   `vec!`. `ResourceLimits::prefer_fallible_allocations` overrides every site at
   the zencodec decode boundary (`Fallible`/`Infallible` force one path,
   `CodecDefault` keeps each site's default); the bare `decode()` API is
-  unchanged. New crate-local `AllocPref` (mirror of `AllocPreference`, so the
-  always-compiled decode pipeline needn't name the optional dep) + `alloc_util`
+  unchanged. New crate-local `AllocPref` (mirror of `AllocPreference`, keeping
+  the always-compiled decode pipeline decoupled from the codec-boundary type) +
+  `alloc_util`
   helpers. `estimate_decode_resources` delegates to a shared
   `codec::trivial_decode_resources`: working set ≈ output buffer only
   (`ThreadingInformation::SERIAL`, core-adjusted), structural not calibrated.
@@ -31,6 +70,21 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- **`zencodec` is now a required, always-on dependency (was an optional cargo
+  feature).** The trait integration — `EncoderConfig`/`DecoderConfig` adapters,
+  streaming decode/encode, probe, CICP, and the `CategorizedError` taxonomy — is
+  compiled unconditionally; the `zencodec` cargo feature is removed (no more
+  `--features zencodec`). `zencodec` is `#![no_std] + alloc`, so this imposes no
+  `std` requirement and the `no_std`/wasm builds are unaffected (verified
+  `cargo build --target wasm32-unknown-unknown`). The `zenpixels`,
+  `zenpixels-convert`, `imgref`, and `rgb` crates the adapters use directly are
+  now unconditional dependencies; the `rgb`/`imgref` cargo features remain but
+  only gate the extra typed-pixel convenience surface on the bare decode/encode
+  API.
+- deps: TEMP `[patch.crates-io] zencodec = { git, branch =
+  "cancellation-classification-99" }` to pull the unreleased `CategorizedError`
+  taxonomy (PR #103). Remove this patch and bump the `zencodec` version
+  dependency once 0.1.26 is published.
 - deps: migrate to published zencodec 0.1.24 estimate API; drop the temporary
   `[patch.crates-io] zencodec = { git, rev = "0f71295" }` pin (the `estimate` API
   is now on crates.io). The shared `codec::trivial_encode_resources` helper follows

@@ -321,8 +321,8 @@ let status = match decode(webp_or_bmp_bytes, Unstoppable) {
         BitmapError::DimensionsTooLarge { .. }
         | BitmapError::LimitExceeded(_) => 413,        // Payload Too Large
         BitmapError::UnrecognizedFormat
-        | BitmapError::UnsupportedVariant(_) => 415,   // Unsupported Media Type
-        // (with `--features zencodec`, also map `BitmapError::UnsupportedOperation(_) => 415`)
+        | BitmapError::UnsupportedVariant(_)
+        | BitmapError::UnsupportedOperation(_) => 415, // Unsupported Media Type
         BitmapError::Cancelled(_) => 499,              // client closed request
         // malformed input: InvalidHeader, InvalidData, UnexpectedEof, ...
         _ => 400,                                      // Bad Request
@@ -346,9 +346,18 @@ directly (`tracing::error!("{e}")`) records where it came from.
 | `simd` | SIMD-accelerated BGR↔RGB swizzle via [garb](https://lib.rs/crates/garb) |
 | `rgb` | Typed pixel API (`RGB8`, `RGBA8`, `as_pixels()`, `encode_*_pixels()`) |
 | `imgref` | 2D buffer API (`ImgVec`/`ImgRef`, `as_imgref()`, `decode_into()`) — implies `rgb` |
-| `zencodec` | zencodec trait integration: streaming decode/encode, probe, CICP (implies `rgb` + `imgref`) |
 | `std` | Enable `std` support (not required — `no_std` + `alloc` by default) |
 | `all` | All format + pixel API features |
+
+The [zencodec] trait integration (`EncoderConfig`/`DecoderConfig` adapters,
+streaming decode/encode, probe, CICP, the `CategorizedError` taxonomy) is
+**always on** — `zencodec` is a required dependency. It is `#![no_std] + alloc`,
+so it adds no `std` requirement and stays available on every target, wasm
+included. Those trait adapters return the shared `whereat::At<zencodec::CodecError>`
+envelope (not the native `At<BitmapError>`), so a generic consumer recovers the
+`ErrorCategory` + codec name via `zencodec::CodecErrorExt` even after `Dyn*`
+dispatch erases the concrete error to `Box<dyn Error>`. The bare `decode*`/
+`encode*` calls below keep returning the native `At<BitmapError>`.
 
 ## API
 

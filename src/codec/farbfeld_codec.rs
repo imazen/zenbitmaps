@@ -1,5 +1,5 @@
 use super::*;
-use whereat::{At, at};
+use whereat::At;
 
 use crate::alloc_util::AllocPref;
 
@@ -67,7 +67,7 @@ impl FarbfeldEncoderConfig {
 }
 
 impl zencodec::encode::EncoderConfig for FarbfeldEncoderConfig {
-    type Error = At<BitmapError>;
+    type Error = At<zencodec::CodecError>;
     type Job = FarbfeldEncodeJob;
 
     fn format() -> ImageFormat {
@@ -114,7 +114,7 @@ pub struct FarbfeldEncodeJob {
 }
 
 impl zencodec::encode::EncodeJob for FarbfeldEncodeJob {
-    type Error = At<BitmapError>;
+    type Error = At<zencodec::CodecError>;
     type Enc = FarbfeldEncoder;
     type AnimationFrameEnc = ();
 
@@ -132,7 +132,7 @@ impl zencodec::encode::EncodeJob for FarbfeldEncodeJob {
         self
     }
 
-    fn encoder(self) -> crate::Result<FarbfeldEncoder> {
+    fn encoder(self) -> CodecResult<FarbfeldEncoder> {
         Ok(FarbfeldEncoder {
             config: self.config,
             limits: self.limits,
@@ -140,8 +140,8 @@ impl zencodec::encode::EncodeJob for FarbfeldEncodeJob {
         })
     }
 
-    fn animation_frame_encoder(self) -> crate::Result<()> {
-        Err(at!(BitmapError::from(
+    fn animation_frame_encoder(self) -> CodecResult<()> {
+        Err(cerr!(BitmapError::from(
             zencodec::UnsupportedOperation::AnimationEncode,
         )))
     }
@@ -174,13 +174,13 @@ impl FarbfeldEncoder {
 }
 
 impl zencodec::encode::Encoder for FarbfeldEncoder {
-    type Error = At<BitmapError>;
+    type Error = At<zencodec::CodecError>;
 
-    fn reject(op: zencodec::UnsupportedOperation) -> At<BitmapError> {
-        at!(BitmapError::from(op))
+    fn reject(op: zencodec::UnsupportedOperation) -> At<zencodec::CodecError> {
+        cerr!(BitmapError::from(op))
     }
 
-    fn encode(self, pixels: PixelSlice<'_>) -> crate::Result<EncodeOutput> {
+    fn encode(self, pixels: PixelSlice<'_>) -> CodecResult<EncodeOutput> {
         let stop: &dyn Stop = match &self.stop {
             Some(s) => s,
             None => &enough::Unstoppable,
@@ -190,7 +190,7 @@ impl zencodec::encode::Encoder for FarbfeldEncoder {
         let h = pixels.rows();
 
         if let Some(limits) = self.effective_limits() {
-            limits.check(w, h)?;
+            limits.check(w, h).envelope()?;
         }
 
         let bytes = pixels.contiguous_bytes();
@@ -200,14 +200,14 @@ impl zencodec::encode::Encoder for FarbfeldEncoder {
             (ChannelType::U8, ChannelLayout::Rgb) => crate::PixelLayout::Rgb8,
             (ChannelType::U8, ChannelLayout::Gray) => crate::PixelLayout::Gray8,
             _ => {
-                return Err(at!(BitmapError::UnsupportedVariant(alloc::format!(
+                return Err(cerr!(BitmapError::UnsupportedPixelFormat(alloc::format!(
                     "farbfeld encode: unsupported pixel format: {:?}",
                     desc
                 ))));
             }
         };
 
-        let encoded = crate::farbfeld::encode(&bytes, w, h, layout, stop)?;
+        let encoded = crate::farbfeld::encode(&bytes, w, h, layout, stop).envelope()?;
         Ok(EncodeOutput::new(encoded, ImageFormat::Farbfeld))
     }
 }
@@ -234,7 +234,7 @@ impl FarbfeldDecoderConfig {
 }
 
 impl zencodec::decode::DecoderConfig for FarbfeldDecoderConfig {
-    type Error = At<BitmapError>;
+    type Error = At<zencodec::CodecError>;
     type Job<'a> = FarbfeldDecodeJob;
 
     fn formats() -> &'static [ImageFormat] {
@@ -285,10 +285,10 @@ pub struct FarbfeldDecodeJob {
 }
 
 impl<'a> zencodec::decode::DecodeJob<'a> for FarbfeldDecodeJob {
-    type Error = At<BitmapError>;
+    type Error = At<zencodec::CodecError>;
     type Dec = FarbfeldDecoder<'a>;
-    type StreamDec = zencodec::Unsupported<At<BitmapError>>;
-    type AnimationFrameDec = zencodec::Unsupported<At<BitmapError>>;
+    type StreamDec = zencodec::Unsupported<At<zencodec::CodecError>>;
+    type AnimationFrameDec = zencodec::Unsupported<At<zencodec::CodecError>>;
 
     fn with_stop(mut self, stop: zencodec::StopToken) -> Self {
         self.stop = Some(stop);
@@ -307,8 +307,8 @@ impl<'a> zencodec::decode::DecodeJob<'a> for FarbfeldDecodeJob {
         self
     }
 
-    fn probe(&self, data: &[u8]) -> crate::Result<ImageInfo> {
-        let (width, height) = crate::farbfeld::decode::parse_header(data)?;
+    fn probe(&self, data: &[u8]) -> CodecResult<ImageInfo> {
+        let (width, height) = crate::farbfeld::decode::parse_header(data).envelope()?;
         Ok(ImageInfo::new(width, height, ImageFormat::Farbfeld)
             .with_alpha(true)
             .with_bit_depth(16)
@@ -317,8 +317,8 @@ impl<'a> zencodec::decode::DecodeJob<'a> for FarbfeldDecodeJob {
             .with_source_encoding_details(BitmapSourceEncoding))
     }
 
-    fn output_info(&self, data: &[u8]) -> crate::Result<OutputInfo> {
-        let (width, height) = crate::farbfeld::decode::parse_header(data)?;
+    fn output_info(&self, data: &[u8]) -> CodecResult<OutputInfo> {
+        let (width, height) = crate::farbfeld::decode::parse_header(data).envelope()?;
         Ok(OutputInfo::full_decode(width, height, PixelDescriptor::RGBA16_SRGB).with_alpha(true))
     }
 
@@ -326,11 +326,11 @@ impl<'a> zencodec::decode::DecodeJob<'a> for FarbfeldDecodeJob {
         self,
         data: Cow<'a, [u8]>,
         _preferred: &[PixelDescriptor],
-    ) -> crate::Result<FarbfeldDecoder<'a>> {
+    ) -> CodecResult<FarbfeldDecoder<'a>> {
         if let Some(max) = self.max_input_bytes
             && data.len() as u64 > max
         {
-            return Err(at!(BitmapError::LimitExceeded(alloc::format!(
+            return Err(cerr!(BitmapError::LimitExceeded(alloc::format!(
                 "input size {} exceeds limit {max}",
                 data.len()
             ))));
@@ -351,7 +351,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for FarbfeldDecodeJob {
         preferred: &[PixelDescriptor],
     ) -> Result<OutputInfo, Self::Error> {
         zencodec::helpers::copy_decode_to_sink(self, data, sink, preferred, |e| {
-            at!(BitmapError::InvalidData(e.to_string()))
+            cerr!(BitmapError::InvalidData(e.to_string()))
         })
     }
 
@@ -359,8 +359,8 @@ impl<'a> zencodec::decode::DecodeJob<'a> for FarbfeldDecodeJob {
         self,
         _data: Cow<'a, [u8]>,
         _preferred: &[PixelDescriptor],
-    ) -> crate::Result<zencodec::Unsupported<At<BitmapError>>> {
-        Err(at!(BitmapError::from(
+    ) -> CodecResult<zencodec::Unsupported<At<zencodec::CodecError>>> {
+        Err(cerr!(BitmapError::from(
             zencodec::UnsupportedOperation::RowLevelDecode,
         )))
     }
@@ -369,8 +369,8 @@ impl<'a> zencodec::decode::DecodeJob<'a> for FarbfeldDecodeJob {
         self,
         _data: Cow<'a, [u8]>,
         _preferred: &[PixelDescriptor],
-    ) -> crate::Result<zencodec::Unsupported<At<BitmapError>>> {
-        Err(at!(BitmapError::from(
+    ) -> CodecResult<zencodec::Unsupported<At<zencodec::CodecError>>> {
+        Err(cerr!(BitmapError::from(
             zencodec::UnsupportedOperation::AnimationDecode,
         )))
     }
@@ -394,16 +394,17 @@ impl FarbfeldDecoder<'_> {
 }
 
 impl zencodec::decode::Decode for FarbfeldDecoder<'_> {
-    type Error = At<BitmapError>;
+    type Error = At<zencodec::CodecError>;
 
-    fn decode(self) -> crate::Result<DecodeOutput> {
+    fn decode(self) -> CodecResult<DecodeOutput> {
         let limits = self.effective_limits();
         let stop: &dyn Stop = match &self.stop {
             Some(s) => s,
             None => &enough::Unstoppable,
         };
         let decoded =
-            crate::farbfeld::decode_with_alloc_pref(&self.data, limits, self.alloc_pref, stop)?;
+            crate::farbfeld::decode_with_alloc_pref(&self.data, limits, self.alloc_pref, stop)
+                .envelope()?;
         decode_output_from_internal(&decoded, ImageFormat::Farbfeld)
     }
 }

@@ -88,7 +88,7 @@ pub(crate) fn encode_qoi(
             (Some(rgba), rapid_qoi::Colors::SrgbLinA)
         }
         _ => {
-            return Err(whereat::at!(BitmapError::UnsupportedVariant(
+            return Err(whereat::at!(BitmapError::UnsupportedPixelFormat(
                 alloc::format!(
                     "cannot encode {layout:?} as QOI (supported: Rgb8, Rgba8, Bgr8, Bgra8)"
                 )
