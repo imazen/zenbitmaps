@@ -1,4 +1,6 @@
-# zenbitmaps [![CI](https://img.shields.io/github/actions/workflow/status/imazen/zenbitmaps/ci.yml?style=flat-square&label=CI)](https://github.com/imazen/zenbitmaps/actions/workflows/ci.yml) [![crates.io](https://img.shields.io/crates/v/zenbitmaps?style=flat-square)](https://crates.io/crates/zenbitmaps) [![lib.rs](https://img.shields.io/crates/v/zenbitmaps?style=flat-square&label=lib.rs&color=blue)](https://lib.rs/crates/zenbitmaps) [![docs.rs](https://img.shields.io/docsrs/zenbitmaps?style=flat-square)](https://docs.rs/zenbitmaps) [![MSRV](https://img.shields.io/badge/MSRV-1.93-blue?style=flat-square)](https://doc.rust-lang.org/cargo/reference/manifest.html#the-rust-version-field) [![license](https://img.shields.io/crates/l/zenbitmaps?style=flat-square)](#license)
+<!-- GENERATED FROM README.md by zenutils gen-readme-crates.sh — DO NOT EDIT. -->
+
+# zenbitmaps
 
 zenbitmaps is a pure-Rust decoder and encoder for the simple, lossless bitmap
 formats — PNM (PBM/PGM/PPM/PAM/PFM), farbfeld, BMP, QOI, TGA, and Radiance HDR.
@@ -392,26 +394,6 @@ All public functions are flat, one-shot calls at crate root.
 - `At<E>` — `whereat` location-tracking error wrapper (re-export);
   `Result<T> = Result<T, At<BitmapError>>` is the crate's result alias
 
-<!-- crates.io:skip-start -->
-## Performance
-
-`benches/codecs.rs` measures decode and encode throughput for all six codecs on a
-1000×1000 image with [zenbench](https://github.com/imazen/zenbench): interleaved
-A/B timing, single-threaded, every buffer already in memory (no I/O in the timed
-region), output consumed via `black_box`. PNM decode of maxval-255 input is
-zero-copy (a borrowed slice — no allocation), so it reports memcpy-class numbers;
-TGA decode uses memcpy + a batch BGR↔RGB swizzle for 24/32-bit uncompressed
-images, and the `simd` feature accelerates that swizzle via
-[garb](https://lib.rs/crates/garb) on the TGA and QOI encode paths.
-
-```bash
-git clone https://github.com/imazen/zenbitmaps && cd zenbitmaps
-cargo bench --bench codecs --all-features     # build WITHOUT -C target-cpu=native
-```
-
-Methodology, environment, and per-machine reproduction:
-[benchmarks/README.md](https://github.com/imazen/zenbitmaps/blob/main/benchmarks/README.md).
-<!-- crates.io:skip-end -->
 
 ## Credits
 

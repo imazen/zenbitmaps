@@ -103,6 +103,14 @@ All notable changes to this project will be documented in this file.
 
 ### Docs
 
+- README: overhauled to the zen* house conventions — standardized badge row
+  (CI/crates.io/lib.rs/docs.rs/MSRV/license, flat-square, no `branch=`), a
+  `## Quick start`, the rendered crosslink footer, and a generated, badge-free
+  `README.crates.md` (`readme = "README.crates.md"`) so the GitHub and crates.io
+  surfaces can't drift. Replaced the headline GiB/s table with a support matrix
+  plus `benchmarks/README.md` methodology (no unverified numbers carried over),
+  bumped the documented dependency version to 0.2, and corrected the QOI credit
+  to a vendored rapid-qoi core.
 - README: document the byte conventions that were previously undocumented and
   could cause silent pixel corruption in a downstream renderer — PFM row order
   (decoder normalizes the on-disk bottom-to-top scanlines to top-down) and
