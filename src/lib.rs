@@ -190,7 +190,6 @@ mod bmp;
 #[cfg(feature = "rgb")]
 mod pixel_traits;
 
-#[cfg(feature = "zencodec")]
 mod codec;
 
 // zennode node definitions — disabled until zennode is published to crates.io
@@ -212,33 +211,31 @@ pub use bmp::{BmpMetadata, BmpPermissiveness};
 #[cfg(feature = "rgb")]
 pub use pixel_traits::{DecodePixel, EncodePixel};
 
-#[cfg(feature = "zencodec")]
 pub use codec::{
     PnmDecodeJob, PnmDecoder, PnmDecoderConfig, PnmEncodeJob, PnmEncoder, PnmEncoderConfig,
 };
 
-#[cfg(all(feature = "zencodec", feature = "bmp"))]
+#[cfg(feature = "bmp")]
 pub use codec::{
     BmpDecodeJob, BmpDecoder, BmpDecoderConfig, BmpEncodeJob, BmpEncoder, BmpEncoderConfig,
 };
 
-#[cfg(feature = "zencodec")]
 pub use codec::{
     FarbfeldDecodeJob, FarbfeldDecoder, FarbfeldDecoderConfig, FarbfeldEncodeJob, FarbfeldEncoder,
     FarbfeldEncoderConfig,
 };
 
-#[cfg(all(feature = "zencodec", feature = "qoi"))]
+#[cfg(feature = "qoi")]
 pub use codec::{
     QoiDecodeJob, QoiDecoder, QoiDecoderConfig, QoiEncodeJob, QoiEncoder, QoiEncoderConfig,
 };
 
-#[cfg(all(feature = "zencodec", feature = "hdr"))]
+#[cfg(feature = "hdr")]
 pub use codec::{
     HdrDecodeJob, HdrDecoder, HdrDecoderConfig, HdrEncodeJob, HdrEncoder, HdrEncoderConfig,
 };
 
-#[cfg(all(feature = "zencodec", feature = "tga"))]
+#[cfg(feature = "tga")]
 pub use codec::{
     TgaDecodeJob, TgaDecoder, TgaDecoderConfig, TgaEncodeJob, TgaEncoder, TgaEncoderConfig,
 };

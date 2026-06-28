@@ -7,7 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - **Adopt the `zencodec` `CategorizedError` taxonomy (PR #103).** `BitmapError`
-  now `impl zencodec::CategorizedError` (gated on the `zencodec` feature) with
+  now `impl zencodec::CategorizedError` with
   `codec_name() = Some("zenbitmaps")` and an exhaustive `category()` mapping every
   variant to one coarse `ErrorCategory`, so consumers route on the category
   (HTTP status, retry policy, logging) without naming the enum. `Cancelled`
@@ -39,8 +39,9 @@ All notable changes to this project will be documented in this file.
   `vec!`. `ResourceLimits::prefer_fallible_allocations` overrides every site at
   the zencodec decode boundary (`Fallible`/`Infallible` force one path,
   `CodecDefault` keeps each site's default); the bare `decode()` API is
-  unchanged. New crate-local `AllocPref` (mirror of `AllocPreference`, so the
-  always-compiled decode pipeline needn't name the optional dep) + `alloc_util`
+  unchanged. New crate-local `AllocPref` (mirror of `AllocPreference`, keeping
+  the always-compiled decode pipeline decoupled from the codec-boundary type) +
+  `alloc_util`
   helpers. `estimate_decode_resources` delegates to a shared
   `codec::trivial_decode_resources`: working set ≈ output buffer only
   (`ThreadingInformation::SERIAL`, core-adjusted), structural not calibrated.
@@ -55,6 +56,17 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- **`zencodec` is now a required, always-on dependency (was an optional cargo
+  feature).** The trait integration — `EncoderConfig`/`DecoderConfig` adapters,
+  streaming decode/encode, probe, CICP, and the `CategorizedError` taxonomy — is
+  compiled unconditionally; the `zencodec` cargo feature is removed (no more
+  `--features zencodec`). `zencodec` is `#![no_std] + alloc`, so this imposes no
+  `std` requirement and the `no_std`/wasm builds are unaffected (verified
+  `cargo build --target wasm32-unknown-unknown`). The `zenpixels`,
+  `zenpixels-convert`, `imgref`, and `rgb` crates the adapters use directly are
+  now unconditional dependencies; the `rgb`/`imgref` cargo features remain but
+  only gate the extra typed-pixel convenience surface on the bare decode/encode
+  API.
 - deps: TEMP `[patch.crates-io] zencodec = { git, branch =
   "cancellation-classification-99" }` to pull the unreleased `CategorizedError`
   taxonomy (PR #103). Remove this patch and bump the `zencodec` version

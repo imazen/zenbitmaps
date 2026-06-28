@@ -6,9 +6,7 @@
 //! `stride·height` overran the short data (OOB panic in `PixelBuffer::as_slice`,
 //! reached via `zencodecs::push_decode`), and 16-bit precision was silently lost.
 //!
-//! Exercises the `zencodec` decode layer (`PnmDecoderConfig`), gated behind the
-//! `zencodec` feature.
-#![cfg(feature = "zencodec")]
+//! Exercises the always-on zencodec decode layer (`PnmDecoderConfig`).
 
 use std::borrow::Cow;
 

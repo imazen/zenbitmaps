@@ -36,8 +36,11 @@ jobs:
       - name: Test (default)
         run: cargo test
 
-      - name: Test (zencodec feature)
-        run: cargo test --features zencodec
+      # zencodec is an always-on dependency, so the default run already exercises
+      # its PNM/farbfeld adapters; `all` adds every format codec adapter + typed
+      # pixel API on top.
+      - name: Test (all features)
+        run: cargo test --features all
 
       - name: Test (bmp feature)
         run: cargo test --features bmp
@@ -64,9 +67,6 @@ jobs:
 
       - name: Check (imgref)
         run: cargo check --features imgref
-
-      - name: Check (zencodec)
-        run: cargo check --features zencodec
 
       - name: Check (all)
         run: cargo check --features all

@@ -44,7 +44,7 @@ pub enum BitmapError {
     /// Distinct from [`UnsupportedVariant`](Self::UnsupportedVariant) (a feature
     /// within a *decoded* image's format): this is a negotiation failure on the
     /// caller's pixel descriptor at encode time, and maps to the
-    /// `UnsupportedPixelFormat` error category under the `zencodec` feature.
+    /// `UnsupportedPixelFormat` category in the zencodec error taxonomy.
     #[error("unsupported pixel format: {0}")]
     UnsupportedPixelFormat(String),
 
@@ -73,7 +73,6 @@ pub enum BitmapError {
     Cancelled(StopReason),
 
     /// Unsupported codec operation.
-    #[cfg(feature = "zencodec")]
     #[error(transparent)]
     UnsupportedOperation(#[from] zencodec::UnsupportedOperation),
 }
@@ -87,7 +86,6 @@ impl From<StopReason> for BitmapError {
 // Codec-agnostic error taxonomy (zencodec PR #103). Maps every `BitmapError`
 // variant to exactly one coarse `ErrorCategory` so consumers can route on the
 // category (HTTP status, retry policy, logging) without naming this enum.
-#[cfg(feature = "zencodec")]
 impl zencodec::CategorizedError for BitmapError {
     fn codec_name(&self) -> Option<&'static str> {
         Some("zenbitmaps")
@@ -147,10 +145,8 @@ impl zencodec::CategorizedError for BitmapError {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(feature = "zencodec")]
     use super::*;
 
-    #[cfg(feature = "zencodec")]
     #[test]
     fn error_category_mapping() {
         use zencodec::{CategorizedError, ErrorCategory as C, LimitKind as L};

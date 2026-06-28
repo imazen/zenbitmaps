@@ -20,18 +20,23 @@ include = [
 [dependencies]
 # Core (always available)
 enough = "0.4.3"
-imgref = { version = "1.12", default-features = false, optional = true }
-rgb = { version = "0.8", default-features = false, features = ["as-bytes"], optional = true }
+# zencodec is an always-on integration: it is `#![no_std] + alloc`, so it adds
+# no std requirement and compiles on every target (incl. wasm32). That makes
+# these four its unconditional companions — the codec adapters use the
+# `rgb`/`imgref` pixel types and the `zenpixels`/`zenpixels-convert` descriptor
+# machinery directly, so they can no longer be optional.
+imgref = { version = "1.12", default-features = false }
+rgb = { version = "0.8", default-features = false, features = ["as-bytes"] }
 thiserror = { version = "2.0", default-features = false }
 whereat = { version = "0.1.5", default-features = false }
-zencodec = { version = "0.1.25", optional = true }
+zencodec = { version = "0.1.25" }
 # zennode is not yet published; uncomment when it's on crates.io
 # zennode = { path = "../zennode/zennode", default-features = false, features = ["derive"], optional = true }
-zenpixels = { version = "0.2.13", default-features = false, features = ["imgref"], optional = true }
+zenpixels = { version = "0.2.13", default-features = false, features = ["imgref"] }
 # Load-bearing descriptor narrowing for the zencodec encode path — raw
 # formats pay full price for dead lanes, so the reduction wins more here
 # than for any entropy-coded codec.
-zenpixels-convert = { version = "0.2.13", default-features = false, optional = true }
+zenpixels-convert = { version = "0.2.13", default-features = false }
 # SIMD acceleration
 archmage = { version = "0.9.15", default-features = false, optional = true }
 garb = { version = "0.2.5", default-features = false, optional = true }
@@ -55,12 +60,12 @@ tga = []   # TGA (Targa) format support
 qoi = []  # QOI codec (vendored core in src/qoi/rapid_qoi)
 simd = ["dep:garb", "dep:archmage"]  # SIMD acceleration
 
-# Typed pixel support
-rgb = ["dep:rgb"]              # RGB8, RGBA8 etc. typed pixel encode/decode
-imgref = ["dep:imgref", "rgb"] # ImgVec/ImgRef 2D buffer support (implies rgb)
-
-# zencodec trait integration
-zencodec = ["dep:zencodec", "dep:zenpixels", "dep:zenpixels-convert", "imgref", "rgb"]
+# Typed pixel support. The `rgb`/`imgref` crates are always linked now (the
+# always-on zencodec codec adapters use them directly); these features only
+# gate the extra typed-pixel convenience surface (`RGB8`, `ImgVec` re-exports,
+# `EncodePixel`/`DecodePixel`) on the bare decode/encode API.
+rgb = []          # RGB8, RGBA8 etc. typed pixel encode/decode
+imgref = ["rgb"]  # ImgVec/ImgRef 2D buffer support (implies rgb)
 
 # zennode node definitions (EncodeBmp schema with RIAPI keys)
 # Disabled until zennode is published to crates.io
