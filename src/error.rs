@@ -83,6 +83,33 @@ impl From<StopReason> for BitmapError {
     }
 }
 
+/// Bridge a native [`BitmapError`] into the shared zencodec error envelope
+/// (`At<CodecError>`) — the error type the per-format codec adapters return at
+/// the `zencodec` trait boundary (Pattern B, the envelope).
+///
+/// `.start_at()` begins the location trace; [`CodecError::of`] then reads the
+/// [`category`](zencodec::CategorizedError::category) *and* the
+/// [`codec_name`](zencodec::CategorizedError::codec_name) from the value, leaving
+/// the `At` on the **outside** (`At<CodecError>`, never an `At<E>` buried in the
+/// detail). With this in place, `?` on any `Result<_, BitmapError>` auto-wraps
+/// into the envelope and `BitmapError::X.into()` yields a located envelope error.
+///
+/// This is what lets a generic consumer recover the `ErrorCategory` *and* the
+/// originating codec name **through `Dyn*` dispatch** — after dyn dispatch erases
+/// the concrete error to a `Box<dyn Error>`, the bare native `At<BitmapError>` is
+/// just a `dyn Error` with no shared concrete type to downcast to, whereas the
+/// envelope's `At<CodecError>` is recoverable via
+/// [`CodecErrorExt`](zencodec::CodecErrorExt).
+///
+/// [`CodecError::of`]: zencodec::CodecError::of
+impl From<BitmapError> for At<zencodec::CodecError> {
+    #[track_caller]
+    fn from(e: BitmapError) -> Self {
+        use whereat::ErrorAtExt;
+        zencodec::CodecError::of(e.start_at())
+    }
+}
+
 // Codec-agnostic error taxonomy (zencodec PR #103). Maps every `BitmapError`
 // variant to exactly one coarse `ErrorCategory` so consumers can route on the
 // category (HTTP status, retry policy, logging) without naming this enum.

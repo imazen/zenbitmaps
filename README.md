@@ -353,7 +353,11 @@ The [zencodec] trait integration (`EncoderConfig`/`DecoderConfig` adapters,
 streaming decode/encode, probe, CICP, the `CategorizedError` taxonomy) is
 **always on** — `zencodec` is a required dependency. It is `#![no_std] + alloc`,
 so it adds no `std` requirement and stays available on every target, wasm
-included.
+included. Those trait adapters return the shared `whereat::At<zencodec::CodecError>`
+envelope (not the native `At<BitmapError>`), so a generic consumer recovers the
+`ErrorCategory` + codec name via `zencodec::CodecErrorExt` even after `Dyn*`
+dispatch erases the concrete error to `Box<dyn Error>`. The bare `decode*`/
+`encode*` calls below keep returning the native `At<BitmapError>`.
 
 ## API
 

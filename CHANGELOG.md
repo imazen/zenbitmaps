@@ -19,6 +19,20 @@ All notable changes to this project will be documented in this file.
   message). `InvalidHeader`/`InvalidData` → `MalformedImage`,
   `UnexpectedEof` → `UnexpectedEof`, `BufferTooSmall`/`LayoutMismatch` →
   `InvalidBuffer`, `UnrecognizedFormat` → `UnsupportedImageType`.
+- **The six per-format codec adapters now return the shared
+  `whereat::At<zencodec::CodecError>` envelope (Pattern B) at the `zencodec`
+  trait boundary**, instead of the native `At<BitmapError>`. The envelope carries
+  the `ErrorCategory` + codec name as data, so a generic consumer recovers them
+  *through `Dyn*` dispatch* — after `DynDecoderConfig`/`DynEncoderConfig` erases
+  the concrete error to `Box<dyn Error>`, the category and `Some("zenbitmaps")`
+  are still recoverable via `CodecErrorExt` (`error_category()` / `codec_error()`),
+  which the bare `At<BitmapError>` could not survive once erased. A
+  `From<BitmapError> for At<CodecError>` bridge (`CodecError::of` + `start_at`)
+  drives the conversion; `BitmapError` is unchanged and stays the **native** error
+  of the crate's bare `decode()`/`encode()` API (`crate::Result` is still
+  `At<BitmapError>`) and the detail + category source behind the envelope. A
+  `Dyn`-dispatch test asserts the category + codec name survive erasure (the proof
+  the native error could not pass). (#18)
 - New `BitmapError::UnsupportedPixelFormat(String)` variant, split out from the
   encode-side cases of `UnsupportedVariant`: it is the "the caller's pixel
   buffer format can't be encoded to this output format" negotiation failure
