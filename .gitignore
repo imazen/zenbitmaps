@@ -70,3 +70,5 @@ Cargo.toml.original.txt
 
 # Multi-agent coordination marker (never commit)
 .workongoing
+
+.jj/

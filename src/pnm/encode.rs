@@ -46,19 +46,18 @@ pub(crate) fn encode_pnm(
     }
 }
 
-/// Copy `src` into `out` in row bands, polling `stop` between bands.
+/// Copy `src` into `out` in bounded chunks, polling `stop` between chunks.
 ///
 /// A one-shot `extend_from_slice` of a 100+ MiB payload is an uninterruptible
-/// allocation+memcpy span; banding at the 16-row cadence used by the swizzle
-/// arms keeps poll latency bounded. `row_bytes` should be the source row
-/// stride so bands never split a pixel row.
+/// allocation+memcpy span. Use byte-sized bands so narrow images do not
+/// trigger thousands of tiny copies and wide rows still have bounded bands.
 fn extend_copy_polled(
     out: &mut Vec<u8>,
     src: &[u8],
     row_bytes: usize,
     stop: &dyn Stop,
 ) -> crate::Result<()> {
-    let band = row_bytes.saturating_mul(16).max(1);
+    let band = row_bytes.saturating_mul(16).clamp(64 * 1024, 1024 * 1024);
     for chunk in src.chunks(band) {
         stop.check()
             .map_err(|r| whereat::at!(BitmapError::from(r)))?;
@@ -210,9 +209,9 @@ fn encode_ppm(
             }
         }
         PixelLayout::Gray8 => {
-            // Row-band slice writes; gray_to_rgb_into is per-pixel
-            // independent, so banding at the 16-row check cadence is exact.
-            let band = w.saturating_mul(16).max(1);
+            // Each gray sample is independent. Bound the work in pixels,
+            // including narrow images where a row band would be tiny.
+            let band = w.saturating_mul(16).clamp(16 * 1024, 256 * 1024);
             for src_band in pixels[..w * h].chunks(band) {
                 stop.check()
                     .map_err(|r| whereat::at!(BitmapError::from(r)))?;
@@ -384,4 +383,28 @@ fn encode_pfm(
     }
 
     Ok(out)
+}
+
+#[cfg(test)]
+mod copy_band_tests {
+    use super::*;
+    use core::sync::atomic::{AtomicUsize, Ordering};
+
+    struct Count(AtomicUsize);
+    impl Stop for Count {
+        fn check(&self) -> Result<(), enough::StopReason> {
+            self.0.fetch_add(1, Ordering::Relaxed);
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn narrow_images_use_bulk_copies() {
+        let input = vec![19; 64 * 1024];
+        let mut output = Vec::with_capacity(input.len());
+        let stop = Count(AtomicUsize::new(0));
+        extend_copy_polled(&mut output, &input, 1, &stop).unwrap();
+        assert_eq!(output, input);
+        assert_eq!(stop.0.load(Ordering::Relaxed), 1);
+    }
 }
