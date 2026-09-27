@@ -48,6 +48,21 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **PNM encode: 113 ms cancellation blind spot in whole-buffer payload
+  copies.** `encode_pam`'s native-order arm (Rgb8/Rgba8/Gray8/Gray16 input
+  already in file order) and the `encode_pgm` Gray8 / `encode_ppm` Rgb8 arms
+  emitted the pixel payload with a single `extend_from_slice` — for an 8K RGBA
+  PAM that is a ~127 MiB uninterruptible alloc+memcpy span, so a cooperative
+  `Stop` token went ~113 ms between polls (measured by the `cancel-latency`
+  harness `zenbitmaps-pam-8k` case). The PPM `Gray8 → Rgb8` arm likewise ran
+  `gray_to_rgb_into` over the whole image in one call. All four sites now copy
+  or swizzle in 16-row bands (the same cadence the existing swizzle arms use
+  — never inside a pixel loop), polling `stop` between bands. Result on the
+  harness: 272 polls, max gap 434 µs, no poll-latency problems; output is
+  byte-identical. The check sits between `memcpy`-per-band calls — assembly
+  verified the poll is a band-header `stop.check()` plus one `memcpy` call per
+  band, zero per-pixel cost.
+
 - **Pushes to `main` now cancel their superseded CI runs.** `ci.yml` keyed its
   concurrency group on `${{ github.head_ref || github.run_id }}`.
   `github.head_ref` is populated only for `pull_request` events, so on a push it
