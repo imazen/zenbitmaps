@@ -84,55 +84,59 @@ fn encode_pgm(
             extend_copy_polled(&mut out, &pixels[..w * h], w, stop)?;
         }
         PixelLayout::Rgb8 => {
-            for i in 0..(w * h) {
-                if i % w.saturating_mul(16).max(1) == 0 {
-                    stop.check()
-                        .map_err(|r| whereat::at!(BitmapError::from(r)))?;
+            let band = w.saturating_mul(16).max(1);
+            for start in (0..w * h).step_by(band) {
+                stop.check()
+                    .map_err(|r| whereat::at!(BitmapError::from(r)))?;
+                for i in start..start.saturating_add(band).min(w * h) {
+                    let off = i * 3;
+                    let r = pixels[off] as u32;
+                    let g = pixels[off + 1] as u32;
+                    let b = pixels[off + 2] as u32;
+                    out.push(((r * 299 + g * 587 + b * 114 + 500) / 1000) as u8);
                 }
-                let off = i * 3;
-                let r = pixels[off] as u32;
-                let g = pixels[off + 1] as u32;
-                let b = pixels[off + 2] as u32;
-                out.push(((r * 299 + g * 587 + b * 114 + 500) / 1000) as u8);
             }
         }
         PixelLayout::Bgr8 => {
-            for i in 0..(w * h) {
-                if i % w.saturating_mul(16).max(1) == 0 {
-                    stop.check()
-                        .map_err(|r| whereat::at!(BitmapError::from(r)))?;
+            let band = w.saturating_mul(16).max(1);
+            for start in (0..w * h).step_by(band) {
+                stop.check()
+                    .map_err(|r| whereat::at!(BitmapError::from(r)))?;
+                for i in start..start.saturating_add(band).min(w * h) {
+                    let off = i * 3;
+                    let b = pixels[off] as u32;
+                    let g = pixels[off + 1] as u32;
+                    let r = pixels[off + 2] as u32;
+                    out.push(((r * 299 + g * 587 + b * 114 + 500) / 1000) as u8);
                 }
-                let off = i * 3;
-                let b = pixels[off] as u32;
-                let g = pixels[off + 1] as u32;
-                let r = pixels[off + 2] as u32;
-                out.push(((r * 299 + g * 587 + b * 114 + 500) / 1000) as u8);
             }
         }
         PixelLayout::Rgba8 => {
-            for i in 0..(w * h) {
-                if i % w.saturating_mul(16).max(1) == 0 {
-                    stop.check()
-                        .map_err(|r| whereat::at!(BitmapError::from(r)))?;
+            let band = w.saturating_mul(16).max(1);
+            for start in (0..w * h).step_by(band) {
+                stop.check()
+                    .map_err(|r| whereat::at!(BitmapError::from(r)))?;
+                for i in start..start.saturating_add(band).min(w * h) {
+                    let off = i * 4;
+                    let r = pixels[off] as u32;
+                    let g = pixels[off + 1] as u32;
+                    let b = pixels[off + 2] as u32;
+                    out.push(((r * 299 + g * 587 + b * 114 + 500) / 1000) as u8);
                 }
-                let off = i * 4;
-                let r = pixels[off] as u32;
-                let g = pixels[off + 1] as u32;
-                let b = pixels[off + 2] as u32;
-                out.push(((r * 299 + g * 587 + b * 114 + 500) / 1000) as u8);
             }
         }
         PixelLayout::Bgra8 | PixelLayout::Bgrx8 => {
-            for i in 0..(w * h) {
-                if i % w.saturating_mul(16).max(1) == 0 {
-                    stop.check()
-                        .map_err(|r| whereat::at!(BitmapError::from(r)))?;
+            let band = w.saturating_mul(16).max(1);
+            for start in (0..w * h).step_by(band) {
+                stop.check()
+                    .map_err(|r| whereat::at!(BitmapError::from(r)))?;
+                for i in start..start.saturating_add(band).min(w * h) {
+                    let off = i * 4;
+                    let b = pixels[off] as u32;
+                    let g = pixels[off + 1] as u32;
+                    let r = pixels[off + 2] as u32;
+                    out.push(((r * 299 + g * 587 + b * 114 + 500) / 1000) as u8);
                 }
-                let off = i * 4;
-                let b = pixels[off] as u32;
-                let g = pixels[off + 1] as u32;
-                let r = pixels[off + 2] as u32;
-                out.push(((r * 299 + g * 587 + b * 114 + 500) / 1000) as u8);
             }
         }
         _ => {
@@ -270,43 +274,46 @@ fn encode_pam(
     match layout {
         PixelLayout::Bgr8 => {
             // Swizzle BGR → RGB
-            for i in 0..pixel_count {
-                if i % w.saturating_mul(16).max(1) == 0 {
-                    stop.check()
-                        .map_err(|r| whereat::at!(BitmapError::from(r)))?;
+            let band = w.saturating_mul(16).max(1);
+            for start in (0..pixel_count).step_by(band) {
+                stop.check()
+                    .map_err(|r| whereat::at!(BitmapError::from(r)))?;
+                for i in start..start.saturating_add(band).min(pixel_count) {
+                    let off = i * 3;
+                    out.push(pixels[off + 2]); // R
+                    out.push(pixels[off + 1]); // G
+                    out.push(pixels[off]); // B
                 }
-                let off = i * 3;
-                out.push(pixels[off + 2]); // R
-                out.push(pixels[off + 1]); // G
-                out.push(pixels[off]); // B
             }
         }
         PixelLayout::Bgra8 => {
             // Swizzle BGRA → RGBA
-            for i in 0..pixel_count {
-                if i % w.saturating_mul(16).max(1) == 0 {
-                    stop.check()
-                        .map_err(|r| whereat::at!(BitmapError::from(r)))?;
+            let band = w.saturating_mul(16).max(1);
+            for start in (0..pixel_count).step_by(band) {
+                stop.check()
+                    .map_err(|r| whereat::at!(BitmapError::from(r)))?;
+                for i in start..start.saturating_add(band).min(pixel_count) {
+                    let off = i * 4;
+                    out.push(pixels[off + 2]); // R
+                    out.push(pixels[off + 1]); // G
+                    out.push(pixels[off]); // B
+                    out.push(pixels[off + 3]); // A
                 }
-                let off = i * 4;
-                out.push(pixels[off + 2]); // R
-                out.push(pixels[off + 1]); // G
-                out.push(pixels[off]); // B
-                out.push(pixels[off + 3]); // A
             }
         }
         PixelLayout::Bgrx8 => {
             // Swizzle BGRX → RGBA (A=255)
-            for i in 0..pixel_count {
-                if i % w.saturating_mul(16).max(1) == 0 {
-                    stop.check()
-                        .map_err(|r| whereat::at!(BitmapError::from(r)))?;
+            let band = w.saturating_mul(16).max(1);
+            for start in (0..pixel_count).step_by(band) {
+                stop.check()
+                    .map_err(|r| whereat::at!(BitmapError::from(r)))?;
+                for i in start..start.saturating_add(band).min(pixel_count) {
+                    let off = i * 4;
+                    out.push(pixels[off + 2]); // R
+                    out.push(pixels[off + 1]); // G
+                    out.push(pixels[off]); // B
+                    out.push(255); // A (opaque)
                 }
-                let off = i * 4;
-                out.push(pixels[off + 2]); // R
-                out.push(pixels[off + 1]); // G
-                out.push(pixels[off]); // B
-                out.push(255); // A (opaque)
             }
         }
         PixelLayout::Gray16 => {
@@ -315,14 +322,15 @@ fn encode_pam(
             // mirroring the decode path (`decode_integer_transform`) and farbfeld
             // so `decode → encode_pam → decode` stays pixel-lossless and the
             // on-disk bytes are spec-compliant. A no-op on big-endian hosts.
-            for i in 0..pixel_count {
-                if i % w.saturating_mul(16).max(1) == 0 {
-                    stop.check()
-                        .map_err(|r| whereat::at!(BitmapError::from(r)))?;
+            let band = w.saturating_mul(16).max(1);
+            for start in (0..pixel_count).step_by(band) {
+                stop.check()
+                    .map_err(|r| whereat::at!(BitmapError::from(r)))?;
+                for i in start..start.saturating_add(band).min(pixel_count) {
+                    let off = i * 2;
+                    let val = u16::from_ne_bytes([pixels[off], pixels[off + 1]]);
+                    out.extend_from_slice(&val.to_be_bytes());
                 }
-                let off = i * 2;
-                let val = u16::from_ne_bytes([pixels[off], pixels[off + 1]]);
-                out.extend_from_slice(&val.to_be_bytes());
             }
         }
         _ => {
