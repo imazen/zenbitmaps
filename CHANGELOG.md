@@ -48,6 +48,11 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- PNM encode polls cancellation between bounded payload chunks instead of
+  copying the whole image at once (edc6ed5). Copy chunks span 64 KiB–1 MiB;
+  Gray8-to-Rgb8 chunks span 16–256 Ki samples. This avoids tiny copies for
+  narrow images. Byte-equivalence and narrow-image polling tests pass.
+
 - **Pushes to `main` now cancel their superseded CI runs.** `ci.yml` keyed its
   concurrency group on `${{ github.head_ref || github.run_id }}`.
   `github.head_ref` is populated only for `pull_request` events, so on a push it

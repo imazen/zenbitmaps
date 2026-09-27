@@ -46,6 +46,26 @@ pub(crate) fn encode_pnm(
     }
 }
 
+/// Copy `src` into `out` in bounded chunks, polling `stop` between chunks.
+///
+/// A one-shot `extend_from_slice` of a 100+ MiB payload is an uninterruptible
+/// allocation+memcpy span. Use byte-sized bands so narrow images do not
+/// trigger thousands of tiny copies and wide rows still have bounded bands.
+fn extend_copy_polled(
+    out: &mut Vec<u8>,
+    src: &[u8],
+    row_bytes: usize,
+    stop: &dyn Stop,
+) -> crate::Result<()> {
+    let band = row_bytes.saturating_mul(16).clamp(64 * 1024, 1024 * 1024);
+    for chunk in src.chunks(band) {
+        stop.check()
+            .map_err(|r| whereat::at!(BitmapError::from(r)))?;
+        out.extend_from_slice(chunk);
+    }
+    Ok(())
+}
+
 fn encode_pgm(
     pixels: &[u8],
     width: u32,
@@ -61,7 +81,7 @@ fn encode_pgm(
 
     match layout {
         PixelLayout::Gray8 => {
-            out.extend_from_slice(&pixels[..w * h]);
+            extend_copy_polled(&mut out, &pixels[..w * h], w, stop)?;
         }
         PixelLayout::Rgb8 => {
             for i in 0..(w * h) {
@@ -141,7 +161,7 @@ fn encode_ppm(
 
     match layout {
         PixelLayout::Rgb8 => {
-            out.extend_from_slice(&pixels[..w * h * 3]);
+            extend_copy_polled(&mut out, &pixels[..w * h * 3], w * 3, stop)?;
         }
         PixelLayout::Bgr8 => {
             // Row-at-a-time slice writes instead of per-pixel `Vec::push`.
@@ -189,9 +209,16 @@ fn encode_ppm(
             }
         }
         PixelLayout::Gray8 => {
-            let s = out.len();
-            out.resize(s + w * h * 3, 0);
-            crate::swizzle::gray_to_rgb_into(&pixels[..w * h], &mut out[s..]);
+            // Each gray sample is independent. Bound the work in pixels,
+            // including narrow images where a row band would be tiny.
+            let band = w.saturating_mul(16).clamp(16 * 1024, 256 * 1024);
+            for src_band in pixels[..w * h].chunks(band) {
+                stop.check()
+                    .map_err(|r| whereat::at!(BitmapError::from(r)))?;
+                let s = out.len();
+                out.resize(s + src_band.len() * 3, 0);
+                crate::swizzle::gray_to_rgb_into(src_band, &mut out[s..]);
+            }
         }
         _ => {
             return Err(whereat::at!(BitmapError::UnsupportedVariant(
@@ -299,9 +326,15 @@ fn encode_pam(
             }
         }
         _ => {
-            // Direct copy for native-order formats
+            // Direct copy for native-order formats, banded so a 100+ MiB
+            // payload stays cancellable.
             let pixel_bytes = pixel_count * layout.bytes_per_pixel();
-            out.extend_from_slice(&pixels[..pixel_bytes]);
+            extend_copy_polled(
+                &mut out,
+                &pixels[..pixel_bytes],
+                w * layout.bytes_per_pixel(),
+                stop,
+            )?;
         }
     }
 
@@ -350,4 +383,28 @@ fn encode_pfm(
     }
 
     Ok(out)
+}
+
+#[cfg(test)]
+mod copy_band_tests {
+    use super::*;
+    use core::sync::atomic::{AtomicUsize, Ordering};
+
+    struct Count(AtomicUsize);
+    impl Stop for Count {
+        fn check(&self) -> Result<(), enough::StopReason> {
+            self.0.fetch_add(1, Ordering::Relaxed);
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn narrow_images_use_bulk_copies() {
+        let input = vec![19; 64 * 1024];
+        let mut output = Vec::with_capacity(input.len());
+        let stop = Count(AtomicUsize::new(0));
+        extend_copy_polled(&mut output, &input, 1, &stop).unwrap();
+        assert_eq!(output, input);
+        assert_eq!(stop.0.load(Ordering::Relaxed), 1);
+    }
 }
