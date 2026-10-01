@@ -17,6 +17,7 @@ static QOI_DECODE_CAPS: DecodeCapabilities = DecodeCapabilities::new()
     .with_cheap_probe(true)
     .with_native_alpha(true)
     .with_streaming(true)
+    .with_incremental(true)
     .with_stop(true)
     .with_enforces_max_pixels(true)
     .with_enforces_max_memory(true)
@@ -515,6 +516,49 @@ impl<'a> zencodec::decode::DecodeJob<'a> for QoiDecodeJob {
     ) -> Result<zencodec::Unsupported<At<zencodec::CodecError>>, Self::Error> {
         Err(BitmapError::from(zencodec::UnsupportedOperation::AnimationDecode).into())
     }
+
+    fn dyn_incremental_decoder(
+        self,
+        preferred: &[PixelDescriptor],
+    ) -> Result<alloc::boxed::Box<dyn zencodec::decode::DynIncrementalDecoder>, zencodec::decode::BoxedError> {
+        let dec = self
+            .into_incremental_decoder(preferred)
+            .map_err(|e| alloc::boxed::Box::new(e) as zencodec::decode::BoxedError)?;
+        Ok(alloc::boxed::Box::new(zencodec::decode::IncrementalDecoderShim(dec)))
+    }
+}
+
+impl QoiDecodeJob {
+    /// Create an incremental (Sans-I/O) decoder.
+    pub fn into_incremental_decoder(
+        self,
+        _preferred: &[PixelDescriptor],
+    ) -> Result<QoiIncrementalDecoder, At<zencodec::CodecError>> {
+        let limits = self.limits.or(self.config.limits);
+        Ok(QoiIncrementalDecoder {
+            header_buf: [0u8; 14],
+            header_len: 0,
+            info: None,
+            descriptor: None,
+            width: 0,
+            height: 0,
+            has_alpha: false,
+            row_bytes: 0,
+            state_rgb: crate::qoi::decode::QoiDecodeState::<3>::new(),
+            state_rgba: crate::qoi::decode::QoiDecodeState::<4>::new(),
+            row_buf: Vec::new(),
+            row_pos: 0,
+            current_row: 0,
+            row_ready: false,
+            spillover: [0u8; 5],
+            spillover_len: 0,
+            is_complete: false,
+            stop: self.stop,
+            limits,
+            max_input_bytes: self.max_input_bytes,
+            total_input_bytes: 0,
+        })
+    }
 }
 
 // ── QoiDecoder ───────────────────────────────────────────────────
@@ -649,3 +693,273 @@ impl zencodec::decode::StreamingDecode for QoiStreamingDecoder<'_> {
         &self.info
     }
 }
+
+// ── QoiIncrementalDecoder ────────────────────────────────────────
+
+/// Incremental (Sans-I/O) scanline QOI decoder.
+///
+/// Accepts compressed input bytes in arbitrary chunks and yields decoded scanlines.
+pub struct QoiIncrementalDecoder {
+    header_buf: [u8; 14],
+    header_len: usize,
+    info: Option<ImageInfo>,
+    descriptor: Option<PixelDescriptor>,
+    width: u32,
+    height: u32,
+    has_alpha: bool,
+    row_bytes: usize,
+
+    state_rgb: crate::qoi::decode::QoiDecodeState<3>,
+    state_rgba: crate::qoi::decode::QoiDecodeState<4>,
+
+    row_buf: Vec<u8>,
+    row_pos: usize,
+    current_row: u32,
+    row_ready: bool,
+
+    spillover: [u8; 5],
+    spillover_len: usize,
+
+    is_complete: bool,
+    stop: Option<zencodec::StopToken>,
+    limits: Option<Limits>,
+    max_input_bytes: Option<u64>,
+    total_input_bytes: u64,
+}
+
+impl zencodec::decode::IncrementalDecode for QoiIncrementalDecoder {
+    type Error = At<zencodec::CodecError>;
+
+    fn push_chunk(
+        &mut self,
+        chunk: &[u8],
+        is_eof: bool,
+        stop: Option<&dyn Stop>,
+    ) -> Result<zencodec::decode::PushOutcome, Self::Error> {
+        if self.is_complete {
+            return Ok(zencodec::decode::PushOutcome::new(
+                chunk.len(),
+                zencodec::decode::PushStatus::Complete,
+            ));
+        }
+
+        if let Some(s) = stop {
+            s.check()
+                .map_err(|r| At::<zencodec::CodecError>::from(BitmapError::from(r)))?;
+        }
+        if let Some(ref s) = self.stop {
+            s.check()
+                .map_err(|r| At::<zencodec::CodecError>::from(BitmapError::from(r)))?;
+        }
+
+        if let Some(max) = self.max_input_bytes {
+            self.total_input_bytes = self.total_input_bytes.saturating_add(chunk.len() as u64);
+            if self.total_input_bytes > max {
+                return Err(At::<zencodec::CodecError>::from(BitmapError::LimitExceeded(
+                    alloc::format!("input size {} exceeds limit {max}", self.total_input_bytes),
+                )));
+            }
+        }
+
+        let mut chunk_offset = 0;
+
+        // Phase 1: Header parsing
+        if self.info.is_none() {
+            let needed = 14 - self.header_len;
+            let take = needed.min(chunk.len());
+            self.header_buf[self.header_len..self.header_len + take]
+                .copy_from_slice(&chunk[..take]);
+            self.header_len += take;
+            chunk_offset += take;
+
+            if self.header_len < 14 {
+                if is_eof {
+                    return Err(At::<zencodec::CodecError>::from(BitmapError::UnexpectedEof));
+                }
+                return Ok(zencodec::decode::PushOutcome::new(
+                    chunk_offset,
+                    zencodec::decode::PushStatus::NeedMoreInput,
+                ));
+            }
+
+            let hdr = crate::qoi::decode::parse_header(&self.header_buf)
+                .map_err(zencodec::CodecError::of)?;
+            let (width, height, has_alpha) = (hdr.width, hdr.height, hdr.has_alpha);
+
+            if let Some(ref lim) = self.limits {
+                lim.check(width, height).map_err(zencodec::CodecError::of)?;
+            }
+
+            let channels: usize = if has_alpha { 4 } else { 3 };
+            let row_bytes = (width as usize).checked_mul(channels).ok_or_else(|| {
+                At::<zencodec::CodecError>::from(BitmapError::DimensionsTooLarge { width, height })
+            })?;
+
+            crate::limits::check_output_size(
+                row_bytes.saturating_mul(height as usize),
+                self.limits.as_ref(),
+            )
+            .map_err(zencodec::CodecError::of)?;
+
+            let descriptor = if has_alpha {
+                PixelDescriptor::RGBA8_SRGB
+            } else {
+                PixelDescriptor::RGB8_SRGB
+            };
+            let cicp = if hdr.is_linear {
+                zencodec::Cicp::new(1, 8, 0, true)
+            } else {
+                zencodec::Cicp::SRGB
+            };
+            let info = ImageInfo::new(width, height, ImageFormat::Qoi)
+                .with_alpha(has_alpha)
+                .with_bit_depth(8)
+                .with_channel_count(channels as u8)
+                .with_cicp(cicp)
+                .with_source_encoding_details(BitmapSourceEncoding);
+
+            self.width = width;
+            self.height = height;
+            self.has_alpha = has_alpha;
+            self.row_bytes = row_bytes;
+            self.row_buf = alloc::vec![0u8; row_bytes];
+            self.info = Some(info);
+            self.descriptor = Some(descriptor);
+        }
+
+        // If a previously decoded row is still pending pull, do not overwrite it
+        if self.row_ready {
+            return Ok(zencodec::decode::PushOutcome::new(
+                chunk_offset,
+                zencodec::decode::PushStatus::OutputReady,
+            ));
+        }
+
+        // Phase 2: Pixel decoding
+        let channels = if self.has_alpha { 4 } else { 3 };
+
+        while !self.row_ready && self.current_row < self.height {
+            if let Some(s) = stop {
+                s.check()
+                    .map_err(|r| At::<zencodec::CodecError>::from(BitmapError::from(r)))?;
+            }
+
+            // Step A: Incomplete opcode in spillover
+            if self.spillover_len > 0 {
+                let needed = crate::qoi::decode::qoi_opcode_len(self.spillover[0]);
+                let missing = needed - self.spillover_len;
+                let available = &chunk[chunk_offset..];
+                if available.len() < missing {
+                    self.spillover[self.spillover_len..self.spillover_len + available.len()]
+                        .copy_from_slice(available);
+                    self.spillover_len += available.len();
+                    chunk_offset += available.len();
+                    break;
+                }
+
+                self.spillover[self.spillover_len..needed].copy_from_slice(&available[..missing]);
+                chunk_offset += missing;
+                self.spillover_len = 0;
+
+                let out_slice = &mut self.row_buf[self.row_pos..];
+                let (_c, w) = if self.has_alpha {
+                    self.state_rgba
+                        .decode_chunk(&self.spillover[..needed], out_slice)
+                } else {
+                    self.state_rgb
+                        .decode_chunk(&self.spillover[..needed], out_slice)
+                };
+                self.row_pos += w * channels;
+                if self.row_pos >= self.row_bytes {
+                    self.row_ready = true;
+                    break;
+                }
+            }
+
+            // Step B: Decode directly from chunk
+            let available = &chunk[chunk_offset..];
+            if available.is_empty() {
+                break;
+            }
+
+            let out_slice = &mut self.row_buf[self.row_pos..];
+            let (c, w) = if self.has_alpha {
+                self.state_rgba.decode_chunk(available, out_slice)
+            } else {
+                self.state_rgb.decode_chunk(available, out_slice)
+            };
+            chunk_offset += c;
+            self.row_pos += w * channels;
+
+            if self.row_pos >= self.row_bytes {
+                self.row_ready = true;
+                break;
+            }
+
+            // Step C: If row not full, but decode_chunk stopped, remaining bytes are < 5
+            let remainder = &chunk[chunk_offset..];
+            if !remainder.is_empty() {
+                debug_assert!(remainder.len() < 5);
+                self.spillover[..remainder.len()].copy_from_slice(remainder);
+                self.spillover_len = remainder.len();
+                chunk_offset += remainder.len();
+            }
+            break;
+        }
+
+        // If all rows decoded, any remaining chunk bytes (e.g. QOI padding) are consumed
+        if self.current_row >= self.height && !self.row_ready {
+            self.is_complete = true;
+            chunk_offset = chunk.len();
+            return Ok(zencodec::decode::PushOutcome::new(
+                chunk_offset,
+                zencodec::decode::PushStatus::Complete,
+            ));
+        }
+
+        if self.row_ready {
+            Ok(zencodec::decode::PushOutcome::new(
+                chunk_offset,
+                zencodec::decode::PushStatus::OutputReady,
+            ))
+        } else if is_eof {
+            Err(At::<zencodec::CodecError>::from(BitmapError::UnexpectedEof))
+        } else {
+            Ok(zencodec::decode::PushOutcome::new(
+                chunk_offset,
+                zencodec::decode::PushStatus::NeedMoreInput,
+            ))
+        }
+    }
+
+    fn pull_batch(&mut self) -> Result<Option<(u32, PixelSlice<'_>)>, Self::Error> {
+        if !self.row_ready {
+            return Ok(None);
+        }
+
+        let y = self.current_row;
+        self.current_row += 1;
+        self.row_ready = false;
+        self.row_pos = 0;
+
+        if self.current_row >= self.height {
+            self.is_complete = true;
+        }
+
+        let desc = self.descriptor.unwrap();
+        let stride = self.row_bytes;
+        let slice = PixelSlice::new(&self.row_buf, self.width, 1, stride, desc)
+            .map_err(|e| At::<zencodec::CodecError>::from(BitmapError::InvalidData(e.to_string())))?;
+
+        Ok(Some((y, slice)))
+    }
+
+    fn info(&self) -> Option<&ImageInfo> {
+        self.info.as_ref()
+    }
+
+    fn is_complete(&self) -> bool {
+        self.is_complete
+    }
+}
+

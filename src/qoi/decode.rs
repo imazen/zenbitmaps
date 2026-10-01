@@ -192,4 +192,27 @@ where
         rapid_qoi::Qoi::decode_range::<N>(&mut self.index, &mut self.px, &mut self.run, bytes, out)
             .map_err(|_| ())
     }
+
+    /// Decode an arbitrary chunk of bytes into `out`.
+    ///
+    /// Returns `(bytes_consumed, pixels_written)`.
+    #[inline]
+    #[allow(dead_code)]
+    pub(crate) fn decode_chunk(&mut self, bytes: &[u8], out: &mut [u8]) -> (usize, usize) {
+        rapid_qoi::Qoi::decode_chunk::<N>(&mut self.index, &mut self.px, &mut self.run, bytes, out)
+    }
 }
+
+/// Returns the byte length of a QOI opcode starting with tag byte `b`.
+#[inline]
+#[allow(dead_code)]
+pub(crate) fn qoi_opcode_len(b: u8) -> usize {
+    match b {
+        0b00000000..=0b01111111 => 1, // INDEX (00) or DIFF (01)
+        0b10000000..=0b10111111 => 2, // LUMA (10)
+        0b11111110 => 4,              // RGB
+        0b11111111 => 5,              // RGBA
+        _ => 1,                       // RUN (11xxxxxx)
+    }
+}
+

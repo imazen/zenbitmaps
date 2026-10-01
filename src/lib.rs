@@ -232,6 +232,7 @@ pub use codec::{
 #[cfg(all(feature = "zencodec", feature = "qoi"))]
 pub use codec::{
     QoiDecodeJob, QoiDecoder, QoiDecoderConfig, QoiEncodeJob, QoiEncoder, QoiEncoderConfig,
+    QoiIncrementalDecoder,
 };
 
 #[cfg(all(feature = "zencodec", feature = "hdr"))]

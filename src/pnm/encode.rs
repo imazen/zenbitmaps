@@ -396,6 +396,7 @@ fn encode_pfm(
 #[cfg(test)]
 mod copy_band_tests {
     use super::*;
+    use alloc::vec;
     use core::sync::atomic::{AtomicUsize, Ordering};
 
     struct Count(AtomicUsize);
