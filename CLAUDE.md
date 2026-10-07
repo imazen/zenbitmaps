@@ -2,7 +2,8 @@
 
 PNM/PAM/PFM, BMP, and farbfeld image format decoder and encoder.
 
-See `/home/lilith/work/codec-design/README.md` for API design guidelines.
+See [codec-design](https://github.com/imazen/codec-design) for API design guidelines
+(the zencodec traits are the canonical form).
 
 ## Purpose
 
@@ -42,7 +43,8 @@ all by Caleb Etemesi (MIT/Apache-2.0/Zlib licensed).
 Same as other zen* codecs — see codec-design/README.md. Key points:
 - `with_` prefix for builder setters, bare-name for getters
 - `#![forbid(unsafe_code)]`, no_std+alloc
-- No backwards compatibility needed (0.x)
+- Semver: avoid breaks (add, deprecate, feature-gate); queue unavoidable ones under
+  `QUEUED BREAKING CHANGES` in CHANGELOG.md for one approved leading-digit bump
 
 ## Build Commands
 
