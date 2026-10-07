@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Changed
+- Dependency floors raised to the tested versions: `enough` 0.4.4, `archmage` 0.9.29, `garb` 0.2.8, `imgref` 1.12.3, `rgb` 0.8.53, `thiserror` 2.0.21; dev: `zenbench` 0.1.10, `codec-corpus` 1.1.0. All compatible; no majors were available (5d8eef4).
 
 - **`zencodec` / `zencodec-testkit` / `zenpixels` / `zenpixels-convert`
   requirements now span the published minor and the next one**: `zencodec
