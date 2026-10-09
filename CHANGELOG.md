@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- `DecodeJob::inventory` for the PNM, BMP, farbfeld, QOI, TGA and HDR zencodec decoders: a byte-exact map of each file (PNM comments and PAM header lines, BMP headers, colour table, embedded/linked profile and the gap before the pixel array, TGA image ID / extension / developer areas / footer, HDR header lines, QOI end marker, trailing data) with what the decode path does with each part. Depends on the `feat/inventory` zencodec patch in `Cargo.toml`, to be swapped for the release before merge. (COMMIT)
+
 ### Changed
 - Dependency floors raised to the tested versions: `enough` 0.4.4, `archmage` 0.9.29, `garb` 0.2.8, `imgref` 1.12.3, `rgb` 0.8.53, `thiserror` 2.0.21; dev: `zenbench` 0.1.10, `codec-corpus` 1.1.0. All compatible; no majors were available (5d8eef4).
 

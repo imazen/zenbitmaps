@@ -312,6 +312,22 @@ pub(crate) fn parse_bmp_header(data: &[u8], max_pixels: u64) -> crate::Result<Bm
     })
 }
 
+/// Run the header parse only and report where the decoder starts reading
+/// pixel data (`max(bfOffBits, position after the header fields and palette)`).
+///
+/// The inventory walker uses this as ground truth for the start of the pixel
+/// array, so the structural map follows the decoder even where its header
+/// parsing overreads (52/56/64-byte info headers).
+#[cfg(feature = "zencodec")]
+pub(crate) fn pixel_data_start(
+    data: &[u8],
+    permissiveness: BmpPermissiveness,
+) -> crate::Result<usize> {
+    let mut dec = BmpDecoderState::new(data, permissiveness, u64::MAX, AllocPref::CodecDefault);
+    dec.decode_headers()?;
+    Ok(dec.bytes.pos)
+}
+
 // ── Full decode ─────────────────────────────────────────────────────
 
 /// Decode BMP pixel data (RGB/RGBA output).

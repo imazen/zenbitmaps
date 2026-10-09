@@ -20,7 +20,8 @@ static BMP_DECODE_CAPS: DecodeCapabilities = DecodeCapabilities::new()
     .with_stop(true)
     .with_enforces_max_pixels(true)
     .with_enforces_max_memory(true)
-    .with_enforces_max_input_bytes(true);
+    .with_enforces_max_input_bytes(true)
+    .with_inventory(true);
 
 static BMP_ENCODE_DESCRIPTORS: &[PixelDescriptor] = &[
     PixelDescriptor::RGB8_SRGB,
@@ -366,6 +367,15 @@ impl<'a> zencodec::decode::DecodeJob<'a> for BmpDecodeJob {
             OutputInfo::full_decode(header.width, header.height, native_format)
                 .with_alpha(has_alpha),
         )
+    }
+
+    fn inventory(
+        &self,
+        data: &[u8],
+    ) -> Result<Option<zencodec::inventory::Inventory>, Self::Error> {
+        crate::inventory::bmp::walk(data, policy_to_bmp_permissiveness(self.policy.as_ref()))
+            .map(Some)
+            .map_err(|e| crate::inventory::to_bitmap_error(e).into())
     }
 
     fn decoder(

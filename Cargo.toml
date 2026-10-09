@@ -87,3 +87,9 @@ required-features = ["bmp", "qoi", "tga", "hdr", "simd"]
 name = "swizzle"
 harness = false
 required-features = ["simd"]
+
+# Structural inventories (imazen/zencodec#133). Swap for the released
+# zencodec/zencodec-testkit before merge.
+[patch.crates-io]
+zencodec = { git = "https://github.com/imazen/zencodec", branch = "feat/inventory" }
+zencodec-testkit = { git = "https://github.com/imazen/zencodec", branch = "feat/inventory" }

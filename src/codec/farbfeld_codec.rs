@@ -21,7 +21,8 @@ static FF_DECODE_CAPS: DecodeCapabilities = DecodeCapabilities::new()
     .with_stop(true)
     .with_enforces_max_pixels(true)
     .with_enforces_max_memory(true)
-    .with_enforces_max_input_bytes(true);
+    .with_enforces_max_input_bytes(true)
+    .with_inventory(true);
 
 static FF_ENCODE_DESCRIPTORS: &[PixelDescriptor] = &[
     PixelDescriptor::RGBA16_SRGB,
@@ -322,6 +323,15 @@ impl<'a> zencodec::decode::DecodeJob<'a> for FarbfeldDecodeJob {
         let (width, height) =
             crate::farbfeld::decode::parse_header(data).map_err(zencodec::CodecError::of)?;
         Ok(OutputInfo::full_decode(width, height, PixelDescriptor::RGBA16_SRGB).with_alpha(true))
+    }
+
+    fn inventory(
+        &self,
+        data: &[u8],
+    ) -> Result<Option<zencodec::inventory::Inventory>, Self::Error> {
+        crate::inventory::farbfeld::walk(data)
+            .map(Some)
+            .map_err(|e| crate::inventory::to_bitmap_error(e).into())
     }
 
     fn decoder(

@@ -27,7 +27,8 @@ static PNM_DECODE_CAPS: DecodeCapabilities = DecodeCapabilities::new()
     .with_stop(true)
     .with_enforces_max_pixels(true)
     .with_enforces_max_memory(true)
-    .with_enforces_max_input_bytes(true);
+    .with_enforces_max_input_bytes(true)
+    .with_inventory(true);
 
 // Note: U16 encode is not implemented — RGBA16_SRGB intentionally absent.
 static PNM_ENCODE_DESCRIPTORS: &[PixelDescriptor] = &[
@@ -439,6 +440,15 @@ impl<'a> zencodec::decode::DecodeJob<'a> for PnmDecodeJob {
             OutputInfo::full_decode(header.width, header.height, native_format)
                 .with_alpha(has_alpha),
         )
+    }
+
+    fn inventory(
+        &self,
+        data: &[u8],
+    ) -> Result<Option<zencodec::inventory::Inventory>, Self::Error> {
+        crate::inventory::pnm::walk(data)
+            .map(Some)
+            .map_err(|e| crate::inventory::to_bitmap_error(e).into())
     }
 
     fn decoder(

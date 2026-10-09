@@ -193,6 +193,8 @@ mod pixel_traits;
 
 #[cfg(feature = "zencodec")]
 mod codec;
+#[cfg(feature = "zencodec")]
+mod inventory;
 
 // zennode node definitions — disabled until zennode is published to crates.io
 // #[cfg(feature = "zennode")]

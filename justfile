@@ -53,3 +53,8 @@ test-cross: test-i686 test-armv7
 # Six format families, exact encoded bytes and pixels across runtime tiers.
 arm-codec-audit filter="":
     CARGO_BUILD_JOBS=4 RAYON_NUM_THREADS=4 OMP_NUM_THREADS=4 TMPDIR="$HOME/tmp" nice -n 19 cargo bench --bench codecs --all-features -- --group="{{filter}}"
+
+# Cross-check the inventories against exiftool and ImageMagick (needs both installed).
+inventory-oracle:
+    INVENTORY_ORACLE_EXIFTOOL=$(command -v exiftool) INVENTORY_ORACLE_MAGICK=$(command -v magick) \
+        cargo test --all-features --test inventory_oracle -- --ignored --nocapture

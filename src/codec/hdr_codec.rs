@@ -21,7 +21,8 @@ static HDR_DECODE_CAPS: DecodeCapabilities = DecodeCapabilities::new()
     .with_stop(true)
     .with_enforces_max_pixels(true)
     .with_enforces_max_memory(true)
-    .with_enforces_max_input_bytes(true);
+    .with_enforces_max_input_bytes(true)
+    .with_inventory(true);
 
 static HDR_ENCODE_DESCRIPTORS: &[PixelDescriptor] =
     &[PixelDescriptor::RGBF32_LINEAR, PixelDescriptor::RGB8_SRGB];
@@ -373,6 +374,15 @@ impl<'a> zencodec::decode::DecodeJob<'a> for HdrDecodeJob {
             OutputInfo::full_decode(width, height, PixelDescriptor::RGBF32_LINEAR)
                 .with_alpha(false),
         )
+    }
+
+    fn inventory(
+        &self,
+        data: &[u8],
+    ) -> Result<Option<zencodec::inventory::Inventory>, Self::Error> {
+        crate::inventory::hdr::walk(data)
+            .map(Some)
+            .map_err(|e| crate::inventory::to_bitmap_error(e).into())
     }
 
     fn decoder(

@@ -20,7 +20,8 @@ static QOI_DECODE_CAPS: DecodeCapabilities = DecodeCapabilities::new()
     .with_stop(true)
     .with_enforces_max_pixels(true)
     .with_enforces_max_memory(true)
-    .with_enforces_max_input_bytes(true);
+    .with_enforces_max_input_bytes(true)
+    .with_inventory(true);
 
 static QOI_ENCODE_DESCRIPTORS: &[PixelDescriptor] = &[
     PixelDescriptor::RGB8_SRGB,
@@ -423,6 +424,15 @@ impl<'a> zencodec::decode::DecodeJob<'a> for QoiDecodeJob {
             PixelDescriptor::RGB8_SRGB
         };
         Ok(OutputInfo::full_decode(width, height, desc).with_alpha(has_alpha))
+    }
+
+    fn inventory(
+        &self,
+        data: &[u8],
+    ) -> Result<Option<zencodec::inventory::Inventory>, Self::Error> {
+        crate::inventory::qoi::walk(data)
+            .map(Some)
+            .map_err(|e| crate::inventory::to_bitmap_error(e).into())
     }
 
     fn decoder(
