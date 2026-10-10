@@ -18,6 +18,17 @@ use super::{Res, label, malformed_rest, trailer};
 use crate::pnm::decode::parse_header;
 use crate::pnm::{PnmFormat, PnmHeader};
 
+/// Comments and header lines are recorded only up to the inventory's part cap; a
+/// file with that many cannot be inventoried anyway, and this bounds the walker's
+/// memory by the cap rather than by the input size.
+const MAX_RECORDED: usize = zencodec::inventory::DEFAULT_MAX_PARTS as usize;
+
+fn too_many() -> zencodec::inventory::InventoryError {
+    zencodec::inventory::InventoryError::TooManyParts {
+        max: zencodec::inventory::DEFAULT_MAX_PARTS,
+    }
+}
+
 pub(crate) fn walk(data: &[u8]) -> Res<Inventory> {
     let len = data.len() as u64;
     let mut inv = Inventory::new(ImageFormat::Pnm, len);
@@ -41,6 +52,9 @@ pub(crate) fn walk(data: &[u8]) -> Res<Inventory> {
     }
     let magic = label(&data[..2]);
     let (comments, pam_lines, reach) = scan_header(data);
+    if comments.len() >= MAX_RECORDED || pam_lines.len() >= MAX_RECORDED {
+        return Err(too_many());
+    }
     match parse_header(data) {
         Ok(h) => {
             let end = (h.data_offset as u64).min(len);
@@ -55,6 +69,20 @@ pub(crate) fn walk(data: &[u8]) -> Res<Inventory> {
                 .with_label(magic),
             )?;
             push_header_children(&mut inv, header, data, &comments, &pam_lines, end)?;
+            if matches!(data[1], b'1'..=b'6') && end > 3 {
+                inv.push(
+                    Some(header),
+                    Part::new(
+                        PartKind::Field,
+                        PartTag::Name("separator".into()),
+                        end - 1..end,
+                        Disposition::Dropped,
+                    )
+                    .with_detail(
+                        "the byte after the last header number is skipped without being examined",
+                    ),
+                )?;
+            }
             if end < len {
                 walk_pixels(&mut inv, data, &h, end)?;
             }
@@ -125,7 +153,9 @@ fn skip_ws(data: &[u8], mut pos: usize, comments: &mut Vec<Range<usize>>) -> Opt
                 while pos < data.len() && data[pos] != b'\n' {
                     pos += 1;
                 }
-                comments.push(start..pos);
+                if comments.len() < MAX_RECORDED {
+                    comments.push(start..pos);
+                }
                 if pos < data.len() {
                     pos += 1;
                 }
@@ -211,7 +241,7 @@ fn scan_pam(
         } else {
             PamLine::Unknown
         };
-        if pos < line_end {
+        if pos < line_end && lines.len() < MAX_RECORDED {
             lines.push((pos..line_end, kind));
         }
         if kind == PamLine::EndHdr {
@@ -391,6 +421,9 @@ fn walk_pixels(inv: &mut Inventory, data: &[u8], h: &PnmHeader, start: u64) -> R
         h.format == PnmFormat::Pbm,
         &mut comments,
     );
+    if comments.len() >= MAX_RECORDED {
+        return Err(too_many());
+    }
     let (end, detail, bad) = match outcome {
         AsciiEnd::Done(end) => (end as u64, None, None),
         AsciiEnd::Eof => (
@@ -474,7 +507,9 @@ fn scan_ascii(
                     while pos < data.len() && data[pos] != b'\n' {
                         pos += 1;
                     }
-                    comments.push(s..pos);
+                    if comments.len() < MAX_RECORDED {
+                        comments.push(s..pos);
+                    }
                 }
                 _ => break,
             }
@@ -495,11 +530,10 @@ fn scan_ascii(
             if pos == start {
                 return AsciiEnd::Bad(start, "expected a decimal sample");
             }
-            if pos - start > 10
-                || core::str::from_utf8(&data[start..pos])
-                    .ok()
-                    .and_then(|s| s.parse::<u32>().ok())
-                    .is_none()
+            if core::str::from_utf8(&data[start..pos])
+                .ok()
+                .and_then(|s| s.parse::<u32>().ok())
+                .is_none()
             {
                 return AsciiEnd::Bad(start, "sample does not fit in 32 bits");
             }
