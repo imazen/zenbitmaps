@@ -542,7 +542,7 @@ pub(crate) fn walk(data: &[u8], perm: BmpPermissiveness) -> Res<Inventory> {
                         len,
                         Disposition::ImageData,
                         Some(format!(
-                            "{base}; the decoder zero-fills the missing pixels, and a partial last pixel is not read"
+                            "{base}; the decoder does not reject it: missing pixels are zero-filled (or, for rows narrower than their padding, read from the bytes that remain), and a partial last pixel is not read"
                         )),
                     )
                 }
@@ -1000,9 +1000,14 @@ fn rle_extent(
 }
 
 /// Whether the decoder rejects an uncompressed pixel array cut short (outside
-/// Permissive): rows read with `read_exact_bytes` (1/2/4 bpp, 8 bpp grey, 24 bpp)
-/// fail when the last row's data is short; paletted 8 bpp rows fail on a missing
-/// row pad; 16 and 32 bpp rows are zero-filled.
+/// Permissive). Mirrors the row loops of `decode_into`:
+/// - 1/2/4 bpp, grey 8 bpp and 24 bpp read each row's data with
+///   `read_exact_bytes`, which fails past the end; the row padding is skipped with
+///   the result ignored, so a pad longer than what remains leaves the cursor in
+///   place and the next row is read from those bytes;
+/// - paletted 8 bpp reads pixels one byte at a time (zero past the end) and fails
+///   when a row's padding runs past the end;
+/// - 16 and 32 bpp rows are zero-filled.
 fn truncation_rejected(
     bpp: u16,
     comp_raw: u32,
@@ -1012,23 +1017,44 @@ fn truncation_rejected(
     avail: u64,
 ) -> bool {
     let _ = comp_raw;
-    let h = u128::from(height);
-    let avail = u128::from(avail);
-    match bpp {
-        16 | 32 => false,
-        8 if paletted => (width.wrapping_neg() & 3) != 0,
+    let stride = (width * u64::from(bpp)).div_ceil(32) * 4;
+    let (row, pad_after_row) = match bpp {
+        16 | 32 => return false,
+        8 if paletted => (width, width.wrapping_neg() & 3),
         1 | 2 | 4 => {
-            let stride = u128::from((width * u64::from(bpp)).div_ceil(32) * 4);
-            let row = u128::from((width * u64::from(bpp)).div_ceil(8));
-            avail < (h - 1) * stride + row
+            let row = (width * u64::from(bpp)).div_ceil(8);
+            (row, stride - row)
         }
         8 | 24 => {
-            let comp = u128::from(bpp / 8);
-            let stride = u128::from((width * u64::from(bpp)).div_ceil(32) * 4);
-            avail < (h - 1) * stride + u128::from(width) * comp
+            let row = width * u64::from(bpp / 8);
+            (row, stride - row)
         }
-        _ => false,
+        _ => return false,
+    };
+    let byte_reads = bpp == 8 && paletted;
+    let mut pos: u64 = 0;
+    for _ in 0..height {
+        if byte_reads {
+            pos += row.min(avail - pos);
+            if pad_after_row > 0 && pos + pad_after_row > avail {
+                return true;
+            }
+            pos += pad_after_row;
+        } else {
+            if pos + row > avail {
+                return true;
+            }
+            pos += row;
+            if pos + pad_after_row <= avail {
+                pos += pad_after_row;
+            }
+        }
+        if pos >= avail && byte_reads && pad_after_row == 0 {
+            // Every further row reads zeros and skips nothing.
+            return false;
+        }
     }
+    false
 }
 
 /// The first palette index of an uncompressed paletted image that is not below

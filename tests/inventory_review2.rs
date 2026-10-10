@@ -437,3 +437,56 @@ fn truncations_follow_the_decoder() {
         );
     }
 }
+
+// ── R3-1: rows narrower than their padding ───────────────────────────
+
+#[test]
+fn narrow_rows_cut_inside_their_padding_still_decode() {
+    // 1 bpp, 4x2, 2-entry palette: each row is 1 data byte + 3 pad bytes. Cut at 64 or 65,
+    // the decoder reads byte 62 as row 0 and byte 63 as row 1 (a failed pad skip leaves the
+    // cursor in place).
+    let mut v = bmp_head(40, 4, 2, 1, 0, 2, 62);
+    v.extend_from_slice(&[0, 0, 0, 0, 0xFF, 0xFF, 0xFF, 0]);
+    v.extend_from_slice(&[0, 1, 0, 1, 0, 1, 0, 1]);
+    for cut in [64usize, 65] {
+        for policy in [None, Some(DecodePolicy::none().with_strict(true))] {
+            let data = &v[..cut];
+            assert!(decode_with(BmpDecoderConfig::new(), policy, data).is_ok());
+            let inv = bmp_inv(data, policy);
+            let px = named(&inv, "pixel-array");
+            assert_eq!(px.disposition, Disposition::ImageData, "cut {cut}\n{inv}");
+            assert!(px.detail.as_deref().unwrap().contains("does not reject"));
+        }
+    }
+    // Grey 8 bpp, width 1: 1 data byte + 3 pad bytes per row.
+    // Two rows from 2 bytes decode; three rows from 2 bytes do not.
+    for (h, ok) in [(2, true), (3, false)] {
+        let mut g = bmp_head(40, 1, h, 8, 0, 0, 54);
+        g.extend_from_slice(&[10, 0, 0, 0, 20, 0, 0, 0, 30, 0, 0, 0][..4 * h as usize]);
+        let data = &g[..56];
+        assert_eq!(
+            decode_with(BmpDecoderConfig::new(), None, data).is_ok(),
+            ok,
+            "h {h}"
+        );
+        let want = if ok {
+            Disposition::ImageData
+        } else {
+            Disposition::Malformed
+        };
+        assert_eq!(
+            named(&bmp_inv(data, None), "pixel-array").disposition,
+            want,
+            "h {h}"
+        );
+    }
+    // A row whose data is short is still rejected.
+    let mut w = bmp_head(40, 16, 2, 1, 0, 2, 62);
+    w.extend_from_slice(&[0, 0, 0, 0, 0xFF, 0xFF, 0xFF, 0]);
+    w.extend_from_slice(&[0, 1, 0, 0, 0]);
+    assert!(decode_with(BmpDecoderConfig::new(), None, &w).is_err());
+    assert_eq!(
+        named(&bmp_inv(&w, None), "pixel-array").disposition,
+        Disposition::Malformed
+    );
+}
