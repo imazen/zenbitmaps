@@ -63,10 +63,10 @@ pub(crate) fn walk(data: &[u8]) -> Res<Inventory> {
                 PartKind::Block,
                 PartTag::Name("pixels".into()),
                 16..len,
-                Disposition::ImageData,
+                Disposition::Malformed,
             )
             .with_detail(format!(
-                "truncated: the decoder needs {need} bytes, the file has {avail}"
+                "truncated: the decoder needs {need} bytes, the file has {avail}; the decoder rejects the file"
             )),
         )?;
     }

@@ -48,7 +48,9 @@ pub(crate) fn walk(data: &[u8]) -> Res<Inventory> {
             13..14,
             Disposition::Metadata(MetadataKind::Cicp),
         )
-        .with_detail("0 = sRGB, 1 = linear; reported as CICP"),
+        .with_detail(
+            "0 = sRGB, 1 = linear; reported as CICP by probe() only, the decode() output does not carry it",
+        ),
     )?;
     if !header_ok {
         malformed_rest(
@@ -98,7 +100,10 @@ pub(crate) fn walk(data: &[u8]) -> Res<Inventory> {
             Disposition::ImageData,
         );
         if truncated {
-            p = p.with_detail("truncated: the op stream ends before all pixels are filled");
+            p.disposition = Disposition::Malformed;
+            p = p.with_detail(
+                "truncated: the op stream ends before all pixels are filled; the decoder rejects the file",
+            );
         } else if ignored_alpha {
             p = p.with_detail(
                 "contains RGBA ops in a 3-channel file: their alpha byte is read and ignored",

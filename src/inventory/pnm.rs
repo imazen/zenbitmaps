@@ -372,11 +372,20 @@ fn walk_pixels(inv: &mut Inventory, data: &[u8], h: &PnmHeader, start: u64) -> R
     let len = data.len() as u64;
     let ascii = matches!(data[1], b'1' | b'2' | b'3');
     let pixels = |inv: &mut Inventory, range: Range<u64>, detail: Option<String>| -> Res<PartId> {
+        // A truncated file is rejected by every PNM decode path.
+        let disposition = if detail
+            .as_deref()
+            .is_some_and(|d| d.starts_with("truncated"))
+        {
+            Disposition::Malformed
+        } else {
+            Disposition::ImageData
+        };
         let mut p = Part::new(
             PartKind::Block,
             PartTag::Name("pixels".into()),
             range,
-            Disposition::ImageData,
+            disposition,
         );
         if let Some(d) = detail {
             p = p.with_detail(d);
@@ -405,7 +414,7 @@ fn walk_pixels(inv: &mut Inventory, data: &[u8], h: &PnmHeader, start: u64) -> R
                 inv,
                 start..len,
                 Some(format!(
-                    "truncated: the decoder needs {need} bytes, the file has {avail}"
+                    "truncated: the decoder needs {need} bytes, the file has {avail}; the decoder rejects the file"
                 )),
             )?;
         }
@@ -428,7 +437,10 @@ fn walk_pixels(inv: &mut Inventory, data: &[u8], h: &PnmHeader, start: u64) -> R
         AsciiEnd::Done(end) => (end as u64, None, None),
         AsciiEnd::Eof => (
             len,
-            Some("truncated: the file ends before all samples are read".into()),
+            Some(
+                "truncated: the file ends before all samples are read; the decoder rejects the file"
+                    .into(),
+            ),
             None,
         ),
         AsciiEnd::Bad(at, why) => (at as u64, None, Some((at as u64, why))),

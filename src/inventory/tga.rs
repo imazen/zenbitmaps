@@ -67,6 +67,32 @@ pub(crate) fn walk(data: &[u8]) -> Res<Inventory> {
         )
         .with_detail("x/y origin, parsed and dropped"),
     )?;
+    // Colour-map specification bytes the decoder never uses.
+    if h.color_map_type == 0 {
+        inv.push(
+            Some(header),
+            Part::new(
+                PartKind::Field,
+                PartTag::Name("colour-map-spec".into()),
+                3..8,
+                Disposition::Dropped,
+            )
+            .with_detail(
+                "no colour map: the first-entry index, length and entry size are not used",
+            ),
+        )?;
+    } else if !h.is_color_mapped() {
+        inv.push(
+            Some(header),
+            Part::new(
+                PartKind::Field,
+                PartTag::Name("first-entry-index".into()),
+                3..5,
+                Disposition::Dropped,
+            )
+            .with_detail("the colour map is skipped, so its first-entry index is not used"),
+        )?;
+    }
     claimed.claim(0..18);
 
     // Image ID.
@@ -191,11 +217,16 @@ pub(crate) fn walk(data: &[u8]) -> Res<Inventory> {
             );
             match state {
                 Extent::Truncated => {
-                    p = p.with_detail("truncated: the file ends before all pixels are read");
+                    p.disposition = Disposition::Malformed;
+                    p = p.with_detail(
+                        "truncated: the file ends before all pixels are read; the decoder rejects the file",
+                    );
                 }
                 Extent::Overrun => {
-                    p = p
-                        .with_detail("a packet runs past the image bounds; the decoder rejects it");
+                    p.disposition = Disposition::Malformed;
+                    p = p.with_detail(
+                        "a packet runs past the image bounds; the decoder rejects the file",
+                    );
                 }
                 Extent::Complete => {}
             }

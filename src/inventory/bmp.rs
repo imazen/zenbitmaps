@@ -230,12 +230,15 @@ pub(crate) fn walk(data: &[u8], perm: BmpPermissiveness) -> Res<Inventory> {
     } else {
         fields.push(field(4, 16, "geometry", Disposition::Structure));
         fields.push(Field {
-            detail: Some("only checked against the geometry in Strict mode".into()),
+            detail: Some(
+                "only checked against the geometry in Strict mode, and only for uncompressed RGB"
+                    .into(),
+            ),
             ..field(
                 20,
                 4,
                 "image-size",
-                if strict {
+                if strict && comp_raw == 0 && width > 0 {
                     Disposition::Structure
                 } else {
                     Disposition::Dropped
@@ -244,7 +247,9 @@ pub(crate) fn walk(data: &[u8], perm: BmpPermissiveness) -> Res<Inventory> {
         });
         let has_res = xppm > 0 || yppm > 0;
         fields.push(Field {
-            detail: (!has_res).then(|| {
+            detail: Some(if has_res {
+                "reported by probe() only; the decode() output does not carry it".into()
+            } else {
                 "both densities are zero, so none is reported (range-checked in Strict mode)".into()
             }),
             ..field(
@@ -458,6 +463,7 @@ pub(crate) fn walk(data: &[u8], perm: BmpPermissiveness) -> Res<Inventory> {
     let stride = (width * u64::from(bpp)).div_ceil(32) * 4;
     let rows_len = u128::from(stride) * u128::from(height);
     let mut pixel_part: Option<Part> = None;
+    let mut rle_pads: Vec<u64> = Vec::new();
     let pixel_end;
     if pixel_start >= len {
         pixel_end = len;
@@ -481,7 +487,7 @@ pub(crate) fn walk(data: &[u8], perm: BmpPermissiveness) -> Res<Inventory> {
                 (end, Disposition::ImageData, None)
             }
         } else if rle {
-            let (end, complete) = rle_extent(
+            let rle = rle_extent(
                 data,
                 pixel_start,
                 bpp,
@@ -489,9 +495,18 @@ pub(crate) fn walk(data: &[u8], perm: BmpPermissiveness) -> Res<Inventory> {
                 height,
                 perm == BmpPermissiveness::Permissive,
             );
-            let mut detail =
-                (!complete).then(|| "RLE data ends without the end-of-bitmap marker".to_string());
-            let disposition = if paletted {
+            let end = rle.end;
+            rle_pads = rle.pads;
+            let mut detail = match rle.stop {
+                RleStop::Marker => None,
+                RleStop::Ended => {
+                    Some("RLE data ends without the end-of-bitmap marker".to_string())
+                }
+                RleStop::Rejected(why) => Some(format!("the decoder rejects the file: {why}")),
+            };
+            let disposition = if let RleStop::Rejected(_) = rle.stop {
+                Disposition::Malformed
+            } else if paletted {
                 Disposition::ImageData
             } else {
                 let d = "RLE stream parsed for validity only: without a colour table the decoder discards the decoded pixels and the output is zero-filled";
@@ -504,18 +519,45 @@ pub(crate) fn walk(data: &[u8], perm: BmpPermissiveness) -> Res<Inventory> {
             (end, disposition, detail)
         } else {
             let want = u128::from(pixel_start) + rows_len;
-            if want <= u128::from(len) {
+            let permissive = perm == BmpPermissiveness::Permissive;
+            let avail = len - pixel_start;
+            let (end, mut disposition, mut detail) = if want <= u128::from(len) {
                 (want as u64, Disposition::ImageData, None)
             } else {
-                (
-                    len,
-                    Disposition::ImageData,
-                    Some(format!(
-                        "truncated: {rows_len} bytes of rows are declared, {} are present",
-                        len - pixel_start
-                    )),
-                )
+                let rejects = !permissive
+                    && truncation_rejected(bpp, comp_raw, paletted, width, height, avail);
+                let base = format!(
+                    "truncated: {rows_len} bytes of rows are declared, {avail} are present"
+                );
+                if rejects {
+                    (
+                        len,
+                        Disposition::Malformed,
+                        Some(format!(
+                            "{base}; the decoder rejects the file under this policy"
+                        )),
+                    )
+                } else {
+                    (
+                        len,
+                        Disposition::ImageData,
+                        Some(format!(
+                            "{base}; the decoder zero-fills the missing pixels, and a partial last pixel is not read"
+                        )),
+                    )
+                }
+            };
+            if !permissive
+                && disposition == Disposition::ImageData
+                && let Some(n) = trace.palette_entries
+                && let Some(idx) = first_bad_index(data, pixel_start, width, height, bpp, n)
+            {
+                disposition = Disposition::Malformed;
+                detail = Some(format!(
+                    "palette index {idx} out of range ({n} entries): the decoder rejects the file"
+                ));
             }
+            (end, disposition, detail)
         };
         pixel_end = end;
         if end > pixel_start {
@@ -599,7 +641,33 @@ pub(crate) fn walk(data: &[u8], perm: BmpPermissiveness) -> Res<Inventory> {
             d.push_str(&notes.join("; "));
             p.detail = Some(d);
         }
-        inv.push(None, p)?;
+        let range = p.range.clone();
+        let id = inv.push(None, p)?;
+        // RLE absolute runs of odd length end with a pad byte the decoder skips unread.
+        let pads: Vec<u64> = rle_pads
+            .iter()
+            .copied()
+            .filter(|&b| range.start <= b && b < range.end)
+            .collect();
+        if pads.len() <= MAX_PAD_PARTS {
+            for b in pads {
+                inv.push(
+                    Some(id),
+                    Part::new(PartKind::Gap, PartTag::None, b..b + 1, Disposition::Padding)
+                        .with_detail("RLE absolute-run pad byte, skipped unread"),
+                )?;
+            }
+        } else if let Some(p) = inv.get(id) {
+            let d = format!(
+                "{}{} RLE absolute-run pad bytes are not distinguished from pixel bytes",
+                p.detail
+                    .as_deref()
+                    .map(|d| format!("{d}; "))
+                    .unwrap_or_default(),
+                pads.len()
+            );
+            inv.set_detail(id, d);
+        }
     }
 
     // ── 52-byte header: the decoder reads the alpha mask just past the header ──
@@ -712,8 +780,30 @@ impl Cur<'_> {
     }
 }
 
-/// Where the RLE stream ends, and whether it ended with a marker the decoder
-/// accepts. Mirrors `decode_rle4` / `decode_rle8plus`.
+/// How the decoder's RLE loop ends.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum RleStop {
+    /// An end-of-bitmap marker (or a final end-of-line the decoder accepts).
+    Marker,
+    /// The data ran out or the picture filled up; the decoder accepts that.
+    Ended,
+    /// The decoder returns an error here (never in Permissive mode).
+    Rejected(&'static str),
+}
+
+struct RleExtent {
+    end: u64,
+    stop: RleStop,
+    /// Offsets of the pad bytes after odd-length absolute runs.
+    pads: Vec<u64>,
+}
+
+/// Largest number of RLE pad bytes reported as their own parts; beyond it the
+/// pixel array's detail gives the count.
+const MAX_PAD_PARTS: usize = 4096;
+
+/// Where the RLE stream ends, how, and where its pad bytes are. Mirrors
+/// `decode_rle4` / `decode_rle8plus`.
 fn rle_extent(
     data: &[u8],
     start: u64,
@@ -721,14 +811,27 @@ fn rle_extent(
     width: u64,
     height: u64,
     permissive: bool,
-) -> (u64, bool) {
+) -> RleExtent {
     let mut c = Cur {
         d: data,
         p: start as usize,
         permissive,
     };
+    let mut pads = Vec::new();
     let mut line = height as i64 - 1;
     let mut x: u64 = 0;
+    let done = |c: &Cur<'_>, stop: RleStop, pads: Vec<u64>| RleExtent {
+        end: c.p as u64,
+        stop,
+        pads,
+    };
+    let underflow = |why: &'static str| {
+        if permissive {
+            RleStop::Ended
+        } else {
+            RleStop::Rejected(why)
+        }
+    };
     if depth == 4 {
         while line >= 0 && x <= width && !c.eof() {
             let code = u64::from(c.u8());
@@ -738,16 +841,16 @@ fn rle_extent(
                     0 => {
                         line -= 1;
                         if line < 0 {
-                            return (c.p as u64, permissive);
+                            return done(&c, underflow("RLE4 line underflow"), pads);
                         }
                         x = 0;
                     }
-                    1 => return (c.p as u64, true),
+                    1 => return done(&c, RleStop::Marker, pads),
                     2 => {
                         x += u64::from(c.u8());
                         line -= i64::from(c.u8());
                         if line < 0 {
-                            return (c.p as u64, permissive);
+                            return done(&c, underflow("RLE4 line underflow"), pads);
                         }
                     }
                     n => {
@@ -768,6 +871,9 @@ fn rle_extent(
                             x += 1;
                         }
                         if bytes & 1 == 1 {
+                            if !c.eof() {
+                                pads.push(c.p as u64);
+                            }
                             c.skip(1);
                         }
                     }
@@ -778,18 +884,25 @@ fn rle_extent(
                         c.u8();
                         continue;
                     }
-                    return (c.p as u64, false);
+                    return done(
+                        &c,
+                        RleStop::Rejected("RLE4 frame pointer out of bounds"),
+                        pads,
+                    );
                 }
                 c.u8();
                 x += code.min(width.saturating_sub(x));
             }
         }
-        return (c.p as u64, false);
+        return done(&c, RleStop::Ended, pads);
     }
     if !matches!(depth, 8 | 16 | 32) {
-        // 24-bit RLE is not produced by `BmpCompression` handling either; the
-        // decoder rejects depths other than 4/8/16/32.
-        return (data.len() as u64, false);
+        c.p = data.len();
+        return done(
+            &c,
+            RleStop::Rejected("unknown depth + RLE combination"),
+            pads,
+        );
     }
     let bd = u64::from((depth >> 3).max(1));
     let pixels_len = (u128::from(width) * u128::from(height) * u128::from(depth.max(8)))
@@ -807,19 +920,26 @@ fn rle_extent(
                         if c.p + 2 <= data.len() {
                             c.p += 2;
                         }
-                        return (c.p as u64, ok || permissive);
+                        let stop = if ok {
+                            RleStop::Marker
+                        } else if permissive {
+                            RleStop::Ended
+                        } else {
+                            RleStop::Rejected("RLE line beyond picture bounds")
+                        };
+                        return done(&c, stop, pads);
                     }
                     x = 0;
                     continue;
                 }
-                1 => return (c.p as u64, true),
+                1 => return done(&c, RleStop::Marker, pads),
                 2 => {
                     let dx = c.u8();
                     let dy = c.u8();
                     x += u64::from(dx);
                     line -= i64::from(dy);
                     if line < 0 {
-                        return (c.p as u64, permissive);
+                        return done(&c, underflow("RLE delta line underflow"), pads);
                     }
                     continue;
                 }
@@ -838,10 +958,17 @@ fn rle_extent(
                 8 => {
                     let size = n;
                     if !c.skip(size) {
-                        return (c.p as u64, false);
+                        return done(
+                            &c,
+                            RleStop::Rejected("unexpected end of file in an absolute run"),
+                            pads,
+                        );
                     }
                     x += size;
                     if n & 1 == 1 {
+                        if !c.eof() {
+                            pads.push(c.p as u64);
+                        }
                         c.skip(1);
                     }
                 }
@@ -861,7 +988,7 @@ fn rle_extent(
                     }
                     continue;
                 }
-                return (c.p as u64, false);
+                return done(&c, RleStop::Rejected("RLE position overrun"), pads);
             }
             for _ in 0..bd {
                 c.u8();
@@ -869,7 +996,78 @@ fn rle_extent(
             x += u64::from(p1) * bd;
         }
     }
-    (c.p as u64, false)
+    done(&c, RleStop::Ended, pads)
+}
+
+/// Whether the decoder rejects an uncompressed pixel array cut short (outside
+/// Permissive): rows read with `read_exact_bytes` (1/2/4 bpp, 8 bpp grey, 24 bpp)
+/// fail when the last row's data is short; paletted 8 bpp rows fail on a missing
+/// row pad; 16 and 32 bpp rows are zero-filled.
+fn truncation_rejected(
+    bpp: u16,
+    comp_raw: u32,
+    paletted: bool,
+    width: u64,
+    height: u64,
+    avail: u64,
+) -> bool {
+    let _ = comp_raw;
+    let h = u128::from(height);
+    let avail = u128::from(avail);
+    match bpp {
+        16 | 32 => false,
+        8 if paletted => (width.wrapping_neg() & 3) != 0,
+        1 | 2 | 4 => {
+            let stride = u128::from((width * u64::from(bpp)).div_ceil(32) * 4);
+            let row = u128::from((width * u64::from(bpp)).div_ceil(8));
+            avail < (h - 1) * stride + row
+        }
+        8 | 24 => {
+            let comp = u128::from(bpp / 8);
+            let stride = u128::from((width * u64::from(bpp)).div_ceil(32) * 4);
+            avail < (h - 1) * stride + u128::from(width) * comp
+        }
+        _ => false,
+    }
+}
+
+/// The first palette index of an uncompressed paletted image that is not below
+/// `entries`: the decoder rejects such a file outside Permissive mode
+/// (`expand_palette*`). Bytes past the end of the file read as index 0.
+fn first_bad_index(
+    data: &[u8],
+    start: u64,
+    width: u64,
+    height: u64,
+    bpp: u16,
+    entries: usize,
+) -> Option<u32> {
+    if entries >= 256 || entries >= (1usize << bpp) {
+        return None;
+    }
+    let stride = if bpp == 8 {
+        width + (width.wrapping_neg() & 3)
+    } else {
+        (width * u64::from(bpp)).div_ceil(32) * 4
+    };
+    let per_byte = 8 / u64::from(bpp);
+    let mask = (1u16 << bpp) - 1;
+    for row in 0..height {
+        let row_at = start.checked_add(row.checked_mul(stride)?)?;
+        if row_at >= data.len() as u64 {
+            return None;
+        }
+        for x in 0..width {
+            let byte_at = row_at + x / per_byte;
+            let &b = data.get(byte_at as usize)?;
+            let shift = 8 - u64::from(bpp) * (x % per_byte + 1);
+            let idx = u32::from((u16::from(b) >> shift) & mask);
+            if idx as usize >= entries {
+                return Some(idx);
+            }
+        }
+    }
+    None
 }
 
 #[allow(dead_code)]
