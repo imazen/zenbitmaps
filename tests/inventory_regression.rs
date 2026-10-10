@@ -27,6 +27,19 @@ fn inventory_regression_seeds_tile() {
         let data = std::fs::read(&p).unwrap();
         check(PnmDecoderConfig::new(), &name, &data);
         check(BmpDecoderConfig::new(), &name, &data);
+        for policy in [
+            zencodec::decode::DecodePolicy::none().with_strict(true),
+            zencodec::decode::DecodePolicy::permissive(),
+        ] {
+            let inv = BmpDecoderConfig::new()
+                .job()
+                .with_policy(policy)
+                .inventory(&data)
+                .unwrap()
+                .unwrap();
+            inv.validate()
+                .unwrap_or_else(|e| panic!("{name} under {policy:?}: {e}\n{inv}"));
+        }
         check(FarbfeldDecoderConfig::new(), &name, &data);
         check(QoiDecoderConfig::new(), &name, &data);
         check(TgaDecoderConfig::new(), &name, &data);

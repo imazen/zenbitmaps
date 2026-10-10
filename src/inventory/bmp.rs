@@ -59,7 +59,16 @@ pub(crate) fn walk(data: &[u8], perm: BmpPermissiveness) -> Res<Inventory> {
         return Ok(inv);
     }
     let strict = perm == BmpPermissiveness::Strict;
-    let trace = header_trace(data, perm);
+    // The decoder's Strict-mode size check multiplies without overflow checks and
+    // panics (debug) or wraps (release) on absurd dimensions; report such a file
+    // as rejected instead of running that code.
+    let trace = if strict && strict_check_overflows(data) {
+        Err(whereat::at!(crate::error::BitmapError::InvalidData(
+            "Strict-mode image size check overflows (the decoder panics in debug builds)".into()
+        )))
+    } else {
+        header_trace(data, perm)
+    };
     let reject: Option<String> = trace.as_ref().err().map(|e| e.error().to_string());
     let reject_detail = reject
         .as_ref()
@@ -382,7 +391,15 @@ pub(crate) fn walk(data: &[u8], perm: BmpPermissiveness) -> Res<Inventory> {
     let paletted = trace.palette_entries.is_some();
     if let Some(entries) = trace.palette_entries {
         let n = entries.min(256) as u64;
-        if let Some(r) = clip(dib_end, n * entry, len) {
+        // A short file: the decoder reads whole entries only (a partial one is
+        // read in Permissive mode, zero-filled), and entries past the end are zero.
+        let avail = len - dib_end;
+        let bytes = if perm == BmpPermissiveness::Permissive {
+            (n * entry).min(avail)
+        } else {
+            n.min(avail / entry) * entry
+        };
+        if let Some(r) = clip(dib_end, bytes, len) {
             if claimed.try_claim(&r) {
                 let mut detail = format!("{n} entries of {entry} bytes");
                 if entry == 4 {
@@ -634,6 +651,28 @@ pub(crate) fn walk(data: &[u8], perm: BmpPermissiveness) -> Res<Inventory> {
     }
     let _ = (trailer, bf_size);
     Ok(inv)
+}
+
+/// Whether `decode_headers` would overflow in its Strict-mode image-size check
+/// (`row_bytes * height`, unchecked in the decoder).
+fn strict_check_overflows(data: &[u8]) -> bool {
+    let Some(ihsize) = u32_le(data, 14) else {
+        return false;
+    };
+    if ihsize <= 16 || !KNOWN_HEADER_SIZES.contains(&ihsize) {
+        return false;
+    }
+    let (Some(w), Some(h), Some(bpp)) = (u32_le(data, 18), u32_le(data, 22), u16_le(data, 28))
+    else {
+        return false;
+    };
+    let height = (h as i32).unsigned_abs() as usize;
+    (w as usize)
+        .checked_mul(usize::from(bpp))
+        .map(|v| v.div_ceil(32))
+        .and_then(|v| v.checked_mul(4))
+        .and_then(|row| row.checked_mul(height))
+        .is_none()
 }
 
 // ── RLE dry run ──────────────────────────────────────────────────────
