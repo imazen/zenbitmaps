@@ -634,7 +634,7 @@ pub(crate) fn walk(data: &[u8], perm: BmpPermissiveness) -> Res<Inventory> {
     }
     if let Some(mut p) = pixel_part {
         if !notes.is_empty() {
-            let mut d = p.detail().unwrap_or_default().to_owned();
+            let mut d = String::from(p.detail().unwrap_or_default());
             if !d.is_empty() {
                 d.push_str("; ");
             }
