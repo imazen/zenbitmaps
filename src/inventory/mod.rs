@@ -109,28 +109,6 @@ impl Claimed {
         self.ranges.push(r);
     }
 
-    /// The parts of `r` no claimed range covers, in order.
-    pub(crate) fn free_pieces(&self, r: &Range<u64>) -> Vec<Range<u64>> {
-        let mut taken: Vec<&Range<u64>> = self
-            .ranges
-            .iter()
-            .filter(|c| c.start < r.end && c.end > r.start)
-            .collect();
-        taken.sort_by_key(|c| c.start);
-        let mut out = Vec::new();
-        let mut cursor = r.start;
-        for c in taken {
-            if c.start > cursor {
-                out.push(cursor..c.start);
-            }
-            cursor = cursor.max(c.end);
-        }
-        if cursor < r.end {
-            out.push(cursor..r.end);
-        }
-        out
-    }
-
     /// Claim `r` if it is free.
     pub(crate) fn try_claim(&mut self, r: &Range<u64>) -> bool {
         if self.is_free(r) {

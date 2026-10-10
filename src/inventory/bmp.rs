@@ -7,7 +7,7 @@
 //! at `max(bfOffBits, position after the header fields)`. An embedded or
 //! linked ICC profile (V5 header) is located by its own offset and is never
 //! read. The start of the pixel array comes from the decoder itself
-//! ([`crate::bmp::decode::pixel_data_start`]); its end is computed from the
+//! ([`crate::bmp::decode::header_trace`]); its end is computed from the
 //! stride or, for RLE, by a dry run of the RLE control flow.
 
 use alloc::format;
@@ -23,7 +23,7 @@ use super::{
     u32_le,
 };
 use crate::bmp::BmpPermissiveness;
-use crate::bmp::decode::pixel_data_start;
+use crate::bmp::decode::header_trace;
 
 const KNOWN_HEADER_SIZES: [u32; 8] = [12, 16, 40, 52, 56, 64, 108, 124];
 const CS_EMBEDDED: u32 = 0x4D42_4544; // 'MBED'
@@ -59,8 +59,8 @@ pub(crate) fn walk(data: &[u8], perm: BmpPermissiveness) -> Res<Inventory> {
         return Ok(inv);
     }
     let strict = perm == BmpPermissiveness::Strict;
-    let verdict = pixel_data_start(data, perm);
-    let reject: Option<String> = verdict.as_ref().err().map(|e| e.error().to_string());
+    let trace = header_trace(data, perm);
+    let reject: Option<String> = trace.as_ref().err().map(|e| e.error().to_string());
     let reject_detail = reject
         .as_ref()
         .map(|r| format!("the decoder rejects this file: {r}"));
@@ -81,7 +81,6 @@ pub(crate) fn walk(data: &[u8], perm: BmpPermissiveness) -> Res<Inventory> {
         return Ok(inv);
     }
     let bf_size = u32_le(data, 2).unwrap_or(0);
-    let bf_off = u32_le(data, 10).unwrap_or(0);
     let fh = inv.push(
         None,
         Part::new(
@@ -236,19 +235,33 @@ pub(crate) fn walk(data: &[u8], perm: BmpPermissiveness) -> Res<Inventory> {
         });
         let has_res = xppm > 0 || yppm > 0;
         fields.push(Field {
-            detail: (!has_res).then(|| "both densities are zero, so none is reported".into()),
+            detail: (!has_res).then(|| {
+                "both densities are zero, so none is reported (range-checked in Strict mode)".into()
+            }),
             ..field(
                 24,
                 8,
                 "resolution",
                 if has_res {
                     Disposition::Metadata(MetadataKind::Resolution)
+                } else if strict {
+                    Disposition::Structure
                 } else {
                     Disposition::Dropped
                 },
             )
         });
-        fields.push(field(32, 4, "colors-used", Disposition::Structure));
+        fields.push(if bpp <= 8 {
+            field(32, 4, "colors-used", Disposition::Structure)
+        } else {
+            Field {
+                detail: Some(
+                    "only sizes the skipped colour table above 8 bpp; the decoder never uses it"
+                        .into(),
+                ),
+                ..field(32, 4, "colors-used", Disposition::Dropped)
+            }
+        });
         fields.push(field(36, 4, "colors-important", Disposition::Dropped));
         if ihsize >= 52 {
             fields.push(Field {
@@ -320,6 +333,22 @@ pub(crate) fn walk(data: &[u8], perm: BmpPermissiveness) -> Res<Inventory> {
         }
         inv.push(Some(dib_id), p)?;
     }
+    // Same shape as the other walkers: a file the decoder rejects keeps its
+    // header and the rest is Malformed.
+    let trace = match trace {
+        Ok(t) => t,
+        Err(_) => {
+            malformed_rest(
+                &mut inv,
+                None,
+                dib_end,
+                len,
+                reject_detail.unwrap_or_default(),
+            )?;
+            return Ok(inv);
+        }
+    };
+    let pixel_start = trace.pixel_start as u64;
     // Overreads of the 52/56/64-byte headers: the decoder reads the V4 colour
     // block after the header, whatever is there.
     let overreads = matches!(ihsize, 52 | 56 | 64);
@@ -327,11 +356,15 @@ pub(crate) fn walk(data: &[u8], perm: BmpPermissiveness) -> Res<Inventory> {
     // ── external masks (40-byte header with BITFIELDS) ────────────────
     let mut cursor_after_header = dib_end;
     let mut notes: Vec<String> = Vec::new();
+    let entry = if os2 { 3u64 } else { 4 };
     if ihsize == 40
         && bitfields
         && let Some(r) = clip(dib_end, 12, len)
     {
-        if claimed.try_claim(&r) {
+        cursor_after_header = r.end;
+        // The decoder reads the masks, then re-reads the colour table from the
+        // same place; for a paletted image the bytes are the table.
+        if trace.palette_entries.is_none() && claimed.try_claim(&r) {
             inv.push(
                 None,
                 Part::new(
@@ -343,75 +376,43 @@ pub(crate) fn walk(data: &[u8], perm: BmpPermissiveness) -> Res<Inventory> {
                 .with_detail(masks_detail().unwrap_or_else(|| "external bitfield masks".into())),
             )?;
         }
-        cursor_after_header = r.end;
     }
 
-    // ── colour table ─────────────────────────────────────────────────
-    let p_gap = bf_off.wrapping_sub(ihsize).wrapping_sub(14);
-    let paletted = matches!(bpp, 1 | 2 | 4 | 8) && (p_gap > 0 || clr_used > 0);
-    let entry = if os2 { 3u64 } else { 4 };
-    let mut palette_end = None;
-    if paletted {
-        let max_colors = 1u64 << bpp;
-        let colors = if ihsize >= 36 {
-            let t = clr_used as i32;
-            if t < 0 || i64::from(t) > max_colors as i64 || t == 0 {
-                max_colors
-            } else {
-                t as u64
-            }
-        } else {
-            256.min(u64::from(p_gap) / 3)
-        };
-        if let Some(r) = clip(dib_end, colors * entry, len) {
+    // ── colour table (as the decoder counted it) ─────────────────────
+    let paletted = trace.palette_entries.is_some();
+    if let Some(entries) = trace.palette_entries {
+        let n = entries.min(256) as u64;
+        if let Some(r) = clip(dib_end, n * entry, len) {
             if claimed.try_claim(&r) {
+                let mut detail = format!("{n} entries of {entry} bytes");
+                if entry == 4 {
+                    detail.push_str("; the fourth byte of each entry is not read");
+                }
+                if ihsize == 40 && bitfields {
+                    detail.push_str(
+                        "; the same bytes are first read as the bitfield masks, which an image of 8 bpp or less ignores",
+                    );
+                }
+                if ihsize == 12 {
+                    detail.push_str(
+                        "; OS/2 files: the decoder counts 256 entries whatever the file declares",
+                    );
+                }
                 inv.push(
                     None,
                     Part::new(
                         PartKind::Block,
                         PartTag::Name("colour-table".into()),
-                        r.clone(),
+                        r,
                         Disposition::Structure,
                     )
-                    .with_detail(format!(
-                        "{colors} entries of {entry} bytes; the fourth byte of each entry is not read"
-                    )),
+                    .with_detail(detail),
                 )?;
-                palette_end = Some(r.end);
             } else {
                 notes.push("the colour table overlaps another part".into());
             }
         }
     }
-
-    // ── pixel array start ────────────────────────────────────────────
-    let pixel_start = match verdict {
-        Ok(p) => p as u64,
-        Err(_) => {
-            // Same arithmetic as decode_headers, assuming the header parsed.
-            let mut pos = match ihsize {
-                12 => 26,
-                16 => 30,
-                _ => {
-                    let mut p = 54;
-                    if ihsize >= 52 || bitfields {
-                        p += 12;
-                    }
-                    if ihsize > 40 {
-                        p += 56;
-                    }
-                    if ihsize > 108 {
-                        p += 16;
-                    }
-                    p
-                }
-            };
-            if let Some(end) = palette_end {
-                pos = end;
-            }
-            u64::from(bf_off).max(pos)
-        }
-    };
 
     // A colour table in a truecolor file is sized by biClrUsed and never read.
     // It can only occupy the bytes before the pixel array.
@@ -433,6 +434,92 @@ pub(crate) fn walk(data: &[u8], perm: BmpPermissiveness) -> Res<Inventory> {
                 )
                 .with_detail("truecolor image: the decoder ignores the colour table"),
             )?;
+        }
+    }
+
+    // ── pixel array (before the profile: the decoder reads these bytes) ──
+    let stride = (width * u64::from(bpp)).div_ceil(32) * 4;
+    let rows_len = u128::from(stride) * u128::from(height);
+    let mut pixel_part: Option<Part> = None;
+    let pixel_end;
+    if pixel_start >= len {
+        pixel_end = len;
+        notes.push(format!(
+            "the pixel array would start at {pixel_start}, past the end of the file"
+        ));
+    } else {
+        let known_comp = matches!(comp_raw, 0..=3 | 6);
+        let rle = matches!(comp_raw, 1 | 2);
+        let (end, disposition, detail): (u64, Disposition, Option<String>) = if !known_comp {
+            let end = (u128::from(pixel_start) + rows_len).min(u128::from(len)) as u64;
+            if perm == BmpPermissiveness::Permissive {
+                (
+                    end,
+                    Disposition::Skipped,
+                    Some(format!(
+                        "unknown compression {comp_raw}: Permissive mode zero-fills the image without reading this"
+                    )),
+                )
+            } else {
+                (end, Disposition::ImageData, None)
+            }
+        } else if rle {
+            let (end, complete) = rle_extent(
+                data,
+                pixel_start,
+                bpp,
+                width,
+                height,
+                perm == BmpPermissiveness::Permissive,
+            );
+            let mut detail =
+                (!complete).then(|| "RLE data ends without the end-of-bitmap marker".to_string());
+            let disposition = if paletted {
+                Disposition::ImageData
+            } else {
+                let d = "RLE stream parsed for validity only: without a colour table the decoder discards the decoded pixels and the output is zero-filled";
+                detail = Some(match detail {
+                    Some(x) => format!("{x}; {d}"),
+                    None => d.to_string(),
+                });
+                Disposition::Dropped
+            };
+            (end, disposition, detail)
+        } else {
+            let want = u128::from(pixel_start) + rows_len;
+            if want <= u128::from(len) {
+                (want as u64, Disposition::ImageData, None)
+            } else {
+                (
+                    len,
+                    Disposition::ImageData,
+                    Some(format!(
+                        "truncated: {rows_len} bytes of rows are declared, {} are present",
+                        len - pixel_start
+                    )),
+                )
+            }
+        };
+        pixel_end = end;
+        if end > pixel_start {
+            let mut detail = detail.unwrap_or_default();
+            if !rle && known_comp {
+                if !detail.is_empty() {
+                    detail.push_str("; ");
+                }
+                detail.push_str("row padding bytes are not distinguished from pixel bytes");
+            }
+            let mut p = Part::new(
+                PartKind::Block,
+                PartTag::Name("pixel-array".into()),
+                pixel_start..end,
+                disposition,
+            );
+            if !detail.is_empty() {
+                p = p.with_detail(detail);
+            }
+            claimed.claim(pixel_start..end);
+            pixel_part = Some(p);
         }
     }
 
@@ -474,7 +561,7 @@ pub(crate) fn walk(data: &[u8], perm: BmpPermissiveness) -> Res<Inventory> {
                         inv.push(None, p)?;
                     } else {
                         notes.push(format!(
-                            "the {} profile at {}..{} overlaps another part",
+                            "the {} profile named by the header at {}..{} overlaps other parts and is not reported separately",
                             if linked { "linked" } else { "embedded" },
                             r.start,
                             r.end
@@ -486,124 +573,61 @@ pub(crate) fn walk(data: &[u8], perm: BmpPermissiveness) -> Res<Inventory> {
             }
         }
     }
-
-    // ── pixel array ──────────────────────────────────────────────────
-    let stride = (width * u64::from(bpp)).div_ceil(32) * 4;
-    let rows_len = u128::from(stride) * u128::from(height);
-    let pixel_end;
-    if pixel_start >= len {
-        pixel_end = len;
-        notes.push(format!(
-            "the pixel array would start at {pixel_start}, past the end of the file"
-        ));
-    } else {
-        let known_comp = matches!(comp_raw, 0..=3 | 6);
-        let rle = matches!(comp_raw, 1 | 2);
-        let (end, disposition, detail): (u64, Disposition, Option<String>) = if !known_comp {
-            let end = (u128::from(pixel_start) + rows_len).min(u128::from(len)) as u64;
-            if perm == BmpPermissiveness::Permissive {
-                (
-                    end,
-                    Disposition::Skipped,
-                    Some(format!(
-                        "unknown compression {comp_raw}: Permissive mode zero-fills the image without reading this"
-                    )),
-                )
-            } else {
-                (end, Disposition::ImageData, None)
+    if let Some(mut p) = pixel_part {
+        if !notes.is_empty() {
+            let mut d = p.detail.take().unwrap_or_default();
+            if !d.is_empty() {
+                d.push_str("; ");
             }
-        } else if rle {
-            let (end, complete) = rle_extent(
-                data,
-                pixel_start,
-                bpp,
-                width,
-                height,
-                perm == BmpPermissiveness::Permissive,
-            );
-            (
-                end,
-                Disposition::ImageData,
-                (!complete).then(|| "RLE data ends without the end-of-bitmap marker".to_string()),
-            )
-        } else {
-            let want = u128::from(pixel_start) + rows_len;
-            if want <= u128::from(len) {
-                (want as u64, Disposition::ImageData, None)
-            } else {
-                (
-                    len,
-                    Disposition::ImageData,
-                    Some(format!(
-                        "truncated: {rows_len} bytes of rows are declared, {} are present",
-                        len - pixel_start
-                    )),
-                )
-            }
-        };
-        pixel_end = end;
-        if end > pixel_start {
-            let mut detail = detail.unwrap_or_default();
-            if !rle && known_comp {
-                if !detail.is_empty() {
-                    detail.push_str("; ");
-                }
-                detail.push_str("row padding bytes are not distinguished from pixel bytes");
-            }
-            if !notes.is_empty() {
-                if !detail.is_empty() {
-                    detail.push_str("; ");
-                }
-                detail.push_str(&notes.join("; "));
-            }
-            let mut p = Part::new(
-                PartKind::Block,
-                PartTag::Name("pixel-array".into()),
-                pixel_start..end,
-                disposition,
-            );
-            if !detail.is_empty() {
-                p = p.with_detail(detail);
-            }
-            let pieces = claimed.free_pieces(&(pixel_start..end));
-            if pieces.len() == 1 && pieces[0] == (pixel_start..end) {
-                inv.push(None, p)?;
-            } else {
-                // Another part (a profile or table a corrupt offset points here)
-                // sits inside the array: report the rest of it.
-                for piece in pieces {
-                    inv.push(
-                        None,
-                        Part::new(
-                            PartKind::Block,
-                            PartTag::Name("pixel-array".into()),
-                            piece,
-                            disposition,
-                        )
-                        .with_detail("pixel array interrupted by another part"),
-                    )?;
-                }
-            }
+            d.push_str(&notes.join("; "));
+            p.detail = Some(d);
         }
+        inv.push(None, p)?;
+    }
+
+    // ── 52-byte header: the decoder reads the alpha mask just past the header ──
+    let before = pixel_start.min(len);
+    if ihsize == 52
+        && let Some(r) = clip(dib_end, 4, before)
+        && claimed.try_claim(&r)
+    {
+        inv.push(
+            None,
+            Part::new(
+                PartKind::Field,
+                PartTag::Name("alpha-mask".into()),
+                r,
+                masks_disposition,
+            )
+            .with_detail(
+                masks_detail()
+                    .map(|d| format!("read past the 52-byte header (over-read); {d}"))
+                    .unwrap_or_else(|| "read past the 52-byte header (over-read)".into()),
+            ),
+        )?;
     }
 
     // ── holes ────────────────────────────────────────────────────────
-    let before = pixel_start.min(len);
-    fill_top_level_holes(&mut inv, 0..before, |hole| {
-        if overreads && hole.start >= dib_end && hole.start < 14 + 108 + 14 {
-            (
-                Disposition::Skipped,
-                Some(
-                    "read by the decoder as the V4 colour block of the header (52/56/64-byte headers are over-read), then skipped"
-                        .into(),
-                ),
-            )
-        } else {
-            (
-                Disposition::Unreferenced,
-                Some("between the headers/colour table and the pixel array".into()),
-            )
+    if overreads {
+        // The V4 colour block the decoder skips after the header, up to 14 + 108.
+        let zone_start = if ihsize == 52 { dib_end + 4 } else { dib_end };
+        if zone_start < before.min(14 + 108) {
+            fill_top_level_holes(&mut inv, zone_start..before.min(14 + 108), |_| {
+                (
+                    Disposition::Skipped,
+                    Some(
+                        "read by the decoder as the V4 colour block of the header (52/56/64-byte headers are over-read), then skipped"
+                            .into(),
+                    ),
+                )
+            })?;
         }
+    }
+    fill_top_level_holes(&mut inv, 0..before, |_| {
+        (
+            Disposition::Unreferenced,
+            Some("between the headers/colour table and the pixel array".into()),
+        )
     })?;
     if pixel_end < len {
         fill_top_level_holes(&mut inv, pixel_end..len, |_| (Disposition::Trailing, None))?;
@@ -766,9 +790,9 @@ fn rle_extent(
             let row_start = (line.max(0) as u64).saturating_mul(width);
             let out_start = row_start.saturating_add(x);
             if out_start.saturating_add(n.saturating_mul(bd)) > pixels_len {
-                if !c.skip(2 * bd) {
-                    return (c.p as u64, false);
-                }
+                // The decoder ignores the result of this skip: a failed one leaves
+                // the cursor where it is (Permissive: at the end) and goes on.
+                c.skip(2 * bd);
                 continue;
             }
             match depth {
