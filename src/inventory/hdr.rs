@@ -83,9 +83,9 @@ pub(crate) fn walk(data: &[u8]) -> Res<Inventory> {
             first = false;
         } else {
             let key = text.iter().position(|&b| b == b'=').map(|i| &text[..i]);
-            let name: String = match key {
+            let name: alloc::borrow::Cow<'static, str> = match key {
                 Some(k) if !k.is_empty() && k.len() <= 32 => {
-                    String::from_utf8_lossy(k).into_owned()
+                    alloc::borrow::Cow::Owned(String::from_utf8_lossy(k).into_owned())
                 }
                 _ if text.first() == Some(&b'#') => "comment".into(),
                 _ => "line".into(),
@@ -94,12 +94,11 @@ pub(crate) fn walk(data: &[u8]) -> Res<Inventory> {
                 None,
                 Part::new(
                     PartKind::Attribute,
-                    PartTag::Name(name.into()),
+                    PartTag::Name(name),
                     range,
                     Disposition::Skipped,
                 )
-                .with_label(label(text))
-                .with_detail("header line the decoder skips"),
+                .with_label(label(text)),
             )?;
         }
         pos = line_end + 1;
