@@ -110,22 +110,52 @@ pub(crate) fn walk(data: &[u8]) -> Res<Inventory> {
             {
                 claimed.claim(r.clone());
                 let used = h.is_color_mapped();
-                let mut p = Part::new(
-                    PartKind::Block,
-                    PartTag::Name("colour-map".into()),
-                    r,
-                    if used {
-                        Disposition::Structure
-                    } else {
-                        Disposition::Skipped
-                    },
-                );
-                if !used {
-                    p = p.with_detail(
-                        "the image type is not colour-mapped; the map is read past and unused",
-                    );
+                if used {
+                    // An 8-bit index reaches entry `index - color_map_start`, so
+                    // only the first `256 - color_map_start` entries can be read.
+                    let reachable = 256u64
+                        .saturating_sub(u64::from(h.color_map_start))
+                        .min(u64::from(h.color_map_length));
+                    let split = (at + reachable * entry).min(r.end);
+                    if split > r.start {
+                        inv.push(
+                            None,
+                            Part::new(
+                                PartKind::Block,
+                                PartTag::Name("colour-map".into()),
+                                r.start..split,
+                                Disposition::Structure,
+                            ),
+                        )?;
+                    }
+                    if split < r.end {
+                        inv.push(
+                            None,
+                            Part::new(
+                                PartKind::Block,
+                                PartTag::Name("colour-map-unreachable".into()),
+                                split..r.end,
+                                Disposition::Dropped,
+                            )
+                            .with_detail(
+                                "colour map entries no 8-bit pixel index can reach (index - color_map_start)",
+                            ),
+                        )?;
+                    }
+                } else {
+                    inv.push(
+                        None,
+                        Part::new(
+                            PartKind::Block,
+                            PartTag::Name("colour-map".into()),
+                            r,
+                            Disposition::Skipped,
+                        )
+                        .with_detail(
+                            "the image type is not colour-mapped; the map is read past and unused",
+                        ),
+                    )?;
                 }
-                inv.push(None, p)?;
             }
             at += n;
         }
