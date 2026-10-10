@@ -634,14 +634,14 @@ pub(crate) fn walk(data: &[u8], perm: BmpPermissiveness) -> Res<Inventory> {
     }
     if let Some(mut p) = pixel_part {
         if !notes.is_empty() {
-            let mut d = p.detail.take().unwrap_or_default();
+            let mut d = p.detail().unwrap_or_default().to_owned();
             if !d.is_empty() {
                 d.push_str("; ");
             }
             d.push_str(&notes.join("; "));
-            p.detail = Some(d);
+            p.set_detail(d);
         }
-        let range = p.range.clone();
+        let range = p.range();
         let id = inv.push(None, p)?;
         // RLE absolute runs of odd length end with a pad byte the decoder skips unread.
         let pads: Vec<u64> = rle_pads
@@ -660,7 +660,7 @@ pub(crate) fn walk(data: &[u8], perm: BmpPermissiveness) -> Res<Inventory> {
         } else if let Some(p) = inv.get(id) {
             let d = format!(
                 "{}{} RLE absolute-run pad bytes are not distinguished from pixel bytes",
-                p.detail
+                p.detail()
                     .as_deref()
                     .map(|d| format!("{d}; "))
                     .unwrap_or_default(),

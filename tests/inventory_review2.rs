@@ -58,15 +58,15 @@ fn decode_with<C: DecoderConfig>(
 fn leaf_at(inv: &Inventory, at: u64) -> &Part {
     inv.parts()
         .iter()
-        .filter(|p| p.range.start <= at && at < p.range.end)
-        .min_by_key(|p| p.range.end - p.range.start)
+        .filter(|p| p.range().start <= at && at < p.range().end)
+        .min_by_key(|p| p.range().end - p.range().start)
         .unwrap()
 }
 
 fn named<'a>(inv: &'a Inventory, name: &str) -> &'a Part {
     inv.parts()
         .iter()
-        .find(|p| matches!(&p.tag, PartTag::Name(n) if n == name))
+        .find(|p| matches!(&p.tag(), PartTag::Name(n) if n == name))
         .unwrap_or_else(|| panic!("no part {name}\n{inv}"))
 }
 
@@ -123,14 +123,14 @@ fn rle8_absolute_run_pad_bytes_are_padding() {
     for at in [67u64, 75] {
         let p = leaf_at(&inv, at);
         assert_eq!(
-            (p.range.clone(), p.disposition),
+            (p.range(), p.disposition()),
             (at..at + 1, Disposition::Padding),
             "{inv}"
         );
         flips_never_matter(BmpDecoderConfig::new(), None, &v, at as usize);
     }
     assert_eq!(
-        named(&inv, "pixel-array").disposition,
+        named(&inv, "pixel-array").disposition(),
         Disposition::ImageData
     );
 }
@@ -147,7 +147,7 @@ fn rle4_absolute_run_pad_bytes_are_padding() {
     let inv = bmp_inv(&v, None);
     let p = leaf_at(&inv, pad);
     assert_eq!(
-        (p.range.clone(), p.disposition),
+        (p.range(), p.disposition()),
         (pad..pad + 1, Disposition::Padding),
         "{inv}"
     );
@@ -164,7 +164,7 @@ fn tga_unused_colour_map_spec_is_dropped() {
     let inv = inv_of(TgaDecoderConfig::new(), &v);
     let f = named(&inv, "colour-map-spec");
     assert_eq!(
-        (f.range.clone(), f.disposition),
+        (f.range(), f.disposition()),
         (3..8, Disposition::Dropped),
         "{inv}"
     );
@@ -178,7 +178,7 @@ fn tga_unused_colour_map_spec_is_dropped() {
     let inv = inv_of(TgaDecoderConfig::new(), &w);
     let f = named(&inv, "first-entry-index");
     assert_eq!(
-        (f.range.clone(), f.disposition),
+        (f.range(), f.disposition()),
         (3..5, Disposition::Dropped),
         "{inv}"
     );
@@ -199,7 +199,11 @@ fn strict_image_size_is_structure_only_for_uncompressed_rgb() {
     bf.extend_from_slice(&le32(0x001F));
     bf.extend_from_slice(&[0x1F, 0, 0xE0, 0x07]);
     let inv = bmp_inv(&bf, strict);
-    assert_eq!(leaf_at(&inv, 34).disposition, Disposition::Dropped, "{inv}");
+    assert_eq!(
+        leaf_at(&inv, 34).disposition(),
+        Disposition::Dropped,
+        "{inv}"
+    );
     for at in 34..38 {
         flips_never_matter(BmpDecoderConfig::new(), strict, &bf, at);
     }
@@ -208,7 +212,7 @@ fn strict_image_size_is_structure_only_for_uncompressed_rgb() {
     rgb.extend_from_slice(&[1, 2, 3, 0]);
     let inv = bmp_inv(&rgb, strict);
     assert_eq!(
-        leaf_at(&inv, 34).disposition,
+        leaf_at(&inv, 34).disposition(),
         Disposition::Structure,
         "{inv}"
     );
@@ -227,7 +231,7 @@ fn probe_only_metadata_says_so() {
     let inv = bmp_inv(&v, None);
     assert!(
         named(&inv, "resolution")
-            .detail
+            .detail()
             .as_deref()
             .unwrap()
             .contains("probe() only")
@@ -239,7 +243,7 @@ fn probe_only_metadata_says_so() {
     let inv = inv_of(QoiDecoderConfig::new(), &q);
     assert!(
         named(&inv, "colorspace")
-            .detail
+            .detail()
             .as_deref()
             .unwrap()
             .contains("probe() only")
@@ -277,8 +281,8 @@ fn small_files() -> Vec<(&'static str, Vec<u8>)> {
 
 fn says_rejected(inv: &Inventory) -> bool {
     inv.parts().iter().any(|p| {
-        p.disposition == Disposition::ImageData
-            && p.detail
+        p.disposition() == Disposition::ImageData
+            && p.detail()
                 .as_deref()
                 .is_some_and(|d| d.contains("rejects this file under the job's limits"))
     })
@@ -360,9 +364,9 @@ fn rle_errors_are_malformed_outside_permissive() {
     assert!(decode_with(BmpDecoderConfig::new(), None, &v).is_err());
     let inv = bmp_inv(&v, None);
     let px = named(&inv, "pixel-array");
-    assert_eq!(px.disposition, Disposition::Malformed, "{inv}");
+    assert_eq!(px.disposition(), Disposition::Malformed, "{inv}");
     assert!(
-        px.detail
+        px.detail()
             .as_deref()
             .unwrap()
             .contains("RLE position overrun")
@@ -371,7 +375,7 @@ fn rle_errors_are_malformed_outside_permissive() {
     assert!(decode_with(BmpDecoderConfig::new(), perm, &v).is_ok());
     let inv = bmp_inv(&v, perm);
     assert_ne!(
-        named(&inv, "pixel-array").disposition,
+        named(&inv, "pixel-array").disposition(),
         Disposition::Malformed,
         "{inv}"
     );
@@ -385,8 +389,8 @@ fn out_of_range_palette_index_is_malformed() {
     assert!(decode_with(BmpDecoderConfig::new(), None, &v).is_err());
     let inv = bmp_inv(&v, None);
     let px = named(&inv, "pixel-array");
-    assert_eq!(px.disposition, Disposition::Malformed, "{inv}");
-    assert!(px.detail.as_deref().unwrap().contains("palette index 5"));
+    assert_eq!(px.disposition(), Disposition::Malformed, "{inv}");
+    assert!(px.detail().unwrap().contains("palette index 5"));
 }
 
 #[test]
@@ -396,7 +400,7 @@ fn truncations_follow_the_decoder() {
     v.extend_from_slice(&[1, 2, 3, 4, 5, 6, 0, 0, 7, 8]);
     assert!(decode_with(BmpDecoderConfig::new(), None, &v).is_err());
     assert_eq!(
-        named(&bmp_inv(&v, None), "pixel-array").disposition,
+        named(&bmp_inv(&v, None), "pixel-array").disposition(),
         Disposition::Malformed
     );
     // 32 bpp: zero-filled, and a partial last pixel is not read (F6).
@@ -405,9 +409,9 @@ fn truncations_follow_the_decoder() {
     assert!(decode_with(BmpDecoderConfig::new(), None, &v).is_ok());
     let inv = bmp_inv(&v, None);
     let px = named(&inv, "pixel-array");
-    assert_eq!(px.disposition, Disposition::ImageData, "{inv}");
+    assert_eq!(px.disposition(), Disposition::ImageData, "{inv}");
     assert!(
-        px.detail
+        px.detail()
             .as_deref()
             .unwrap()
             .contains("partial last pixel is not read")
@@ -432,7 +436,7 @@ fn truncations_follow_the_decoder() {
         assert!(
             inv.parts()
                 .iter()
-                .all(|p| p.disposition != Disposition::ImageData),
+                .all(|p| p.disposition() != Disposition::ImageData),
             "{name}\n{inv}"
         );
     }
@@ -454,8 +458,8 @@ fn narrow_rows_cut_inside_their_padding_still_decode() {
             assert!(decode_with(BmpDecoderConfig::new(), policy, data).is_ok());
             let inv = bmp_inv(data, policy);
             let px = named(&inv, "pixel-array");
-            assert_eq!(px.disposition, Disposition::ImageData, "cut {cut}\n{inv}");
-            assert!(px.detail.as_deref().unwrap().contains("does not reject"));
+            assert_eq!(px.disposition(), Disposition::ImageData, "cut {cut}\n{inv}");
+            assert!(px.detail().unwrap().contains("does not reject"));
         }
     }
     // Grey 8 bpp, width 1: 1 data byte + 3 pad bytes per row.
@@ -475,7 +479,7 @@ fn narrow_rows_cut_inside_their_padding_still_decode() {
             Disposition::Malformed
         };
         assert_eq!(
-            named(&bmp_inv(data, None), "pixel-array").disposition,
+            named(&bmp_inv(data, None), "pixel-array").disposition(),
             want,
             "h {h}"
         );
@@ -486,7 +490,7 @@ fn narrow_rows_cut_inside_their_padding_still_decode() {
     w.extend_from_slice(&[0, 1, 0, 0, 0]);
     assert!(decode_with(BmpDecoderConfig::new(), None, &w).is_err());
     assert_eq!(
-        named(&bmp_inv(&w, None), "pixel-array").disposition,
+        named(&bmp_inv(&w, None), "pixel-array").disposition(),
         Disposition::Malformed
     );
 }

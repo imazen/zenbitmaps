@@ -381,10 +381,10 @@ pub(crate) fn job_inventory(
     if let Some(why) = why {
         for id in inv.children(None) {
             let Some(p) = inv.get(id) else { continue };
-            if !p.disposition.is_consumed() {
+            if !p.disposition().is_consumed() {
                 continue;
             }
-            let d = match &p.detail {
+            let d = match &p.detail() {
                 Some(d) => alloc::format!(
                     "{d}; the decoder rejects this file under the job's limits: {why}"
                 ),

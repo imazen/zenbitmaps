@@ -172,7 +172,7 @@ pub(crate) fn fill_top_level_holes(
     let mut holes = Vec::new();
     let mut cursor = span.start;
     for id in inv.children(None) {
-        let r = inv.get(id).map(|p| p.range.clone()).unwrap_or(0..0);
+        let r = inv.get(id).map(|p| p.range()).unwrap_or(0..0);
         if r.start >= span.end {
             break;
         }

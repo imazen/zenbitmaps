@@ -217,13 +217,13 @@ pub(crate) fn walk(data: &[u8]) -> Res<Inventory> {
             );
             match state {
                 Extent::Truncated => {
-                    p.disposition = Disposition::Malformed;
+                    p.set_disposition(Disposition::Malformed);
                     p = p.with_detail(
                         "truncated: the file ends before all pixels are read; the decoder rejects the file",
                     );
                 }
                 Extent::Overrun => {
-                    p.disposition = Disposition::Malformed;
+                    p.set_disposition(Disposition::Malformed);
                     p = p.with_detail(
                         "a packet runs past the image bounds; the decoder rejects the file",
                     );

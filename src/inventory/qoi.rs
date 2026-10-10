@@ -100,7 +100,7 @@ pub(crate) fn walk(data: &[u8]) -> Res<Inventory> {
             Disposition::ImageData,
         );
         if truncated {
-            p.disposition = Disposition::Malformed;
+            p.set_disposition(Disposition::Malformed);
             p = p.with_detail(
                 "truncated: the op stream ends before all pixels are filled; the decoder rejects the file",
             );

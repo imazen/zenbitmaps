@@ -61,8 +61,8 @@ fn decode_pixels<C: DecoderConfig>(cfg: C, data: &[u8]) -> Result<(u32, u32, Vec
 fn pixel_end(inv: &Inventory) -> u64 {
     inv.parts()
         .iter()
-        .filter(|p| p.parent.is_none() && p.disposition == Disposition::ImageData)
-        .map(|p| p.range.end)
+        .filter(|p| p.parent().is_none() && p.disposition() == Disposition::ImageData)
+        .map(|p| p.range().end)
         .max()
         .expect("an ImageData part")
 }
@@ -79,8 +79,8 @@ fn check_file<C: DecoderConfig + Clone>(cfg: C, path: &Path, necessary_slack: u6
     // read as pixels. The inventory reports exactly that (ImageData to the end
     // of the file), which the junk check of `check_inventory` rejects by design.
     if inv.parts().iter().any(|p| {
-        p.disposition == Disposition::ImageData
-            && p.detail
+        p.disposition() == Disposition::ImageData
+            && p.detail()
                 .as_deref()
                 .is_some_and(|d| d.starts_with("truncated"))
     }) {

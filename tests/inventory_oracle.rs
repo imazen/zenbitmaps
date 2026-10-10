@@ -87,7 +87,7 @@ fn exiftool_agrees_on_pnm_header_lengths() {
             let header = inv
                 .parts()
                 .iter()
-                .find(|p| p.kind == PartKind::Header)
+                .find(|p| p.kind() == PartKind::Header)
                 .expect("header part");
             // The decoder's header ends one byte after the last number; exiftool
             // reports the same length.
@@ -95,14 +95,14 @@ fn exiftool_agrees_on_pnm_header_lengths() {
                 "{:<48} exiftool {:>5}  inventory {:>5}  {}",
                 f.file_name().unwrap().to_string_lossy(),
                 n,
-                header.range.end,
-                if n == header.range.end {
+                header.range().end,
+                if n == header.range().end {
                     "match"
                 } else {
                     "DIFFERS"
                 }
             ));
-            assert_eq!(header.range, 0..n, "{}\n{inv}", f.display());
+            assert_eq!(header.range(), 0..n, "{}\n{inv}", f.display());
             checked += 1;
         }
     }
@@ -145,15 +145,15 @@ fn exiftool_agrees_on_bmp_headers_and_profiles() {
             let dib = inv
                 .parts()
                 .iter()
-                .find(|p| p.kind == PartKind::Header && matches!(p.tag, PartTag::Code(_)))
+                .find(|p| p.kind() == PartKind::Header && matches!(p.tag(), PartTag::Code(_)))
                 .expect("info header part");
             let mut line = format!(
                 "{:<36} info header exiftool {:>3} inventory {:>3}",
                 f.file_name().unwrap().to_string_lossy(),
                 k,
-                dib.range.end - dib.range.start
+                dib.range().end - dib.range().start
             );
-            assert_eq!(dib.range, 14..14 + k, "{}\n{inv}", f.display());
+            assert_eq!(dib.range(), 14..14 + k, "{}\n{inv}", f.display());
             // Embedded profile: ProfileDataOffset / ProfileSize and the byte count
             // of the ICC_Profile tag.
             let field = |name: &str| {
@@ -182,13 +182,19 @@ fn exiftool_agrees_on_bmp_headers_and_profiles() {
                 let profile = inv
                     .parts()
                     .iter()
-                    .find(|p| matches!(&p.tag, PartTag::Name(n) if n == "icc-profile"));
+                    .find(|p| matches!(&p.tag(), PartTag::Name(n) if n == "icc-profile"));
                 match profile {
                     Some(p) => {
-                        assert_eq!(p.range, 14 + off..14 + off + size, "{}\n{inv}", f.display());
+                        assert_eq!(
+                            p.range(),
+                            14 + off..14 + off + size,
+                            "{}\n{inv}",
+                            f.display()
+                        );
                         line.push_str(&format!(
                             "  profile {}..{} match",
-                            p.range.start, p.range.end
+                            p.range().start,
+                            p.range().end
                         ));
                     }
                     None => {
@@ -196,7 +202,7 @@ fn exiftool_agrees_on_bmp_headers_and_profiles() {
                         let note = inv
                             .parts()
                             .iter()
-                            .any(|p| p.detail.as_deref().is_some_and(|d| d.contains("profile")));
+                            .any(|p| p.detail().is_some_and(|d| d.contains("profile")));
                         assert!(
                             14 + off + size > data.len() as u64 || note,
                             "{}: profile at {}+{} missing\n{inv}",
@@ -239,8 +245,8 @@ fn scratch_dir(name: &str) -> PathBuf {
 fn pixel_end(inv: &Inventory) -> Option<u64> {
     inv.parts()
         .iter()
-        .filter(|p| p.parent.is_none() && p.disposition == Disposition::ImageData)
-        .map(|p| p.range.end)
+        .filter(|p| p.parent().is_none() && p.disposition() == Disposition::ImageData)
+        .map(|p| p.range().end)
         .max()
 }
 

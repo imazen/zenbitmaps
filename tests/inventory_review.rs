@@ -38,9 +38,9 @@ fn decode<C: DecoderConfig>(cfg: C, data: &[u8]) -> Result<(u32, u32, Vec<u8>), 
 fn part_at(inv: &Inventory, at: u64) -> String {
     let mut best: Option<&zencodec::inventory::Part> = None;
     for p in inv.parts() {
-        if p.range.start <= at && at < p.range.end {
+        if p.range().start <= at && at < p.range().end {
             match best {
-                Some(b) if b.range.end - b.range.start <= p.range.end - p.range.start => {}
+                Some(b) if b.range().end - b.range().start <= p.range().end - p.range().start => {}
                 _ => best = Some(p),
             }
         }
@@ -48,26 +48,26 @@ fn part_at(inv: &Inventory, at: u64) -> String {
     let p = best.unwrap();
     format!(
         "{} {} {}..{} {} detail={:?}",
-        p.kind.name(),
-        p.tag,
-        p.range.start,
-        p.range.end,
-        p.disposition,
-        p.detail
+        p.kind().name(),
+        p.tag(),
+        p.range().start,
+        p.range().end,
+        p.disposition(),
+        p.detail()
     )
 }
 
 fn is_consumed_at(inv: &Inventory, at: u64) -> bool {
     let mut best: Option<&zencodec::inventory::Part> = None;
     for p in inv.parts() {
-        if p.range.start <= at && at < p.range.end {
+        if p.range().start <= at && at < p.range().end {
             match best {
-                Some(b) if b.range.end - b.range.start <= p.range.end - p.range.start => {}
+                Some(b) if b.range().end - b.range().start <= p.range().end - p.range().start => {}
                 _ => best = Some(p),
             }
         }
     }
-    best.unwrap().disposition.is_consumed()
+    best.unwrap().disposition().is_consumed()
 }
 
 /// Flip byte `at` and report whether decode output changes.
@@ -85,14 +85,14 @@ fn is_unit_framing(inv: &Inventory, data: &[u8], at: u64) -> bool {
     let leaf = inv
         .parts()
         .iter()
-        .filter(|p| p.range.start <= at && at < p.range.end)
-        .min_by_key(|p| p.range.end - p.range.start)
+        .filter(|p| p.range().start <= at && at < p.range().end)
+        .min_by_key(|p| p.range().end - p.range().start)
         .unwrap();
-    let line_like = matches!(leaf.kind, zencodec::inventory::PartKind::Attribute)
-        || matches!(&leaf.tag, zencodec::inventory::PartTag::Name(n) if n == "comment");
+    let line_like = matches!(leaf.kind(), zencodec::inventory::PartKind::Attribute)
+        || matches!(&leaf.tag(), zencodec::inventory::PartTag::Name(n) if n == "comment");
     line_like
-        && ((data[at as usize] == b'\n' && at + 1 == leaf.range.end)
-            || (data[at as usize] == b'#' && at == leaf.range.start))
+        && ((data[at as usize] == b'\n' && at + 1 == leaf.range().end)
+            || (data[at as usize] == b'#' && at == leaf.range().start))
 }
 
 fn le32(v: u32) -> [u8; 4] {
@@ -248,15 +248,15 @@ fn check_bmp_policy(
 fn leaf_at(inv: &Inventory, at: u64) -> &zencodec::inventory::Part {
     inv.parts()
         .iter()
-        .filter(|p| p.range.start <= at && at < p.range.end)
-        .min_by_key(|p| p.range.end - p.range.start)
+        .filter(|p| p.range().start <= at && at < p.range().end)
+        .min_by_key(|p| p.range().end - p.range().start)
         .unwrap()
 }
 
 fn find<'a>(inv: &'a Inventory, name: &str) -> Option<&'a zencodec::inventory::Part> {
     inv.parts()
         .iter()
-        .find(|p| matches!(&p.tag, zencodec::inventory::PartTag::Name(n) if n == name))
+        .find(|p| matches!(&p.tag(), zencodec::inventory::PartTag::Name(n) if n == name))
 }
 
 /// 14-byte file header + info header of `ihsize` bytes (fields beyond the
@@ -313,15 +313,15 @@ fn tga_unreachable_colour_map_entries_are_dropped() {
     let inv = inv_of(cfg(), &v);
     let reachable = leaf_at(&inv, 18);
     assert_eq!(
-        (reachable.range.clone(), reachable.disposition),
+        (reachable.range(), reachable.disposition()),
         (18..18 + 768, Disposition::Structure),
         "{inv}"
     );
     let rest = leaf_at(&inv, secret as u64);
-    assert_eq!(rest.disposition, Disposition::Dropped, "{inv}");
-    assert_eq!(rest.range, 18 + 768..18 + 900);
+    assert_eq!(rest.disposition(), Disposition::Dropped, "{inv}");
+    assert_eq!(rest.range(), 18 + 768..18 + 900);
     assert!(
-        rest.detail
+        rest.detail()
             .as_deref()
             .unwrap()
             .contains("no 8-bit pixel index")
@@ -333,8 +333,11 @@ fn tga_unreachable_colour_map_entries_are_dropped() {
     let mut w = v.clone();
     w[3..5].copy_from_slice(&200u16.to_le_bytes());
     let inv = inv_of(cfg(), &w);
-    assert_eq!(leaf_at(&inv, 18).range, 18..18 + 56 * 3, "{inv}");
-    assert_eq!(leaf_at(&inv, 18 + 56 * 3).disposition, Disposition::Dropped);
+    assert_eq!(leaf_at(&inv, 18).range(), 18..18 + 56 * 3, "{inv}");
+    assert_eq!(
+        leaf_at(&inv, 18 + 56 * 3).disposition(),
+        Disposition::Dropped
+    );
 }
 
 // ── finding 3: V5 profile pointing into the pixel array ──────────────
@@ -352,12 +355,12 @@ fn bmp_v5_profile_inside_pixels_stays_pixel_data() {
     let inv = inv_of(cfg(), &s);
     let px = find(&inv, "pixel-array").unwrap();
     assert_eq!(
-        (px.range.clone(), px.disposition),
+        (px.range(), px.disposition()),
         (138..162, Disposition::ImageData),
         "{inv}"
     );
     assert!(
-        px.detail
+        px.detail()
             .as_deref()
             .unwrap()
             .contains("overlaps other parts"),
@@ -391,7 +394,7 @@ fn bmp_rle_failed_skip_keeps_reading() {
     assert!(
         inv.parts()
             .iter()
-            .all(|p| p.disposition != Disposition::Trailing),
+            .all(|p| p.disposition() != Disposition::Trailing),
         "nothing is trailing:\n{inv}"
     );
     assert_eq!(
@@ -400,7 +403,7 @@ fn bmp_rle_failed_skip_keeps_reading() {
         "RLE without a palette is Dropped, not ImageData\n{inv}"
     );
     let px = find(&inv, "pixel-array").unwrap();
-    assert_eq!(px.range.end, v.len() as u64, "{inv}");
+    assert_eq!(px.range().end, v.len() as u64, "{inv}");
 }
 
 // ── finding 5: RLE output discarded without a colour table ───────────
@@ -423,9 +426,9 @@ fn bmp_rle_without_palette_is_dropped() {
         }
         let inv = inv_of(BmpDecoderConfig::new(), &v);
         let px = find(&inv, "pixel-array").unwrap();
-        assert_eq!(px.disposition, expect, "bpp {bpp} clr {clr}\n{inv}");
+        assert_eq!(px.disposition(), expect, "bpp {bpp} clr {clr}\n{inv}");
         if expect == Disposition::Dropped {
-            assert!(px.detail.as_deref().unwrap().contains("zero-filled"));
+            assert!(px.detail().unwrap().contains("zero-filled"));
             let out = decode(BmpDecoderConfig::new(), &v).unwrap().2;
             assert!(
                 out.iter().all(|&b| b == 0),
@@ -450,11 +453,11 @@ fn bmp_os2_palette_follows_the_decoder() {
     let inv = inv_of(cfg(), &v);
     let t = find(&inv, "colour-table").unwrap();
     assert_eq!(
-        (t.range.clone(), t.disposition),
+        (t.range(), t.disposition()),
         (26..26 + 768, Disposition::Structure),
         "{inv}"
     );
-    assert_eq!(find(&inv, "pixel-array").unwrap().range.start, 794);
+    assert_eq!(find(&inv, "pixel-array").unwrap().range().start, 794);
     assert!(is_consumed_at(&inv, 56));
     assert!(byte_matters(cfg(), &v, 56));
 }
@@ -466,7 +469,7 @@ fn bmp_16_byte_header_palette_has_four_byte_entries() {
     let cfg = BmpDecoderConfig::new;
     let inv = inv_of(cfg(), &v);
     let t = find(&inv, "colour-table").unwrap();
-    assert_eq!(t.range, 30..30 + 1024, "{inv}");
+    assert_eq!(t.range(), 30..30 + 1024, "{inv}");
 }
 
 // ── finding 7: paletted + BITFIELDS ──────────────────────────────────
@@ -482,7 +485,7 @@ fn bmp_paletted_bitfields_reports_the_palette() {
     let inv = inv_of(cfg(), &v);
     let t = find(&inv, "colour-table").unwrap();
     assert_eq!(
-        (t.range.clone(), t.disposition),
+        (t.range(), t.disposition()),
         (54..70, Disposition::Structure),
         "{inv}"
     );
@@ -516,15 +519,15 @@ fn bmp_header52_alpha_mask_and_hole_split() {
     let inv = inv_of(cfg(), &v);
     let a = find(&inv, "alpha-mask").unwrap();
     assert_eq!(
-        (a.range.clone(), a.disposition),
+        (a.range(), a.disposition()),
         (66..70, Disposition::Structure),
         "{inv}"
     );
-    assert_eq!(leaf_at(&inv, 100).disposition, Disposition::Skipped);
-    assert_eq!(leaf_at(&inv, 100).range, 70..122, "{inv}");
+    assert_eq!(leaf_at(&inv, 100).disposition(), Disposition::Skipped);
+    assert_eq!(leaf_at(&inv, 100).range(), 70..122, "{inv}");
     let rest = leaf_at(&inv, 150);
     assert_eq!(
-        (rest.range.clone(), rest.disposition),
+        (rest.range(), rest.disposition()),
         (122..200, Disposition::Unreferenced),
         "{inv}"
     );
@@ -546,13 +549,13 @@ fn bmp_strict_zero_resolution_is_structure() {
         .unwrap();
     inv.validate().unwrap();
     assert_eq!(
-        leaf_at(&inv, 14 + 24).disposition,
+        leaf_at(&inv, 14 + 24).disposition(),
         Disposition::Structure,
         "{inv}"
     );
     let default_inv = inv_of(BmpDecoderConfig::new(), &v);
     assert_eq!(
-        leaf_at(&default_inv, 14 + 24).disposition,
+        leaf_at(&default_inv, 14 + 24).disposition(),
         Disposition::Dropped
     );
     // And a flipped density really does fail under Strict.
@@ -584,14 +587,14 @@ fn pnm_ascii_leading_zero_sample_is_image_data() {
     assert_eq!(decode(PnmDecoderConfig::new(), v).unwrap().2, [7, 9]);
     let px = find(&inv, "pixels").unwrap();
     assert_eq!(
-        (px.range.clone(), px.disposition),
+        (px.range(), px.disposition()),
         (11..25, Disposition::ImageData),
         "{inv}"
     );
     assert!(
         inv.parts()
             .iter()
-            .all(|p| p.disposition != Disposition::Malformed)
+            .all(|p| p.disposition() != Disposition::Malformed)
     );
 }
 
@@ -603,8 +606,8 @@ fn bmp_truecolor_colors_used_is_dropped() {
     v.extend_from_slice(&[1, 2, 3, 0]);
     let inv = inv_of(BmpDecoderConfig::new(), &v);
     let f = leaf_at(&inv, 14 + 32);
-    assert_eq!(f.disposition, Disposition::Dropped, "{inv}");
-    assert!(f.detail.as_deref().unwrap().contains("never uses"));
+    assert_eq!(f.disposition(), Disposition::Dropped, "{inv}");
+    assert!(f.detail().unwrap().contains("never uses"));
     assert!(!byte_matters(BmpDecoderConfig::new(), &v, 14 + 32));
 }
 
@@ -626,7 +629,7 @@ fn pnm_byte_after_the_last_header_number_is_dropped() {
     let inv = inv_of(PnmDecoderConfig::new(), v);
     let sep = leaf_at(&inv, 10);
     assert_eq!(
-        (sep.range.clone(), sep.disposition),
+        (sep.range(), sep.disposition()),
         (10..11, Disposition::Dropped),
         "{inv}"
     );
@@ -641,11 +644,11 @@ fn bmp_rejected_file_keeps_headers_and_is_malformed_after() {
     assert!(decode(BmpDecoderConfig::new(), &v).is_err());
     let inv = inv_of(BmpDecoderConfig::new(), &v);
     let tail = leaf_at(&inv, 54);
-    assert_eq!(tail.disposition, Disposition::Malformed, "{inv}");
+    assert_eq!(tail.disposition(), Disposition::Malformed, "{inv}");
     assert!(
         inv.parts()
             .iter()
-            .all(|p| p.disposition != Disposition::ImageData)
+            .all(|p| p.disposition() != Disposition::ImageData)
     );
 }
 
@@ -848,7 +851,7 @@ fn randomized_unconsumed_bytes_never_matter() {
 fn image_data_end(inv: &Inventory) -> Option<u64> {
     inv.parts()
         .iter()
-        .filter(|p| p.parent.is_none() && p.disposition == Disposition::ImageData)
-        .map(|p| p.range.end)
+        .filter(|p| p.parent().is_none() && p.disposition() == Disposition::ImageData)
+        .map(|p| p.range().end)
         .max()
 }

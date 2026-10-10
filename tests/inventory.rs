@@ -33,13 +33,13 @@ fn render_level(inv: &Inventory, parent: Option<PartId>, depth: usize, out: &mut
         let mut s = format!(
             "{}{} {} {}..{} {}",
             "  ".repeat(depth),
-            p.kind.name(),
-            p.tag,
-            p.range.start,
-            p.range.end,
-            p.disposition
+            p.kind().name(),
+            p.tag(),
+            p.range().start,
+            p.range().end,
+            p.disposition()
         );
-        if let Some(l) = &p.label {
+        if let Some(l) = &p.label() {
             s.push_str(&format!(" {l:?}"));
         }
         out.push(s);
@@ -95,8 +95,8 @@ where
 fn pixel_end(inv: &Inventory) -> u64 {
     inv.parts()
         .iter()
-        .filter(|p| p.parent.is_none() && p.disposition == Disposition::ImageData)
-        .map(|p| p.range.end)
+        .filter(|p| p.parent().is_none() && p.disposition() == Disposition::ImageData)
+        .map(|p| p.range().end)
         .max()
         .expect("an ImageData part")
 }
@@ -243,11 +243,11 @@ fn pnm_pinned_comments_and_concatenated_image() {
     let trailing = inv
         .parts()
         .iter()
-        .find(|p| p.kind == PartKind::Trailer)
+        .find(|p| p.kind() == PartKind::Trailer)
         .unwrap();
     assert!(
         trailing
-            .detail
+            .detail()
             .as_deref()
             .unwrap()
             .contains("concatenated PNM image")
