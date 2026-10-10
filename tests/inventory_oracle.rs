@@ -107,6 +107,20 @@ fn exiftool_agrees_on_pnm_header_lengths() {
         }
     }
     eprintln!("{}\nexiftool could not read: {unread:?}", rows.join("\n"));
+    unread.sort();
+    assert_eq!(
+        unread,
+        [
+            "comment_between_dims.ppm",
+            "grayscale_16bit_4x4.pam",
+            "grayscale_4x4.pam",
+            "grayscale_alpha_4x4.pam",
+            "rgb_16bit_4x4.pam",
+            "rgb_4x4.pam",
+            "rgb_alpha_4x4.pam",
+        ],
+        "the pinned list of PNM files exiftool cannot read"
+    );
     assert!(checked >= 20, "only {checked} PNM files compared");
 }
 
@@ -230,29 +244,36 @@ fn pixel_end(inv: &Inventory) -> Option<u64> {
         .max()
 }
 
+/// Files the extent check skips, by reason, as `"<reason>: <file name>"`.
+const MAGICK_SKIPPED: &[&str] = &[
+    "imagemagick-rejects: pal2.bmp",
+    "imagemagick-rejects: pal2color.bmp",
+    "imagemagick-rejects: rgba32abf.bmp",
+    // PAM DEPTH 2 (grey + alpha): zenbitmaps rejects it, ImageMagick reads it.
+    "no-image-data: grayscale_alpha_4x4.pam",
+];
+
 fn magick_extent_check(
     sub: &[&str],
     ext: &str,
     cfg: impl DecoderConfig,
     scratch: &str,
-) -> (usize, usize) {
+    skipped: &mut Vec<String>,
+) -> usize {
     let dir = scratch_dir(scratch);
-    let (mut agreed, mut skipped) = (0, 0);
+    let mut agreed = 0;
     for s in sub {
         for f in corpus_files(s) {
+            let name = f.file_name().unwrap().to_string_lossy().into_owned();
             let data = std::fs::read(&f).unwrap();
             let Some(full) = magick_pixels(&data, ext, &dir, "full") else {
-                skipped += 1; // ImageMagick rejects it too
+                skipped.push(format!("imagemagick-rejects: {name}"));
                 continue;
             };
             let inv = inventory_of(cfg.clone(), &data);
             let Some(end) = pixel_end(&inv) else {
-                // ImageMagick reads a file whose structure zenbitmaps rejects.
-                eprintln!(
-                    "  {}: ImageMagick decodes it, zenbitmaps has no pixel data to report",
-                    f.display()
-                );
-                skipped += 1;
+                // ImageMagick reads a file whose pixel data zenbitmaps rejects.
+                skipped.push(format!("no-image-data: {name}"));
                 continue;
             };
             let end = end as usize;
@@ -271,13 +292,14 @@ fn magick_extent_check(
             agreed += 1;
         }
     }
-    (agreed, skipped)
+    agreed
 }
 
 #[test]
 #[ignore = "needs exiftool and ImageMagick: run `just inventory-oracle`"]
 fn imagemagick_decodes_the_pixel_extent_alone() {
-    let (a, s) = magick_extent_check(
+    let mut skipped = Vec::new();
+    let ff = magick_extent_check(
         &[
             "farbfeld-conformance/valid",
             "farbfeld-conformance/edge-cases",
@@ -285,23 +307,27 @@ fn imagemagick_decodes_the_pixel_extent_alone() {
         "ff",
         FarbfeldDecoderConfig::new(),
         "inv-oracle-ff",
+        &mut skipped,
     );
-    eprintln!("farbfeld: {a} agreed, {s} ImageMagick-rejected");
-    assert!(a >= 15);
-    let (a, s) = magick_extent_check(
+    let pnm = magick_extent_check(
         &["pnm-conformance/valid", "pnm-conformance/edge-cases"],
         "pnm",
         PnmDecoderConfig::new(),
         "inv-oracle-pnm",
+        &mut skipped,
     );
-    eprintln!("pnm: {a} agreed, {s} ImageMagick-rejected");
-    assert!(a >= 30);
-    let (a, s) = magick_extent_check(
+    let bmp = magick_extent_check(
         &["bmp-conformance/valid"],
         "bmp",
         BmpDecoderConfig::new(),
         "inv-oracle-bmp",
+        &mut skipped,
     );
-    eprintln!("bmp: {a} agreed, {s} ImageMagick-rejected");
-    assert!(a >= 20);
+    eprintln!("agreed: farbfeld {ff}, pnm {pnm}, bmp {bmp}");
+    assert_eq!((ff, pnm, bmp), (15, 40, 67), "files that agree");
+    eprintln!("skipped: {skipped:#?}");
+    skipped.sort();
+    let mut want: Vec<String> = MAGICK_SKIPPED.iter().map(|s| s.to_string()).collect();
+    want.sort();
+    assert_eq!(skipped, want, "the pinned list of skipped files");
 }

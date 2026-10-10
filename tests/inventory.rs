@@ -416,6 +416,7 @@ fn tga_pinned_id_extension_developer_footer() {
         &inv,
         &[
             "header - 0..18 structure",
+            "  field colour-map-spec 3..8 dropped",
             "  field origin 8..12 dropped",
             "block image-id 18..23 skipped \"hello\"",
             "block pixels 23..29 image-data",
