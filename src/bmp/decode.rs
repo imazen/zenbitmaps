@@ -312,6 +312,34 @@ pub(crate) fn parse_bmp_header(data: &[u8], max_pixels: u64) -> crate::Result<Bm
     })
 }
 
+/// What the header parse established, for the inventory walker.
+#[cfg(feature = "zencodec")]
+pub(crate) struct HeaderTrace {
+    /// Where the decoder starts reading pixel data
+    /// (`max(bfOffBits, position after the header fields and palette)`).
+    pub pixel_start: usize,
+    /// Colour table entries the decoder read, `None` for non-paletted images.
+    pub palette_entries: Option<usize>,
+}
+
+/// Run the header parse only and report what the decoder established.
+///
+/// The inventory walker uses this as ground truth for the pixel start and the
+/// colour table, so the structural map follows the decoder even where its header
+/// parsing overreads (52/56/64-byte info headers) or miscounts (OS/2 palettes).
+#[cfg(feature = "zencodec")]
+pub(crate) fn header_trace(
+    data: &[u8],
+    permissiveness: BmpPermissiveness,
+) -> crate::Result<HeaderTrace> {
+    let mut dec = BmpDecoderState::new(data, permissiveness, u64::MAX, AllocPref::CodecDefault);
+    dec.decode_headers()?;
+    Ok(HeaderTrace {
+        pixel_start: dec.bytes.pos,
+        palette_entries: (dec.pix_fmt == BmpPixelFormat::Pal8).then_some(dec.palette_numbers),
+    })
+}
+
 // ── Full decode ─────────────────────────────────────────────────────
 
 /// Decode BMP pixel data (RGB/RGBA output).

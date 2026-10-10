@@ -22,7 +22,8 @@ static TGA_DECODE_CAPS: DecodeCapabilities = DecodeCapabilities::new()
     .with_stop(true)
     .with_enforces_max_pixels(true)
     .with_enforces_max_memory(true)
-    .with_enforces_max_input_bytes(true);
+    .with_enforces_max_input_bytes(true)
+    .with_inventory(true);
 
 static TGA_ENCODE_DESCRIPTORS: &[PixelDescriptor] = &[
     PixelDescriptor::RGB8_SRGB,
@@ -407,6 +408,34 @@ impl<'a> zencodec::decode::DecodeJob<'a> for TgaDecodeJob {
         Ok(
             OutputInfo::full_decode(header.width as u32, header.height as u32, desc)
                 .with_alpha(has_alpha),
+        )
+    }
+
+    fn inventory(
+        &self,
+        data: &[u8],
+    ) -> Result<Option<zencodec::inventory::Inventory>, Self::Error> {
+        let limits = self.limits.as_ref().or(self.config.limits.as_ref());
+        let output = crate::tga::decode::parse_header(data).ok().map(|h| {
+            let ch = if matches!(h.image_type, 3 | 11) {
+                1
+            } else if h.pixel_depth == 32
+                || (matches!(h.image_type, 1 | 9) && h.color_map_depth == 32)
+                || (h.descriptor & 0x0F) > 0
+            {
+                4
+            } else {
+                3
+            };
+            (u32::from(h.width), u32::from(h.height), Some(ch))
+        });
+        super::job_inventory(
+            data,
+            self.stop.as_ref(),
+            self.max_input_bytes,
+            limits,
+            output,
+            crate::inventory::tga::walk,
         )
     }
 

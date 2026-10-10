@@ -10,10 +10,11 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 enough = "0.4"
+zencodec = { version = ">=0.1.26, <0.3.0" }
 
 [dependencies.zenbitmaps]
 path = ".."
-features = ["bmp"]
+features = ["bmp", "qoi", "tga", "hdr", "zencodec"]
 
 [[bin]]
 name = "fuzz_decode"
@@ -28,3 +29,14 @@ path = "fuzz_targets/fuzz_roundtrip.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "inventory"
+path = "fuzz_targets/inventory.rs"
+test = false
+doc = false
+bench = false
+
+# Structural inventories (imazen/zencodec#133); swap for the release before merge.
+[patch.crates-io]
+zencodec = { git = "https://github.com/imazen/zencodec", branch = "feat/inventory" }

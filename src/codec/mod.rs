@@ -321,6 +321,83 @@ pub(crate) fn layout_to_pixel_buffer(
 }
 
 /// Build a zencodec DecodeOutput from an internal DecodeOutput.
+/// Run an inventory walk the way the decode path treats the input under this job's settings.
+///
+/// A stop token that has fired fails the call, as it would fail `decode()`. When the job's
+/// input-size, dimension or output-size limits make the decoder reject the file before it
+/// reads pixels, every consumed top-level part says so in its detail. `output` is the
+/// declared `(width, height, output bytes per pixel)`, with `None` bytes per pixel where the
+/// decode path skips the output-size check.
+pub(crate) fn job_inventory(
+    data: &[u8],
+    stop: Option<&zencodec::StopToken>,
+    max_input_bytes: Option<u64>,
+    limits: Option<&Limits>,
+    output: Option<(u32, u32, Option<usize>)>,
+    walk: impl FnOnce(
+        &[u8],
+    )
+        -> Result<zencodec::inventory::Inventory, zencodec::inventory::InventoryError>,
+) -> Result<Option<zencodec::inventory::Inventory>, whereat::At<zencodec::CodecError>> {
+    let stopped = || -> Result<(), whereat::At<zencodec::CodecError>> {
+        if let Some(s) = stop
+            && let Err(r) = s.check()
+        {
+            return Err(BitmapError::from(r).into());
+        }
+        Ok(())
+    };
+    stopped()?;
+    let mut inv = match walk(data) {
+        Ok(inv) => inv,
+        Err(e) => return Err(crate::inventory::to_bitmap_error(e).into()),
+    };
+    stopped()?;
+    let mut why: Option<alloc::string::String> = None;
+    if let Some(max) = max_input_bytes
+        && data.len() as u64 > max
+    {
+        why = Some(alloc::format!(
+            "input size {} exceeds limit {max}",
+            data.len()
+        ));
+    } else if let Some((w, h, bpp)) = output {
+        if let Err(e) = crate::limits::check_dimensions(w, h, limits) {
+            why = Some(e.error().to_string());
+        } else if let Some(bpp) = bpp {
+            let out = (w as usize)
+                .checked_mul(h as usize)
+                .and_then(|px| px.checked_mul(bpp));
+            match out {
+                None => why = Some("output size overflows usize".into()),
+                Some(out) => {
+                    if let Err(e) = crate::limits::check_output_size(out, limits) {
+                        why = Some(e.error().to_string());
+                    }
+                }
+            }
+        }
+    }
+    if let Some(why) = why {
+        for id in inv.children(None) {
+            let Some(p) = inv.get(id) else { continue };
+            if !p.disposition.is_consumed() {
+                continue;
+            }
+            let d = match &p.detail {
+                Some(d) => alloc::format!(
+                    "{d}; the decoder rejects this file under the job's limits: {why}"
+                ),
+                None => {
+                    alloc::format!("the decoder rejects this file under the job's limits: {why}")
+                }
+            };
+            inv.set_detail(id, d);
+        }
+    }
+    Ok(Some(inv))
+}
+
 pub(crate) fn decode_output_from_internal(
     decoded: &crate::decode::DecodeOutput<'_>,
     format: ImageFormat,
