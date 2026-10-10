@@ -446,9 +446,31 @@ impl<'a> zencodec::decode::DecodeJob<'a> for PnmDecodeJob {
         &self,
         data: &[u8],
     ) -> Result<Option<zencodec::inventory::Inventory>, Self::Error> {
-        crate::inventory::pnm::walk(data)
-            .map(Some)
-            .map_err(|e| crate::inventory::to_bitmap_error(e).into())
+        let limits = self.limits.as_ref().or(self.config.limits.as_ref());
+        let output = pnm::decode::parse_header(data).ok().map(|h| {
+            let binary_8bit = !matches!(data.get(1), Some(b'1' | b'2' | b'3'))
+                && h.maxval == 255
+                && matches!(
+                    h.format,
+                    pnm::PnmFormat::Pgm | pnm::PnmFormat::Ppm | pnm::PnmFormat::Pam
+                );
+            let bpp = match h.format {
+                pnm::PnmFormat::Pbm => Some(1),
+                pnm::PnmFormat::Pfm => Some(h.depth as usize * 4),
+                // Binary 8-bit data is borrowed, so the decoder skips the output-size check.
+                _ if binary_8bit => None,
+                _ => Some(h.depth as usize),
+            };
+            (h.width, h.height, bpp)
+        });
+        super::job_inventory(
+            data,
+            self.stop.as_ref(),
+            self.max_input_bytes,
+            limits,
+            output,
+            crate::inventory::pnm::walk,
+        )
     }
 
     fn decoder(

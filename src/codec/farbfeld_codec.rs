@@ -329,9 +329,18 @@ impl<'a> zencodec::decode::DecodeJob<'a> for FarbfeldDecodeJob {
         &self,
         data: &[u8],
     ) -> Result<Option<zencodec::inventory::Inventory>, Self::Error> {
-        crate::inventory::farbfeld::walk(data)
-            .map(Some)
-            .map_err(|e| crate::inventory::to_bitmap_error(e).into())
+        let limits = self.limits.as_ref().or(self.config.limits.as_ref());
+        let output = crate::farbfeld::decode::parse_header(data)
+            .ok()
+            .map(|(w, h)| (w, h, Some(8)));
+        super::job_inventory(
+            data,
+            self.stop.as_ref(),
+            self.max_input_bytes,
+            limits,
+            output,
+            crate::inventory::farbfeld::walk,
+        )
     }
 
     fn decoder(

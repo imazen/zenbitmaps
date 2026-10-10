@@ -373,9 +373,19 @@ impl<'a> zencodec::decode::DecodeJob<'a> for BmpDecodeJob {
         &self,
         data: &[u8],
     ) -> Result<Option<zencodec::inventory::Inventory>, Self::Error> {
-        crate::inventory::bmp::walk(data, policy_to_bmp_permissiveness(self.policy.as_ref()))
-            .map(Some)
-            .map_err(|e| crate::inventory::to_bitmap_error(e).into())
+        let limits = self.limits.as_ref().or(self.config.limits.as_ref());
+        let output = crate::bmp::decode::parse_bmp_header(data, u64::MAX)
+            .ok()
+            .map(|h| (h.width, h.height, Some(h.layout.bytes_per_pixel())));
+        let perm = policy_to_bmp_permissiveness(self.policy.as_ref());
+        super::job_inventory(
+            data,
+            self.stop.as_ref(),
+            self.max_input_bytes,
+            limits,
+            output,
+            |d| crate::inventory::bmp::walk(d, perm),
+        )
     }
 
     fn decoder(

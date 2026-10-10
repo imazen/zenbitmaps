@@ -430,9 +430,18 @@ impl<'a> zencodec::decode::DecodeJob<'a> for QoiDecodeJob {
         &self,
         data: &[u8],
     ) -> Result<Option<zencodec::inventory::Inventory>, Self::Error> {
-        crate::inventory::qoi::walk(data)
-            .map(Some)
-            .map_err(|e| crate::inventory::to_bitmap_error(e).into())
+        let limits = self.limits.as_ref().or(self.config.limits.as_ref());
+        let output = crate::qoi::decode::parse_header(data)
+            .ok()
+            .map(|h| (h.width, h.height, Some(if h.has_alpha { 4 } else { 3 })));
+        super::job_inventory(
+            data,
+            self.stop.as_ref(),
+            self.max_input_bytes,
+            limits,
+            output,
+            crate::inventory::qoi::walk,
+        )
     }
 
     fn decoder(
