@@ -67,6 +67,7 @@ pub(crate) fn walk(data: &[u8]) -> Res<Inventory> {
     let mut pos: u64 = 14;
     let mut remaining: u128 = w * h;
     let mut truncated = false;
+    let mut ignored_alpha = false;
     while remaining > 0 {
         let Some(&b) = data.get(pos as usize) else {
             truncated = true;
@@ -74,7 +75,10 @@ pub(crate) fn walk(data: &[u8]) -> Res<Inventory> {
         };
         let (size, pixels): (u64, u128) = match b {
             0xFE => (4, 1),
-            0xFF => (5, 1),
+            0xFF => {
+                ignored_alpha |= channels == 3;
+                (5, 1)
+            }
             0xC0..=0xFD => (1, u128::from(b & 0x3F) + 1),
             0x80..=0xBF => (2, 1),
             _ => (1, 1),
@@ -95,6 +99,10 @@ pub(crate) fn walk(data: &[u8]) -> Res<Inventory> {
         );
         if truncated {
             p = p.with_detail("truncated: the op stream ends before all pixels are filled");
+        } else if ignored_alpha {
+            p = p.with_detail(
+                "contains RGBA ops in a 3-channel file: their alpha byte is read and ignored",
+            );
         }
         inv.push(None, p)?;
     }

@@ -373,7 +373,9 @@ pub(crate) fn walk(data: &[u8], perm: BmpPermissiveness) -> Res<Inventory> {
                         r.clone(),
                         Disposition::Structure,
                     )
-                    .with_detail(format!("{colors} entries of {entry} bytes")),
+                    .with_detail(format!(
+                        "{colors} entries of {entry} bytes; the fourth byte of each entry is not read"
+                    )),
                 )?;
                 palette_end = Some(r.end);
             } else {
@@ -419,19 +421,18 @@ pub(crate) fn walk(data: &[u8], perm: BmpPermissiveness) -> Res<Inventory> {
             cursor_after_header,
             (u64::from(clr_used) * entry).min(room),
             len,
-        ) {
-            if claimed.try_claim(&r) {
-                inv.push(
-                    None,
-                    Part::new(
-                        PartKind::Block,
-                        PartTag::Name("colour-table".into()),
-                        r,
-                        Disposition::Skipped,
-                    )
-                    .with_detail("truecolor image: the decoder ignores the colour table"),
-                )?;
-            }
+        ) && claimed.try_claim(&r)
+        {
+            inv.push(
+                None,
+                Part::new(
+                    PartKind::Block,
+                    PartTag::Name("colour-table".into()),
+                    r,
+                    Disposition::Skipped,
+                )
+                .with_detail("truecolor image: the decoder ignores the colour table"),
+            )?;
         }
     }
 
@@ -543,6 +544,12 @@ pub(crate) fn walk(data: &[u8], perm: BmpPermissiveness) -> Res<Inventory> {
         pixel_end = end;
         if end > pixel_start {
             let mut detail = detail.unwrap_or_default();
+            if !rle && known_comp {
+                if !detail.is_empty() {
+                    detail.push_str("; ");
+                }
+                detail.push_str("row padding bytes are not distinguished from pixel bytes");
+            }
             if !notes.is_empty() {
                 if !detail.is_empty() {
                     detail.push_str("; ");

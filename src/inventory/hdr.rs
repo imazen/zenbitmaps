@@ -40,16 +40,46 @@ pub(crate) fn walk(data: &[u8]) -> Res<Inventory> {
         let range = pos as u64..(line_end + 1) as u64;
         let text = &data[pos..line_end];
         if first {
-            inv.push(
-                None,
-                Part::new(
-                    PartKind::Header,
-                    PartTag::None,
-                    range,
-                    Disposition::Structure,
-                )
-                .with_label(label(text)),
-            )?;
+            // Only the magic itself is checked; anything else on the first line is skipped.
+            let mlen = if data.starts_with(b"#?RADIANCE") {
+                10
+            } else {
+                6
+            };
+            if text.len() > mlen {
+                inv.push(
+                    None,
+                    Part::new(
+                        PartKind::Header,
+                        PartTag::None,
+                        0..mlen as u64,
+                        Disposition::Structure,
+                    )
+                    .with_label(label(&text[..mlen])),
+                )?;
+                inv.push(
+                    None,
+                    Part::new(
+                        PartKind::Attribute,
+                        PartTag::Name("magic-line-tail".into()),
+                        mlen as u64..range.end,
+                        Disposition::Skipped,
+                    )
+                    .with_label(label(&text[mlen..]))
+                    .with_detail("rest of the first line; only the magic prefix is checked"),
+                )?;
+            } else {
+                inv.push(
+                    None,
+                    Part::new(
+                        PartKind::Header,
+                        PartTag::None,
+                        range,
+                        Disposition::Structure,
+                    )
+                    .with_label(label(text)),
+                )?;
+            }
             first = false;
         } else {
             let key = text.iter().position(|&b| b == b'=').map(|i| &text[..i]);
