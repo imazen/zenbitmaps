@@ -327,7 +327,7 @@ dependencies = [
 [[package]]
 name = "zencodec"
 version = "0.1.27"
-source = "git+https://github.com/imazen/zencodec?branch=feat%2Finventory#21383d660a9e0ef9bf3c0b928a42cd1abde91a4e"
+source = "git+https://github.com/imazen/zencodec?branch=feat%2Finventory#b631eb286576df9179facdc0f2bfb2124c55e178"
 dependencies = [
  "almost-enough",
  "enough",
