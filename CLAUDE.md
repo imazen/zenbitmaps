@@ -56,6 +56,8 @@ Same as other zen* codecs — see codec-design/README.md. Key points:
 
 ## Known Bugs
 
+- i686 inventory CI failed with `PermissionDenied` while initializing codec-corpus. The workflow now prefetches on the host and mounts that cache into cross.
+
 - QOI inventory previously checked cancellation only before/after the complete opcode walk. The one-shot timeout regression now passes with in-walk polling. PNM, HDR, TGA and BMP walkers now also poll during traversal; `long_inventory_walks_retain_one_shot_timeout` exercises each with an in-walk one-shot timeout. Header interpretation runs after the input limit check.
 
 (none currently open)

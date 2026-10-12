@@ -95,7 +95,15 @@ jobs:
         with:
           key: cross-i686
 
+      - name: Prefetch inventory corpus on the host
+        env:
+          CODEC_CORPUS_CACHE: ${{ github.workspace }}/.corpus-cache
+        run: cargo test --features all,inventory --test inventory_corpus -- --test-threads=1
+
       - name: Test (i686)
+        env:
+          CODEC_CORPUS_CACHE: /codec-corpus
+          CROSS_CONTAINER_OPTS: --volume ${{ github.workspace }}/.corpus-cache:/codec-corpus
         run: cross test --target i686-unknown-linux-gnu --features all,inventory
 
   wasm:

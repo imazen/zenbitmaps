@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- Mount the host-prefetched inventory corpus in i686 CI so unchanged conformance tests can access it.
+
 - Poll cancellation while walking QOI opcodes and retain the first typed stop reason; a stopped walk never returns its partial inventory.
 
 ### QUEUED BREAKING CHANGES
