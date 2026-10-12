@@ -304,10 +304,7 @@ fn with_limits<C: DecoderConfig>(cfg: C, limits: ResourceLimits, data: &[u8]) ->
 
 #[test]
 fn job_limits_mark_the_file_as_rejected() {
-    for limits in [
-        ResourceLimits::none().with_max_pixels(1),
-        ResourceLimits::none().with_max_input_bytes(10),
-    ] {
+    for limits in [ResourceLimits::none().with_max_pixels(1)] {
         for (name, data) in small_files() {
             let (inv, rejected) = match name {
                 "bmp" => with_limits(BmpDecoderConfig::new(), limits, &data),
@@ -332,6 +329,37 @@ fn job_limits_mark_the_file_as_rejected() {
             _ => inv_of(HdrDecoderConfig::new(), &data),
         };
         assert!(!says_rejected(&inv), "{name}\n{inv}");
+    }
+}
+
+#[test]
+fn input_limits_return_typed_errors_before_inventory() {
+    fn check_limit<C: DecoderConfig>(cfg: C, data: &[u8]) {
+        use zencodec::CodecErrorExt;
+        let error = cfg
+            .job()
+            .with_limits(ResourceLimits::none().with_max_input_bytes(10))
+            .inventory(data)
+            .unwrap_err();
+        assert!(
+            matches!(error.limit_exceeded(), Some(zencodec::LimitExceeded::InputSize { actual, max: 10 }) if *actual == data.len() as u64)
+        );
+        assert_eq!(
+            error.error().category(),
+            zencodec::ErrorCategory::Resource(zencodec::ResourceError::Limits(
+                zencodec::LimitKind::InputSize
+            ))
+        );
+    }
+    for (name, data) in small_files() {
+        match name {
+            "bmp" => check_limit(BmpDecoderConfig::new(), &data),
+            "tga" => check_limit(TgaDecoderConfig::new(), &data),
+            "pnm" => check_limit(PnmDecoderConfig::new(), &data),
+            "farbfeld" => check_limit(FarbfeldDecoderConfig::new(), &data),
+            "qoi" => check_limit(QoiDecoderConfig::new(), &data),
+            _ => check_limit(HdrDecoderConfig::new(), &data),
+        }
     }
 }
 

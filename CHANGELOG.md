@@ -14,6 +14,8 @@ All notable changes to this project will be documented in this file.
 
 ### Metadata inventory
 
+- Input-byte limits return typed `InputSize` errors before scanning in all six formats; pixel and output limits retain decoder-rejection annotations.
+
 - Reuse PR23 (`4c383dbf`) walkers, original crash fixtures and BMP parser fixes
   behind default-off `inventory`; preserve typed unsupported/invariant errors.
   Native/i686, ExifTool and ImageMagick checks passed.

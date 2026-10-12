@@ -349,6 +349,21 @@ pub(crate) fn job_inventory(
         Ok(())
     };
     stopped()?;
+    if let Some(max) = max_input_bytes
+        && data.len() as u64 > max
+    {
+        use zencodec::CategorizedError;
+        let cause = zencodec::LimitExceeded::InputSize {
+            actual: data.len() as u64,
+            max,
+        };
+        return Err(zencodec::CodecError::from_parts(
+            Some("zenbitmaps"),
+            cause.category(),
+            alloc::boxed::Box::new(cause),
+        )
+        .into());
+    }
     let control = crate::inventory::WalkControl::new(stop);
     let result = walk(data, &control);
     control.check();
@@ -368,14 +383,7 @@ pub(crate) fn job_inventory(
         }
     };
     let mut why: Option<alloc::string::String> = None;
-    if let Some(max) = max_input_bytes
-        && data.len() as u64 > max
-    {
-        why = Some(alloc::format!(
-            "input size {} exceeds limit {max}",
-            data.len()
-        ));
-    } else if let Some((w, h, bpp)) = output {
+    if let Some((w, h, bpp)) = output {
         if let Err(e) = crate::limits::check_dimensions(w, h, limits) {
             why = Some(e.error().to_string());
         } else if let Some(bpp) = bpp {
