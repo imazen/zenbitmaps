@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### QUEUED BREAKING CHANGES
+
+- Published 0.1.5 audit: `BitmapError::UnsupportedVariant` gained a payload,
+  and 39 codec-trait errors now use `At<CodecError>` (already in `e5035995`).
+  See [metadata integration](docs/METADATA_INTEGRATION.md).
+
+### Metadata inventory
+
+- Reuse PR23 (`4c383dbf`) walkers, original crash fixtures and BMP parser fixes
+  behind default-off `inventory`; preserve typed unsupported/invariant errors.
+  Native/i686, ExifTool and ImageMagick checks passed.
+
 ### Changed
 - Dependency floors raised to the tested versions: `enough` 0.4.4, `archmage` 0.9.29, `garb` 0.2.8, `imgref` 1.12.3, `rgb` 0.8.53, `thiserror` 2.0.21; dev: `zenbench` 0.1.10, `codec-corpus` 1.1.0. All compatible; no majors were available (5d8eef4).
 

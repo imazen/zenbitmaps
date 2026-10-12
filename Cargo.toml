@@ -53,6 +53,8 @@ zencodec-testkit = ">=0.1.0, <0.3.0"
 codec-corpus = "1.1.0"
 
 [features]
+# Structural metadata inspection is independent of normal decode.
+inventory = ["zencodec"]
 default = []
 std = ["enough/std", "whereat/std"]
 
@@ -87,3 +89,9 @@ required-features = ["bmp", "qoi", "tga", "hdr", "simd"]
 name = "swizzle"
 harness = false
 required-features = ["simd"]
+
+# Structural inventories (imazen/zencodec#133). Swap for the released
+# zencodec/zencodec-testkit before merge.
+[patch.crates-io]
+zencodec = { git = "https://github.com/imazen/zencodec", rev = "c1c3292ff10f386191780ad407526951165da47a" }
+zencodec-testkit = { git = "https://github.com/imazen/zencodec", rev = "c1c3292ff10f386191780ad407526951165da47a" }
