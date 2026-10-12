@@ -91,3 +91,9 @@ metadata-traversal-stop-check:
 metadata-cross-corpus-check:
     cargo test --features all,inventory --test inventory_corpus -- --test-threads=1
     actionlint
+
+# Native-pixel policy and inventory checks for all six adapters.
+shared-contract-check:
+    cargo test --features all,inventory --test shared_contracts
+    cargo test --features all,zencodec --test shared_contracts
+    cargo clippy --features all,inventory --test shared_contracts -- -D warnings

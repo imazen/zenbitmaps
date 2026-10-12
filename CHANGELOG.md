@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Tests
+
+- Run shared policy admission and inventory boundary/dispatch checks on all six
+  adapters, including strided RGB8 and floating-point HDR inputs.
+
+
 ### Fixed
 
 - Mount the host-prefetched inventory corpus in i686 CI so unchanged conformance tests can access it.
