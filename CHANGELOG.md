@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Poll cancellation while walking QOI opcodes and retain the first typed stop reason; a stopped walk never returns its partial inventory.
+
 ### QUEUED BREAKING CHANGES
 
 - Published 0.1.5 audit: `BitmapError::UnsupportedVariant` gained a payload,

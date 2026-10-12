@@ -80,3 +80,6 @@ metadata-api-check:
     RUSTC_BOOTSTRAP=1 cargo rustdoc --lib --features all,inventory -- -Zunstable-options --output-format json
     RUSTC_BOOTSTRAP=1 cargo rustdoc --manifest-path "$baseline/Cargo.toml" --target-dir "$PWD/target/published-api/0.1.5" --lib --all-features -- -Zunstable-options --output-format json
     cargo semver-checks check-release --current-rustdoc target/doc/zenbitmaps.json --baseline-rustdoc target/published-api/0.1.5/doc/zenbitmaps.json --release-type patch
+
+metadata-cancellation-check:
+    cargo test --features all,inventory --test inventory_feature

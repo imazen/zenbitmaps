@@ -14,6 +14,7 @@ use alloc::borrow::Cow;
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::ops::Range;
+use enough::Stop as _;
 
 use zencodec::inventory::{
     Disposition, Inventory, InventoryError, Part, PartId, PartKind, PartTag,
@@ -30,6 +31,36 @@ pub(crate) mod hdr;
 pub(crate) mod qoi;
 #[cfg(feature = "tga")]
 pub(crate) mod tga;
+
+/// Retain the first stop reason while container helpers unwind partial results.
+/// The job discards those results whenever a checkpoint has fired.
+pub(crate) struct WalkControl<'a> {
+    stop: Option<&'a zencodec::StopToken>,
+    reason: core::cell::Cell<Option<enough::StopReason>>,
+}
+impl<'a> WalkControl<'a> {
+    pub(crate) fn new(stop: Option<&'a zencodec::StopToken>) -> Self {
+        Self {
+            stop,
+            reason: core::cell::Cell::new(None),
+        }
+    }
+    pub(crate) fn check(&self) -> bool {
+        if self.reason.get().is_some() {
+            return false;
+        }
+        if let Some(stop) = self.stop
+            && let Err(reason) = stop.check()
+        {
+            self.reason.set(Some(reason));
+            return false;
+        }
+        true
+    }
+    pub(crate) fn reason(&self) -> Option<enough::StopReason> {
+        self.reason.get()
+    }
+}
 
 pub(crate) type Res<T> = Result<T, InventoryError>;
 

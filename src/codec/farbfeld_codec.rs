@@ -337,7 +337,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for FarbfeldDecodeJob {
             self.max_input_bytes,
             limits,
             output,
-            crate::inventory::farbfeld::walk,
+            |data, _control| crate::inventory::farbfeld::walk(data),
         )
     }
 

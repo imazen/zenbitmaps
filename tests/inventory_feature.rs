@@ -83,3 +83,34 @@ check_format!(hdr, zenbitmaps::HdrDecoderConfig);
 check_format!(qoi, zenbitmaps::QoiDecoderConfig);
 #[cfg(feature = "tga")]
 check_format!(tga, zenbitmaps::TgaDecoderConfig);
+
+#[cfg(all(feature = "inventory", feature = "qoi"))]
+#[test]
+fn qoi_inventory_observes_timeout_during_opcode_traversal() {
+    use zencodec::decode::DecoderConfig as _;
+    struct StopOnce(std::sync::atomic::AtomicUsize);
+    impl enough::Stop for StopOnce {
+        fn check(&self) -> Result<(), enough::StopReason> {
+            if self.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 3 {
+                Err(enough::StopReason::TimedOut)
+            } else {
+                Ok(())
+            }
+        }
+    }
+    let mut bytes = b"qoif".to_vec();
+    bytes.extend_from_slice(&4096u32.to_be_bytes());
+    bytes.extend_from_slice(&1u32.to_be_bytes());
+    bytes.extend_from_slice(&[3, 0]);
+    bytes.resize(14 + 4096, 0);
+    bytes.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 1]);
+    let error = zenbitmaps::QoiDecoderConfig::new()
+        .job()
+        .with_stop(zencodec::StopToken::new(StopOnce(0.into())))
+        .inventory(&bytes)
+        .unwrap_err();
+    assert_eq!(
+        error.error().category(),
+        zencodec::ErrorCategory::Stopped(enough::StopReason::TimedOut)
+    );
+}

@@ -388,7 +388,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for HdrDecodeJob {
             self.max_input_bytes,
             limits,
             output,
-            crate::inventory::hdr::walk,
+            |data, _control| crate::inventory::hdr::walk(data),
         )
     }
 

@@ -11,7 +11,7 @@ use super::{Res, malformed_rest, trailer, u32_be};
 
 const END_MARKER: [u8; 8] = [0, 0, 0, 0, 0, 0, 0, 1];
 
-pub(crate) fn walk(data: &[u8]) -> Res<Inventory> {
+pub(crate) fn walk(data: &[u8], control: &super::WalkControl<'_>) -> Res<Inventory> {
     let len = data.len() as u64;
     let mut inv = Inventory::new(ImageFormat::Qoi, len);
     if data.is_empty() {
@@ -71,6 +71,9 @@ pub(crate) fn walk(data: &[u8]) -> Res<Inventory> {
     let mut truncated = false;
     let mut ignored_alpha = false;
     while remaining > 0 {
+        if !control.check() {
+            return Ok(inv);
+        }
         let Some(&b) = data.get(pos as usize) else {
             truncated = true;
             break;

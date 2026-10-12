@@ -433,7 +433,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for TgaDecodeJob {
             self.max_input_bytes,
             limits,
             output,
-            crate::inventory::tga::walk,
+            |data, _control| crate::inventory::tga::walk(data),
         )
     }
 

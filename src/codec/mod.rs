@@ -336,6 +336,7 @@ pub(crate) fn job_inventory(
     output: Option<(u32, u32, Option<usize>)>,
     walk: impl FnOnce(
         &[u8],
+        &crate::inventory::WalkControl<'_>,
     )
         -> Result<zencodec::inventory::Inventory, zencodec::inventory::InventoryError>,
 ) -> Result<zencodec::inventory::Inventory, whereat::At<zencodec::CodecError>> {
@@ -348,7 +349,13 @@ pub(crate) fn job_inventory(
         Ok(())
     };
     stopped()?;
-    let mut inv = match walk(data) {
+    let control = crate::inventory::WalkControl::new(stop);
+    let result = walk(data, &control);
+    control.check();
+    if let Some(reason) = control.reason() {
+        return Err(BitmapError::from(reason).into());
+    }
+    let mut inv = match result {
         Ok(inv) => inv,
         Err(e) => {
             use zencodec::CategorizedError;
@@ -360,7 +367,6 @@ pub(crate) fn job_inventory(
             .into());
         }
     };
-    stopped()?;
     let mut why: Option<alloc::string::String> = None;
     if let Some(max) = max_input_bytes
         && data.len() as u64 > max

@@ -382,7 +382,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for BmpDecodeJob {
             self.max_input_bytes,
             limits,
             output,
-            |d| crate::inventory::bmp::walk(d, perm),
+            |d, _control| crate::inventory::bmp::walk(d, perm),
         )
     }
 

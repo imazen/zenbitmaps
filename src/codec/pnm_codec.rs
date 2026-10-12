@@ -467,7 +467,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for PnmDecodeJob {
             self.max_input_bytes,
             limits,
             output,
-            crate::inventory::pnm::walk,
+            |data, _control| crate::inventory::pnm::walk(data),
         )
     }
 
