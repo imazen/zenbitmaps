@@ -6,7 +6,7 @@
 # impls omitted; re-export duplicates annotated `[also: path]`.
 # DO NOT EDIT BY HAND — commit regenerated changes with the code.
 #
-# files: zenbitmaps.txt 77 lines (supported surface) | zenbitmaps.features.txt 184 added (features: all,bmp,hdr,imgref,qoi,rgb,simd,std,tga,zencodec) | zenbitmaps.internal.txt 8 lines (8 hidden + 0 excluded-feature)
+# files: zenbitmaps.txt 77 lines (supported surface) | zenbitmaps.features.txt 184 added (features: all,bmp,hdr,imgref,inventory,qoi,rgb,simd,std,tga,zencodec) | zenbitmaps.internal.txt 8 lines (8 hidden + 0 excluded-feature)
 
 ## summary
 #
