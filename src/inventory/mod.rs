@@ -57,6 +57,17 @@ impl<'a> WalkControl<'a> {
         }
         true
     }
+    pub(crate) fn find_byte(&self, bytes: &[u8], needle: u8) -> Option<usize> {
+        for (i, chunk) in bytes.chunks(4096).enumerate() {
+            if !self.check() {
+                return None;
+            }
+            if let Some(pos) = chunk.iter().position(|b| *b == needle) {
+                return Some(i * 4096 + pos);
+            }
+        }
+        None
+    }
     pub(crate) fn reason(&self) -> Option<enough::StopReason> {
         self.reason.get()
     }

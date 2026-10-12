@@ -512,3 +512,66 @@ fn narrow_rows_cut_inside_their_padding_still_decode() {
         Disposition::Malformed
     );
 }
+
+#[test]
+fn long_inventory_walks_retain_one_shot_timeout() {
+    fn check<C: DecoderConfig>(config: C, data: &[u8]) {
+        use std::sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        };
+        struct StopAt(Arc<AtomicUsize>, usize);
+        impl enough::Stop for StopAt {
+            fn check(&self) -> Result<(), enough::StopReason> {
+                if self.0.fetch_add(1, Ordering::Relaxed) == self.1 {
+                    Err(enough::StopReason::TimedOut)
+                } else {
+                    Ok(())
+                }
+            }
+        }
+        let polls = Arc::new(AtomicUsize::new(0));
+        config
+            .clone()
+            .job()
+            .with_stop(zencodec::StopToken::new(StopAt(polls.clone(), usize::MAX)))
+            .inventory(data)
+            .unwrap()
+            .validate()
+            .unwrap();
+        assert!(
+            polls.load(Ordering::Relaxed) > 50,
+            "walk must poll inside traversal"
+        );
+        for at in [3, 50] {
+            polls.store(0, Ordering::Relaxed);
+            let error = config
+                .clone()
+                .job()
+                .with_stop(zencodec::StopToken::new(StopAt(polls.clone(), at)))
+                .inventory(data)
+                .unwrap_err();
+            assert_eq!(
+                error.error().category(),
+                zencodec::ErrorCategory::Stopped(enough::StopReason::TimedOut)
+            );
+        }
+    }
+    let pnm = format!("P2\n128 1\n255\n{}", "1 ".repeat(128));
+    check(PnmDecoderConfig::new(), pnm.as_bytes());
+    let mut hdr = b"#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n-Y 128 +X 1\n".to_vec();
+    hdr.extend_from_slice(&[128, 0, 0, 128].repeat(128));
+    check(HdrDecoderConfig::new(), &hdr);
+    let mut tga = vec![0u8; 18];
+    tga[2] = 10;
+    tga[12..14].copy_from_slice(&128u16.to_le_bytes());
+    tga[14..16].copy_from_slice(&1u16.to_le_bytes());
+    tga[16] = 24;
+    tga.extend_from_slice(&[0x80, 1, 2, 3].repeat(128));
+    check(TgaDecoderConfig::new(), &tga);
+    let mut bmp = bmp_head(40, 128, 1, 8, 1, 2, 62);
+    bmp.extend_from_slice(&[0, 0, 0, 0, 255, 255, 255, 0]);
+    bmp.extend_from_slice(&[1, 1].repeat(128));
+    bmp.extend_from_slice(&[0, 1]);
+    check(BmpDecoderConfig::new(), &bmp);
+}

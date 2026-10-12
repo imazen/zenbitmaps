@@ -56,7 +56,7 @@ Same as other zen* codecs — see codec-design/README.md. Key points:
 
 ## Known Bugs
 
-- QOI inventory previously checked cancellation only before/after the complete opcode walk. The one-shot timeout regression now passes with in-walk polling. Equivalent checkpoints in the other variable-length bitmap walkers remain integration work.
+- QOI inventory previously checked cancellation only before/after the complete opcode walk. The one-shot timeout regression now passes with in-walk polling. PNM, HDR, TGA and BMP walkers now also poll during traversal; `long_inventory_walks_retain_one_shot_timeout` exercises each with an in-walk one-shot timeout. Header interpretation runs after the input limit check.
 
 (none currently open)
 

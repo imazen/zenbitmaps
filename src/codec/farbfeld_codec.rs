@@ -328,9 +328,11 @@ impl<'a> zencodec::decode::DecodeJob<'a> for FarbfeldDecodeJob {
     #[cfg(feature = "inventory")]
     fn inventory(&self, data: &[u8]) -> Result<zencodec::inventory::Inventory, Self::Error> {
         let limits = self.limits.as_ref().or(self.config.limits.as_ref());
-        let output = crate::farbfeld::decode::parse_header(data)
-            .ok()
-            .map(|(w, h)| (w, h, Some(8)));
+        let output = || {
+            crate::farbfeld::decode::parse_header(data)
+                .ok()
+                .map(|(w, h)| (w, h, Some(8)))
+        };
         super::job_inventory(
             data,
             self.stop.as_ref(),

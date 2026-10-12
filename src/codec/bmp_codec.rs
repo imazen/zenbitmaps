@@ -372,9 +372,11 @@ impl<'a> zencodec::decode::DecodeJob<'a> for BmpDecodeJob {
     #[cfg(feature = "inventory")]
     fn inventory(&self, data: &[u8]) -> Result<zencodec::inventory::Inventory, Self::Error> {
         let limits = self.limits.as_ref().or(self.config.limits.as_ref());
-        let output = crate::bmp::decode::parse_bmp_header(data, u64::MAX)
-            .ok()
-            .map(|h| (h.width, h.height, Some(h.layout.bytes_per_pixel())));
+        let output = || {
+            crate::bmp::decode::parse_bmp_header(data, u64::MAX)
+                .ok()
+                .map(|h| (h.width, h.height, Some(h.layout.bytes_per_pixel())))
+        };
         let perm = policy_to_bmp_permissiveness(self.policy.as_ref());
         super::job_inventory(
             data,
@@ -382,7 +384,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for BmpDecodeJob {
             self.max_input_bytes,
             limits,
             output,
-            |d, _control| crate::inventory::bmp::walk(d, perm),
+            |d, control| crate::inventory::bmp::walk(d, perm, control),
         )
     }
 

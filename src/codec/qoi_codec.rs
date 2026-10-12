@@ -429,9 +429,11 @@ impl<'a> zencodec::decode::DecodeJob<'a> for QoiDecodeJob {
     #[cfg(feature = "inventory")]
     fn inventory(&self, data: &[u8]) -> Result<zencodec::inventory::Inventory, Self::Error> {
         let limits = self.limits.as_ref().or(self.config.limits.as_ref());
-        let output = crate::qoi::decode::parse_header(data)
-            .ok()
-            .map(|h| (h.width, h.height, Some(if h.has_alpha { 4 } else { 3 })));
+        let output = || {
+            crate::qoi::decode::parse_header(data)
+                .ok()
+                .map(|h| (h.width, h.height, Some(if h.has_alpha { 4 } else { 3 })))
+        };
         super::job_inventory(
             data,
             self.stop.as_ref(),

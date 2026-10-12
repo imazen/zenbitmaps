@@ -48,7 +48,11 @@ fn field(at: u64, len: u64, name: &'static str, disposition: Disposition) -> Fie
     }
 }
 
-pub(crate) fn walk(data: &[u8], perm: BmpPermissiveness) -> Res<Inventory> {
+pub(crate) fn walk(
+    data: &[u8],
+    perm: BmpPermissiveness,
+    control: &super::WalkControl<'_>,
+) -> Res<Inventory> {
     let len = data.len() as u64;
     let mut inv = Inventory::new(ImageFormat::Bmp, len);
     if data.is_empty() {
@@ -494,6 +498,7 @@ pub(crate) fn walk(data: &[u8], perm: BmpPermissiveness) -> Res<Inventory> {
                 width,
                 height,
                 perm == BmpPermissiveness::Permissive,
+                control,
             );
             let end = rle.end;
             rle_pads = rle.pads;
@@ -525,7 +530,7 @@ pub(crate) fn walk(data: &[u8], perm: BmpPermissiveness) -> Res<Inventory> {
                 (want as u64, Disposition::ImageData, None)
             } else {
                 let rejects = !permissive
-                    && truncation_rejected(bpp, comp_raw, paletted, width, height, avail);
+                    && truncation_rejected(bpp, comp_raw, paletted, width, height, avail, control);
                 let base = format!(
                     "truncated: {rows_len} bytes of rows are declared, {avail} are present"
                 );
@@ -550,7 +555,8 @@ pub(crate) fn walk(data: &[u8], perm: BmpPermissiveness) -> Res<Inventory> {
             if !permissive
                 && disposition == Disposition::ImageData
                 && let Some(n) = trace.palette_entries
-                && let Some(idx) = first_bad_index(data, pixel_start, width, height, bpp, n)
+                && let Some(idx) =
+                    first_bad_index(data, pixel_start, width, height, bpp, n, control)
             {
                 disposition = Disposition::Malformed;
                 detail = Some(format!(
@@ -808,6 +814,7 @@ fn rle_extent(
     width: u64,
     height: u64,
     permissive: bool,
+    control: &super::WalkControl<'_>,
 ) -> RleExtent {
     let mut c = Cur {
         d: data,
@@ -831,6 +838,9 @@ fn rle_extent(
     };
     if depth == 4 {
         while line >= 0 && x <= width && !c.eof() {
+            if !control.check() {
+                return done(&c, RleStop::Ended, pads);
+            }
             let code = u64::from(c.u8());
             if code == 0 {
                 let s = c.u8();
@@ -906,6 +916,9 @@ fn rle_extent(
         .div_ceil(8)
         .min(u128::from(u64::MAX)) as u64;
     while !c.eof() {
+        if !control.check() {
+            return done(&c, RleStop::Ended, pads);
+        }
         let p1 = c.u8();
         if p1 == 0 {
             let p2 = c.u8();
@@ -1012,6 +1025,7 @@ fn truncation_rejected(
     width: u64,
     height: u64,
     avail: u64,
+    control: &super::WalkControl<'_>,
 ) -> bool {
     let _ = comp_raw;
     let stride = (width * u64::from(bpp)).div_ceil(32) * 4;
@@ -1031,6 +1045,9 @@ fn truncation_rejected(
     let byte_reads = bpp == 8 && paletted;
     let mut pos: u64 = 0;
     for _ in 0..height {
+        if !control.check() {
+            return false;
+        }
         if byte_reads {
             pos += row.min(avail - pos);
             if pad_after_row > 0 && pos + pad_after_row > avail {
@@ -1064,6 +1081,7 @@ fn first_bad_index(
     height: u64,
     bpp: u16,
     entries: usize,
+    control: &super::WalkControl<'_>,
 ) -> Option<u32> {
     if entries >= 256 || entries >= (1usize << bpp) {
         return None;
@@ -1076,11 +1094,17 @@ fn first_bad_index(
     let per_byte = 8 / u64::from(bpp);
     let mask = (1u16 << bpp) - 1;
     for row in 0..height {
+        if !control.check() {
+            return None;
+        }
         let row_at = start.checked_add(row.checked_mul(stride)?)?;
         if row_at >= data.len() as u64 {
             return None;
         }
         for x in 0..width {
+            if x & 4095 == 0 && !control.check() {
+                return None;
+            }
             let byte_at = row_at + x / per_byte;
             let &b = data.get(byte_at as usize)?;
             let shift = 8 - u64::from(bpp) * (x % per_byte + 1);

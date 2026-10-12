@@ -379,16 +379,18 @@ impl<'a> zencodec::decode::DecodeJob<'a> for HdrDecodeJob {
     #[cfg(feature = "inventory")]
     fn inventory(&self, data: &[u8]) -> Result<zencodec::inventory::Inventory, Self::Error> {
         let limits = self.limits.as_ref().or(self.config.limits.as_ref());
-        let output = crate::hdr::decode::parse_header(data)
-            .ok()
-            .map(|(w, h, _)| (w, h, Some(12)));
+        let output = || {
+            crate::hdr::decode::parse_header(data)
+                .ok()
+                .map(|(w, h, _)| (w, h, Some(12)))
+        };
         super::job_inventory(
             data,
             self.stop.as_ref(),
             self.max_input_bytes,
             limits,
             output,
-            |data, _control| crate::inventory::hdr::walk(data),
+            crate::inventory::hdr::walk,
         )
     }
 

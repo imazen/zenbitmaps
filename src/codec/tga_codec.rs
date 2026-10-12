@@ -414,26 +414,28 @@ impl<'a> zencodec::decode::DecodeJob<'a> for TgaDecodeJob {
     #[cfg(feature = "inventory")]
     fn inventory(&self, data: &[u8]) -> Result<zencodec::inventory::Inventory, Self::Error> {
         let limits = self.limits.as_ref().or(self.config.limits.as_ref());
-        let output = crate::tga::decode::parse_header(data).ok().map(|h| {
-            let ch = if matches!(h.image_type, 3 | 11) {
-                1
-            } else if h.pixel_depth == 32
-                || (matches!(h.image_type, 1 | 9) && h.color_map_depth == 32)
-                || (h.descriptor & 0x0F) > 0
-            {
-                4
-            } else {
-                3
-            };
-            (u32::from(h.width), u32::from(h.height), Some(ch))
-        });
+        let output = || {
+            crate::tga::decode::parse_header(data).ok().map(|h| {
+                let ch = if matches!(h.image_type, 3 | 11) {
+                    1
+                } else if h.pixel_depth == 32
+                    || (matches!(h.image_type, 1 | 9) && h.color_map_depth == 32)
+                    || (h.descriptor & 0x0F) > 0
+                {
+                    4
+                } else {
+                    3
+                };
+                (u32::from(h.width), u32::from(h.height), Some(ch))
+            })
+        };
         super::job_inventory(
             data,
             self.stop.as_ref(),
             self.max_input_bytes,
             limits,
             output,
-            |data, _control| crate::inventory::tga::walk(data),
+            crate::inventory::tga::walk,
         )
     }
 

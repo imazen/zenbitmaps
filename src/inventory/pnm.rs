@@ -29,7 +29,7 @@ fn too_many() -> zencodec::inventory::InventoryError {
     }
 }
 
-pub(crate) fn walk(data: &[u8]) -> Res<Inventory> {
+pub(crate) fn walk(data: &[u8], control: &super::WalkControl<'_>) -> Res<Inventory> {
     let len = data.len() as u64;
     let mut inv = Inventory::new(ImageFormat::Pnm, len);
     if data.is_empty() {
@@ -51,9 +51,12 @@ pub(crate) fn walk(data: &[u8]) -> Res<Inventory> {
         return Ok(inv);
     }
     let magic = label(&data[..2]);
-    let (comments, pam_lines, reach) = scan_header(data);
+    let (comments, pam_lines, reach) = scan_header(data, control);
     if comments.len() >= MAX_RECORDED || pam_lines.len() >= MAX_RECORDED {
         return Err(too_many());
+    }
+    if !control.check() {
+        return Ok(inv);
     }
     match parse_header(data) {
         Ok(h) => {
@@ -84,7 +87,7 @@ pub(crate) fn walk(data: &[u8]) -> Res<Inventory> {
                 )?;
             }
             if end < len {
-                walk_pixels(&mut inv, data, &h, end)?;
+                walk_pixels(&mut inv, data, &h, end, control)?;
             }
         }
         Err(e) => {
@@ -130,29 +133,37 @@ enum PamLine {
 /// seen in the header, the P7 header lines, and how far the scan got.
 type HeaderScan = (Vec<Range<usize>>, Vec<(Range<usize>, PamLine)>, usize);
 
-fn scan_header(data: &[u8]) -> HeaderScan {
+fn scan_header(data: &[u8], control: &super::WalkControl<'_>) -> HeaderScan {
     let mut comments = Vec::new();
     let mut lines = Vec::new();
     let reach = match &data[..2] {
-        b"P7" => scan_pam(data, &mut comments, &mut lines),
-        b"Pf" | b"PF" => scan_numeric(data, 2, true, &mut comments),
-        b"P1" | b"P4" => scan_numeric(data, 2, false, &mut comments),
-        _ => scan_numeric(data, 3, false, &mut comments),
+        b"P7" => scan_pam(data, &mut comments, &mut lines, control),
+        b"Pf" | b"PF" => scan_numeric(data, 2, true, &mut comments, control),
+        b"P1" | b"P4" => scan_numeric(data, 2, false, &mut comments, control),
+        _ => scan_numeric(data, 3, false, &mut comments, control),
     };
     (comments, lines, reach)
 }
 
 /// Skip whitespace and `#` comments the way `skip_whitespace_and_comments`
 /// does, recording the comments. `None` when the input ends first.
-fn skip_ws(data: &[u8], mut pos: usize, comments: &mut Vec<Range<usize>>) -> Option<usize> {
+fn skip_ws(
+    data: &[u8],
+    mut pos: usize,
+    comments: &mut Vec<Range<usize>>,
+    control: &super::WalkControl<'_>,
+) -> Option<usize> {
     loop {
+        if !control.check() {
+            return None;
+        }
         match *data.get(pos)? {
             b' ' | b'\t' | b'\n' | b'\r' => pos += 1,
             b'#' => {
                 let start = pos;
-                while pos < data.len() && data[pos] != b'\n' {
-                    pos += 1;
-                }
+                pos += control
+                    .find_byte(&data[pos..], b'\n')
+                    .unwrap_or(data.len() - pos);
                 if comments.len() < MAX_RECORDED {
                     comments.push(start..pos);
                 }
@@ -177,11 +188,17 @@ fn number_end(data: &[u8], pos: usize) -> Option<usize> {
 
 /// Header end for P1-P6 (`tokens` numbers) and PF/Pf (two numbers and a scale
 /// line). Returns the position reached; on success that is `data_offset`.
-fn scan_numeric(data: &[u8], tokens: usize, pfm: bool, comments: &mut Vec<Range<usize>>) -> usize {
+fn scan_numeric(
+    data: &[u8],
+    tokens: usize,
+    pfm: bool,
+    comments: &mut Vec<Range<usize>>,
+    control: &super::WalkControl<'_>,
+) -> usize {
     let mut pos = 2;
     let mut reach = 2;
     for _ in 0..tokens {
-        let Some(p) = skip_ws(data, pos, comments) else {
+        let Some(p) = skip_ws(data, pos, comments, control) else {
             return data.len();
         };
         let Some(e) = number_end(data, p) else {
@@ -191,12 +208,11 @@ fn scan_numeric(data: &[u8], tokens: usize, pfm: bool, comments: &mut Vec<Range<
         reach = e;
     }
     if pfm {
-        let Some(p) = skip_ws(data, pos, comments) else {
+        let Some(p) = skip_ws(data, pos, comments, control) else {
             return data.len();
         };
-        let line_end = data[p..]
-            .iter()
-            .position(|&b| b == b'\n')
+        let line_end = control
+            .find_byte(&data[p..], b'\n')
             .map_or(data.len(), |i| p + i);
         return (line_end + 1).min(data.len());
     }
@@ -207,14 +223,14 @@ fn scan_pam(
     data: &[u8],
     comments: &mut Vec<Range<usize>>,
     lines: &mut Vec<(Range<usize>, PamLine)>,
+    control: &super::WalkControl<'_>,
 ) -> usize {
-    let Some(mut pos) = skip_ws(data, 2, comments) else {
+    let Some(mut pos) = skip_ws(data, 2, comments, control) else {
         return data.len();
     };
     loop {
-        let line_end = data[pos..]
-            .iter()
-            .position(|&b| b == b'\n')
+        let line_end = control
+            .find_byte(&data[pos..], b'\n')
             .map_or(data.len(), |i| pos + i);
         let raw = &data[pos..line_end];
         let Ok(text) = core::str::from_utf8(raw) else {
@@ -368,7 +384,13 @@ fn push_header_children(
 
 // ── pixel data ───────────────────────────────────────────────────────
 
-fn walk_pixels(inv: &mut Inventory, data: &[u8], h: &PnmHeader, start: u64) -> Res<()> {
+fn walk_pixels(
+    inv: &mut Inventory,
+    data: &[u8],
+    h: &PnmHeader,
+    start: u64,
+    control: &super::WalkControl<'_>,
+) -> Res<()> {
     let len = data.len() as u64;
     let ascii = matches!(data[1], b'1' | b'2' | b'3');
     let pixels = |inv: &mut Inventory, range: Range<u64>, detail: Option<String>| -> Res<PartId> {
@@ -429,6 +451,7 @@ fn walk_pixels(inv: &mut Inventory, data: &[u8], h: &PnmHeader, start: u64) -> R
         total,
         h.format == PnmFormat::Pbm,
         &mut comments,
+        control,
     );
     if comments.len() >= MAX_RECORDED {
         return Err(too_many());
@@ -507,18 +530,25 @@ fn scan_ascii(
     total: u128,
     pbm: bool,
     comments: &mut Vec<Range<usize>>,
+    control: &super::WalkControl<'_>,
 ) -> AsciiEnd {
     let mut i: u128 = 0;
     while i < total {
+        if !control.check() {
+            return AsciiEnd::Eof;
+        }
         // whitespace and comments
         while pos < data.len() {
+            if !control.check() {
+                return AsciiEnd::Eof;
+            }
             match data[pos] {
                 b' ' | b'\t' | b'\n' | b'\r' => pos += 1,
                 b'#' => {
                     let s = pos;
-                    while pos < data.len() && data[pos] != b'\n' {
-                        pos += 1;
-                    }
+                    pos += control
+                        .find_byte(&data[pos..], b'\n')
+                        .unwrap_or(data.len() - pos);
                     if comments.len() < MAX_RECORDED {
                         comments.push(s..pos);
                     }
@@ -537,6 +567,9 @@ fn scan_ascii(
         } else {
             let start = pos;
             while pos < data.len() && data[pos].is_ascii_digit() {
+                if pos & 4095 == 0 && !control.check() {
+                    return AsciiEnd::Eof;
+                }
                 pos += 1;
             }
             if pos == start {

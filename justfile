@@ -83,3 +83,7 @@ metadata-api-check:
 
 metadata-cancellation-check:
     cargo test --features all,inventory --test inventory_feature
+
+metadata-traversal-stop-check:
+    cargo test --features all,inventory --test inventory_review2 long_inventory_walks_retain_one_shot_timeout -- --exact
+    just metadata-check

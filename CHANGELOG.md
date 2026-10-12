@@ -14,6 +14,8 @@ All notable changes to this project will be documented in this file.
 
 ### Metadata inventory
 
+- Poll cancellation within PNM header/ASCII scans, HDR rows, TGA RLE/developer entries and BMP RLE/palette/truncation walks; retain the first stop reason and discard partial maps. Input limits now precede header interpretation (`6ea35e2b` supplies the typed error contract).
+
 - Input-byte limits return typed `InputSize` errors before scanning in all six formats; pixel and output limits retain decoder-rejection annotations.
 
 - Reuse PR23 (`4c383dbf`) walkers, original crash fixtures and BMP parser fixes

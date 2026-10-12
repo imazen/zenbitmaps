@@ -333,7 +333,7 @@ pub(crate) fn job_inventory(
     stop: Option<&zencodec::StopToken>,
     max_input_bytes: Option<u64>,
     limits: Option<&Limits>,
-    output: Option<(u32, u32, Option<usize>)>,
+    output: impl FnOnce() -> Option<(u32, u32, Option<usize>)>,
     walk: impl FnOnce(
         &[u8],
         &crate::inventory::WalkControl<'_>,
@@ -383,7 +383,7 @@ pub(crate) fn job_inventory(
         }
     };
     let mut why: Option<alloc::string::String> = None;
-    if let Some((w, h, bpp)) = output {
+    if let Some((w, h, bpp)) = output() {
         if let Err(e) = crate::limits::check_dimensions(w, h, limits) {
             why = Some(e.error().to_string());
         } else if let Some(bpp) = bpp {
@@ -417,6 +417,7 @@ pub(crate) fn job_inventory(
             inv.set_detail(id, d);
         }
     }
+    stopped()?;
     Ok(inv)
 }
 

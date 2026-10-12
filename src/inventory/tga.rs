@@ -20,7 +20,7 @@ use crate::tga::decode::{TgaHeader, parse_header};
 
 const SIGNATURE: &[u8; 18] = b"TRUEVISION-XFILE.\0";
 
-pub(crate) fn walk(data: &[u8]) -> Res<Inventory> {
+pub(crate) fn walk(data: &[u8], control: &super::WalkControl<'_>) -> Res<Inventory> {
     let len = data.len() as u64;
     let mut inv = Inventory::new(ImageFormat::Tga, len);
     if data.is_empty() {
@@ -199,7 +199,7 @@ pub(crate) fn walk(data: &[u8]) -> Res<Inventory> {
         let total = u128::from(h.width) * u128::from(h.height);
         let rle = matches!(h.image_type, 9..=11);
         let (end, state) = if rle {
-            rle_extent(data, at, total, src_bpp)
+            rle_extent(data, at, total, src_bpp, control)
         } else {
             let need = total * u128::from(src_bpp);
             if u128::from(at) + need <= u128::from(len) {
@@ -270,7 +270,7 @@ pub(crate) fn walk(data: &[u8]) -> Res<Inventory> {
             extension_area(&mut inv, data, &mut claimed, &h, ext_off)?;
         }
         if dev_off != 0 {
-            developer_area(&mut inv, data, &mut claimed, dev_off)?;
+            developer_area(&mut inv, data, &mut claimed, dev_off, control)?;
         }
     }
 
@@ -393,7 +393,13 @@ fn skipped_area(
     Ok(None)
 }
 
-fn developer_area(inv: &mut Inventory, data: &[u8], claimed: &mut Claimed, off: u64) -> Res<()> {
+fn developer_area(
+    inv: &mut Inventory,
+    data: &[u8],
+    claimed: &mut Claimed,
+    off: u64,
+    control: &super::WalkControl<'_>,
+) -> Res<()> {
     let len = data.len() as u64;
     let count = u64::from(u16_le(data, off).unwrap_or(0));
     let Some(r) = clip(off, 2 + count * 10, len) else {
@@ -413,6 +419,9 @@ fn developer_area(inv: &mut Inventory, data: &[u8], claimed: &mut Claimed, off: 
         .with_detail(format!("{count} entries")),
     )?;
     for i in 0..count {
+        if !control.check() {
+            return Ok(());
+        }
         let e = off + 2 + i * 10;
         let (Some(tag), Some(o), Some(n)) =
             (u16_le(data, e), u32_le(data, e + 2), u32_le(data, e + 6))
@@ -445,11 +454,20 @@ enum Extent {
 }
 
 /// Walk RLE packets like `decode_rle` until `total` pixels are filled.
-fn rle_extent(data: &[u8], start: u64, total: u128, src_bpp: u64) -> (u64, Extent) {
+fn rle_extent(
+    data: &[u8],
+    start: u64,
+    total: u128,
+    src_bpp: u64,
+    control: &super::WalkControl<'_>,
+) -> (u64, Extent) {
     let len = data.len() as u64;
     let mut pos = start;
     let mut filled: u128 = 0;
     while filled < total {
+        if !control.check() {
+            return (pos, Extent::Truncated);
+        }
         let Some(&hd) = data.get(pos as usize) else {
             return (len, Extent::Truncated);
         };

@@ -15,7 +15,7 @@ use zencodec::inventory::{Disposition, Inventory, Part, PartKind, PartTag};
 use super::{Res, label, malformed_rest, trailer};
 use crate::hdr::decode::parse_header;
 
-pub(crate) fn walk(data: &[u8]) -> Res<Inventory> {
+pub(crate) fn walk(data: &[u8], control: &super::WalkControl<'_>) -> Res<Inventory> {
     let len = data.len() as u64;
     let mut inv = Inventory::new(ImageFormat::Hdr, len);
     if data.is_empty() {
@@ -25,7 +25,6 @@ pub(crate) fn walk(data: &[u8]) -> Res<Inventory> {
         malformed_rest(&mut inv, None, 0, len, "not a Radiance HDR header")?;
         return Ok(inv);
     }
-    let parsed = parse_header(data);
 
     // Header lines, split exactly like `parse_header`: a line ends at `\n`,
     // and an immediately following `\n` is the empty separator line.
@@ -33,7 +32,10 @@ pub(crate) fn walk(data: &[u8]) -> Res<Inventory> {
     let mut first = true;
     let mut separator_end = None;
     while pos < data.len() {
-        let Some(nl) = data[pos..].iter().position(|&b| b == b'\n') else {
+        if !control.check() {
+            return Ok(inv);
+        }
+        let Some(nl) = control.find_byte(&data[pos..], b'\n') else {
             break;
         };
         let line_end = pos + nl; // exclusive of '\n'
@@ -128,7 +130,10 @@ pub(crate) fn walk(data: &[u8]) -> Res<Inventory> {
         return Ok(inv);
     };
 
-    let (w, h, offset) = match parsed {
+    if !control.check() {
+        return Ok(inv);
+    }
+    let (w, h, offset) = match parse_header(data) {
         Ok(v) => v,
         Err(e) => {
             // The resolution line (if present) and everything after it.
@@ -172,7 +177,7 @@ pub(crate) fn walk(data: &[u8]) -> Res<Inventory> {
     )?;
 
     // Pixel scanlines.
-    let (end, complete) = scan_rows(data, offset, u64::from(w), u64::from(h));
+    let (end, complete) = scan_rows(data, offset, u64::from(w), u64::from(h), control);
     if end > offset {
         let mut p = Part::new(
             PartKind::Block,
@@ -202,8 +207,17 @@ pub(crate) fn walk(data: &[u8]) -> Res<Inventory> {
 
 /// Walk `h` scanlines starting at `pos` like `decode_pixels`. Returns the end
 /// of the last good scanline and whether all `h` were read.
-fn scan_rows(data: &[u8], mut pos: usize, w: u64, h: u64) -> (usize, bool) {
+fn scan_rows(
+    data: &[u8],
+    mut pos: usize,
+    w: u64,
+    h: u64,
+    control: &super::WalkControl<'_>,
+) -> (usize, bool) {
     for _ in 0..h {
+        if !control.check() {
+            return (pos, false);
+        }
         let row_start = pos;
         if pos + 4 > data.len() {
             return (row_start, false);
@@ -218,6 +232,9 @@ fn scan_rows(data: &[u8], mut pos: usize, w: u64, h: u64) -> (usize, bool) {
             for _ch in 0..4 {
                 let mut col = 0u64;
                 while col < w {
+                    if !control.check() {
+                        return (pos, false);
+                    }
                     let Some(&code) = data.get(pos) else {
                         return (row_start, false);
                     };
