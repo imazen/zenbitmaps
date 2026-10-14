@@ -268,11 +268,17 @@ impl zencodec::encode::Encoder for PnmEncoder {
         width: u32,
         height: u32,
         descriptor: PixelDescriptor,
-    ) -> Result<(), Self::Error> {
+    ) -> Result<zencodec::encode::OutputTiming, Self::Error> {
         if self.stream.is_some() {
             return Err(BitmapError::InvalidData("begin after rows were pushed".into()).into());
         }
-        self.start_stream(width, Some(height), descriptor)
+        self.start_stream(width, Some(height), descriptor)?;
+        Ok(match self.stream {
+            // PGM/PPM/PAM: each strip is written as it arrives.
+            Some(PnmStream::Rows(_)) => zencodec::encode::OutputTiming::streaming(0),
+            // PFM is stored bottom-up: nothing can be written before the last row.
+            _ => zencodec::encode::OutputTiming::AT_FINISH,
+        })
     }
 
     /// Encode a strip as it arrives (PGM/PPM/PAM; PFM waits for `finish`).

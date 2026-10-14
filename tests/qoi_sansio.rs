@@ -437,7 +437,10 @@ fn encode_streaming(
     let stride = w as usize * ch;
     let mut enc = QoiEncoderConfig::new().job().encoder().unwrap();
     if declare {
-        enc.begin(w, h, desc(ch)).unwrap();
+        assert_eq!(
+            enc.begin(w, h, desc(ch)).unwrap(),
+            zencodec::encode::OutputTiming::streaming(0)
+        );
     }
     let mut out = Vec::new();
     let mut peak = 0;

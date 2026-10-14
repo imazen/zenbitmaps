@@ -223,7 +223,7 @@ impl zencodec::encode::Encoder for HdrEncoder {
         width: u32,
         height: u32,
         descriptor: PixelDescriptor,
-    ) -> Result<(), Self::Error> {
+    ) -> Result<zencodec::encode::OutputTiming, Self::Error> {
         if self.stream.is_some() {
             return Err(BitmapError::InvalidData("begin after rows were pushed".into()).into());
         }
@@ -241,7 +241,8 @@ impl zencodec::encode::Encoder for HdrEncoder {
             limits,
             stop,
         )?);
-        Ok(())
+        // Each strip is written as it arrives.
+        Ok(zencodec::encode::OutputTiming::streaming(0))
     }
 
     /// Encode a strip as it arrives; after `begin` the bytes stream through

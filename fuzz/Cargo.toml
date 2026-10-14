@@ -39,4 +39,4 @@ bench = false
 
 # Structural inventories (imazen/zencodec#133); swap for the release before merge.
 [patch.crates-io]
-zencodec = { git = "https://github.com/imazen/zencodec", rev = "06821e102bcb0905c57d05cfc45f02d34fdc91ee" }
+zencodec = { git = "https://github.com/imazen/zencodec", rev = "6f84f363b55b20279b90af8c6fbd844c7219381e" }

@@ -353,7 +353,7 @@ impl zencodec::encode::Encoder for QoiEncoder {
         width: u32,
         height: u32,
         descriptor: PixelDescriptor,
-    ) -> Result<(), Self::Error> {
+    ) -> Result<zencodec::encode::OutputTiming, Self::Error> {
         if self.stream.is_some() {
             return Err(BitmapError::InvalidData("begin after rows were pushed".into()).into());
         }
@@ -362,7 +362,9 @@ impl zencodec::encode::Encoder for QoiEncoder {
                 .check(width, height)
                 .map_err(zencodec::CodecError::of)?;
         }
-        self.start_stream(width, descriptor, Some(height))
+        self.start_stream(width, descriptor, Some(height))?;
+        // Each pixel is coded as it arrives; only an open run waits.
+        Ok(zencodec::encode::OutputTiming::streaming(0))
     }
 
     fn pending_output(&self) -> &[u8] {
