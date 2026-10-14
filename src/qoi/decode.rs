@@ -108,7 +108,7 @@ pub(crate) fn decode_pixels(
         .get(14..)
         .ok_or_else(|| whereat::at!(BitmapError::UnexpectedEof))?;
 
-    let consumed = if has_alpha {
+    if has_alpha {
         let mut state = QoiDecodeState::<4>::new();
         let mut offset = 0;
 
@@ -124,7 +124,6 @@ pub(crate) fn decode_pixels(
                 .map_err(|()| whereat::at!(BitmapError::UnexpectedEof))?;
             offset += consumed;
         }
-        offset
     } else {
         let mut state = QoiDecodeState::<3>::new();
         let mut offset = 0;
@@ -141,21 +140,9 @@ pub(crate) fn decode_pixels(
                 .map_err(|()| whereat::at!(BitmapError::UnexpectedEof))?;
             offset += consumed;
         }
-        offset
-    };
-    end_marker_present(encoded.len() - consumed)?;
+    }
 
     Ok(output)
-}
-
-/// The stream must end with the 8-byte end marker; a file cut inside it is
-/// truncated (the reference `qoi.h` rejects it by size too). Every decode
-/// path checks this so they agree on what a complete file is.
-pub(crate) fn end_marker_present(bytes_after_pixels: usize) -> crate::Result<()> {
-    if bytes_after_pixels < rapid_qoi::QOI_PADDING {
-        return Err(whereat::at!(BitmapError::UnexpectedEof));
-    }
-    Ok(())
 }
 
 /// Streaming QOI decode state carried across output chunks (rows).

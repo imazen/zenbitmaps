@@ -246,6 +246,7 @@ fn truncated_input_is_an_error_at_every_cut() {
             .dyn_incremental_decoder(&[])
             .unwrap();
         let mut sink = CollectSink::new();
+        let one_shot = zenbitmaps::decode_qoi(&data[..cut], Unstoppable);
         match drive_from_slice(
             &mut zencodec_io::Dyn(&mut *dec),
             &data[..cut],
@@ -253,14 +254,16 @@ fn truncated_input_is_an_error_at_every_cut() {
             None,
             64,
         ) {
-            Err(DriveError::Codec(_)) => {}
+            Err(DriveError::Codec(_)) => assert!(one_shot.is_err(), "cut {cut}: paths disagree"),
+            // Cutting inside the 8-byte end marker leaves every pixel; the
+            // end marker is not pixel data (the inventory classifies it as
+            // skipped), so both paths accept it.
+            Ok(_) if cut >= data.len() - 8 => {
+                assert!(one_shot.is_ok(), "cut {cut}: paths disagree");
+                assert_eq!(sink.bytes(), &pixels[..]);
+            }
             other => panic!("cut {cut}: {other:?}"),
         }
-        // The one-shot path rejects the same cuts.
-        assert!(
-            zenbitmaps::decode_qoi(&data[..cut], Unstoppable).is_err(),
-            "one-shot cut {cut}"
-        );
     }
 }
 
@@ -332,4 +335,74 @@ fn one_shot_zencodec_decode_still_agrees() {
         got.extend_from_slice(ps.row(y));
     }
     assert_eq!(got, pixels);
+}
+
+#[test]
+fn every_small_chunk_size_is_pixel_exact() {
+    // Odd window sizes put the boundary inside every opcode kind (1, 2, 4
+    // and 5 bytes) and inside runs that cross rows.
+    for (kind, w, h, ch) in [
+        (1u32, 13u32, 7u32, 4usize),
+        (1, 9, 5, 3),
+        (2, 40, 6, 3),
+        (4, 17, 9, 4),
+        (3, 21, 4, 4),
+    ] {
+        let pixels = image(kind, w, h, ch);
+        let data = encode_oneshot(&pixels, w, h, ch);
+        for chunk in 1..=40usize {
+            let mut dec = QoiDecoderConfig::new()
+                .job()
+                .dyn_incremental_decoder(&[])
+                .unwrap();
+            let mut sink = CollectSink::new();
+            drive_from_slice(
+                &mut zencodec_io::Dyn(&mut *dec),
+                &data,
+                &mut sink,
+                None,
+                chunk,
+            )
+            .unwrap_or_else(|e| panic!("kind {kind} {w}x{h}x{ch} chunk {chunk}: {e}"));
+            assert_eq!(
+                sink.bytes(),
+                &pixels[..],
+                "kind {kind} {w}x{h}x{ch} chunk {chunk}"
+            );
+            let mut dec = QoiDecoderConfig::new()
+                .job()
+                .dyn_incremental_decoder(&[])
+                .unwrap();
+            let mut sink = CollectSink::new();
+            pump_read_to_sink(
+                OneShotReader {
+                    data: &data,
+                    pos: 0,
+                    max: chunk,
+                },
+                &mut zencodec_io::Dyn(&mut *dec),
+                &mut sink,
+                None,
+                512,
+            )
+            .unwrap_or_else(|e| panic!("pump kind {kind} chunk {chunk}: {e}"));
+            assert_eq!(sink.bytes(), &pixels[..], "pump kind {kind} chunk {chunk}");
+        }
+    }
+}
+
+/// A reader that returns at most `max` bytes per call.
+struct OneShotReader<'a> {
+    data: &'a [u8],
+    pos: usize,
+    max: usize,
+}
+
+impl std::io::Read for OneShotReader<'_> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let n = (self.data.len() - self.pos).min(buf.len()).min(self.max);
+        buf[..n].copy_from_slice(&self.data[self.pos..self.pos + n]);
+        self.pos += n;
+        Ok(n)
+    }
 }

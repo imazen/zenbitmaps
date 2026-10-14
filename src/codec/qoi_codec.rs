@@ -813,6 +813,38 @@ impl QoiIncrementalDecoder {
         Ok(())
     }
 
+    fn count_input(&mut self, n: usize) -> Result<(), At<zencodec::CodecError>> {
+        if let Some(max) = self.max_input_bytes {
+            self.total_input_bytes = self.total_input_bytes.saturating_add(n as u64);
+            if self.total_input_bytes > max {
+                let total = self.total_input_bytes;
+                return Err(self.err(BitmapError::LimitExceeded(alloc::format!(
+                    "input size {total} exceeds limit {max}"
+                ))));
+            }
+        }
+        Ok(())
+    }
+
+    /// Keep the bytes of `bytes[used..]` (an opcode cut by the window's
+    /// end, at most 4 bytes) as the stitch tail, and ask for more.
+    fn retain_tail(
+        &mut self,
+        used: usize,
+        offset: u64,
+        bytes: &[u8],
+        eof: bool,
+    ) -> Result<(usize, zencodec::decode::Step<'_>), At<zencodec::CodecError>> {
+        use zencodec::decode::IncrementalDecode as _;
+        let rest = &bytes[used..];
+        let kept = self.feed(offset + used as u64, rest, eof)?;
+        let accepted = used + kept;
+        if eof && accepted == bytes.len() {
+            return Err(self.err(BitmapError::UnexpectedEof));
+        }
+        Ok((accepted, self.need_more()))
+    }
+
     /// Hand the completed fallback row to the sink.
     fn emit_partial(
         &mut self,
@@ -912,14 +944,9 @@ impl zencodec::decode::IncrementalDecode for QoiIncrementalDecoder {
         let (width, height, row_bytes) = (self.width, self.height, self.row_bytes);
 
         if self.next_row >= height {
-            // The end marker must follow the pixel data: wait for it when
-            // the length is still unknown, reject a stream cut inside it.
-            if self.live_len() < crate::qoi::rapid_qoi::QOI_PADDING {
-                if at_end {
-                    return Err(self.err(BitmapError::UnexpectedEof));
-                }
-                return Ok(self.need_more());
-            }
+            // The end marker is not pixel data (the inventory classifies it
+            // as skipped); like the one-shot path, decoding completes with
+            // the last row.
             if let Err(e) = sink.finish() {
                 return Err(self.sink_err(e));
             }
@@ -963,18 +990,23 @@ impl zencodec::decode::IncrementalDecode for QoiIncrementalDecoder {
                 Ok(d) => d,
                 Err(e) => return Err(self.sink_err(e)),
             };
+            // The input bound guarantees every row completes, so the
+            // one-shot kernel (`decode_range`) runs here; the boundary-safe
+            // `decode_chunk` is only needed for the fallback row.
             for r in 0..rows {
                 let live = &self.buf[self.head + consumed..];
                 let out = &mut dst.row_mut(r)[..row_bytes];
-                let (c, px) = if self.has_alpha {
-                    self.state_rgba.decode_chunk(live, out)
+                let decoded = if self.has_alpha {
+                    self.state_rgba.decode_into(live, out)
                 } else {
-                    self.state_rgb.decode_chunk(live, out)
+                    self.state_rgb.decode_into(live, out)
                 };
-                consumed += c;
-                if px * self.channels() != row_bytes {
-                    short = true;
-                    break;
+                match decoded {
+                    Ok(c) => consumed += c,
+                    Err(()) => {
+                        short = true;
+                        break;
+                    }
                 }
             }
             drop(dst);
@@ -1005,6 +1037,194 @@ impl zencodec::decode::IncrementalDecode for QoiIncrementalDecoder {
             return Err(self.err(BitmapError::UnexpectedEof));
         }
         Ok(self.need_more())
+    }
+
+    /// Decode straight from `bytes`, copying only what straddles a boundary.
+    ///
+    /// - Header: only the 14 header bytes are taken.
+    /// - Rows the window guarantees (5 bytes per pixel worst case, or the
+    ///   whole rest of the image at `eof`) decode in place into the sink.
+    /// - A row that straddles the window's end decodes in place into the
+    ///   fallback row; the incomplete opcode left at the end (at most 4
+    ///   bytes) is the only thing retained. The next window finishes that
+    ///   opcode through an 8-byte stitch and continues in place.
+    ///
+    /// So a boundary costs at most 4 retained bytes and one row copy. Any
+    /// other state (more than a stitch tail buffered by plain `feed`, the
+    /// end marker) goes through `feed` + `step`.
+    fn feed_and_step(
+        &mut self,
+        offset: u64,
+        bytes: &[u8],
+        eof: bool,
+        sink: &mut dyn zencodec::decode::DecodeRowSink,
+        stop: Option<&dyn Stop>,
+    ) -> Result<(usize, zencodec::decode::Step<'_>), Self::Error> {
+        use zencodec::decode::{BatchMeta, IncrementalDecode as _, Step};
+
+        if self.failed || self.done.is_some() || offset != self.cursor() {
+            let accepted = self.feed(offset, bytes, eof)?;
+            let step = self.step(sink, stop)?;
+            return Ok((accepted, step));
+        }
+        if self.info.is_none() {
+            // Hand over the header bytes only; the rest is decoded in place
+            // on the next call.
+            let take = 14usize.saturating_sub(self.live_len()).min(bytes.len());
+            let eof_here = eof && take == bytes.len();
+            if eof {
+                self.total = Some(offset.saturating_add(bytes.len() as u64));
+            }
+            let accepted = self.feed(offset, &bytes[..take], eof_here)?;
+            let step = self.step(sink, stop)?;
+            return Ok((accepted, step));
+        }
+        if self.next_row >= self.height || self.live_len() > 4 {
+            let accepted = self.feed(offset, bytes, eof)?;
+            let step = self.step(sink, stop)?;
+            return Ok((accepted, step));
+        }
+        if eof {
+            self.total = Some(offset.saturating_add(bytes.len() as u64));
+        }
+        if let Some(s) = stop {
+            s.check()
+                .map_err(|r| At::<zencodec::CodecError>::from(BitmapError::from(r)))?;
+        }
+        if let Some(s) = &self.stop {
+            s.check()
+                .map_err(|r| At::<zencodec::CodecError>::from(BitmapError::from(r)))?;
+        }
+        let (width, row_bytes, desc) = (
+            self.width,
+            self.row_bytes,
+            self.descriptor.expect("set with info"),
+        );
+        let mut used = 0usize;
+
+        // 1. A row already started in the fallback buffer, or a stitch tail
+        //    (an opcode cut by the previous window's end), finishes first.
+        if self.live_len() > 0 || self.partial_pos > 0 {
+            let mut partial = core::mem::take(&mut self.partial);
+            if self.live_len() > 0 {
+                let tail_len = self.live_len();
+                let mut stitch = [0u8; 9];
+                stitch[..tail_len].copy_from_slice(&self.buf[self.head..self.head + tail_len]);
+                let extra = bytes.len().min(stitch.len() - tail_len);
+                stitch[tail_len..tail_len + extra].copy_from_slice(&bytes[..extra]);
+                let (c, w) = if self.has_alpha {
+                    self.state_rgba.decode_chunk(
+                        &stitch[..tail_len + extra],
+                        &mut partial[self.partial_pos..],
+                    )
+                } else {
+                    self.state_rgb.decode_chunk(
+                        &stitch[..tail_len + extra],
+                        &mut partial[self.partial_pos..],
+                    )
+                };
+                let w = w * self.channels();
+                self.consume(c.min(tail_len));
+                used += c.saturating_sub(tail_len);
+                self.partial_pos += w;
+                if c < tail_len && self.partial_pos < row_bytes {
+                    // Not even the cut opcode completes: keep the window
+                    // bytes as a longer tail.
+                    self.partial = partial;
+                    let accepted = self.feed(offset, bytes, eof)?;
+                    if eof && accepted == bytes.len() {
+                        return Err(self.err(BitmapError::UnexpectedEof));
+                    }
+                    return Ok((accepted, self.need_more()));
+                }
+            }
+            if self.partial_pos < row_bytes {
+                let (c, w) = if self.has_alpha {
+                    self.state_rgba
+                        .decode_chunk(&bytes[used..], &mut partial[self.partial_pos..])
+                } else {
+                    self.state_rgb
+                        .decode_chunk(&bytes[used..], &mut partial[self.partial_pos..])
+                };
+                used += c;
+                self.partial_pos += w * self.channels();
+            }
+            self.partial = partial;
+            self.count_input(used)?;
+            self.buf_start += used as u64;
+            if self.partial_pos == row_bytes {
+                let step = self.emit_partial(sink)?;
+                return Ok((used, step));
+            }
+            return self.retain_tail(used, offset, bytes, eof);
+        }
+
+        // 2. Clean state: whole rows the window guarantees go straight into
+        //    the sink.
+        let remaining = self.height - self.next_row;
+        let worst_per_row = width as usize * QOI_MAX_OP_BYTES;
+        let guaranteed = if eof {
+            remaining
+        } else {
+            (bytes.len() / worst_per_row).min(remaining as usize) as u32
+        };
+        let rows = guaranteed.min(QOI_MAX_STRIP_ROWS);
+        if rows >= 1 {
+            let y = self.next_row;
+            let mut short = false;
+            let mut dst = match sink.provide_next_buffer(y, rows, width, desc) {
+                Ok(d) => d,
+                Err(e) => return Err(self.sink_err(e)),
+            };
+            for r in 0..rows {
+                let out = &mut dst.row_mut(r)[..row_bytes];
+                let decoded = if self.has_alpha {
+                    self.state_rgba.decode_into(&bytes[used..], out)
+                } else {
+                    self.state_rgb.decode_into(&bytes[used..], out)
+                };
+                match decoded {
+                    Ok(c) => used += c,
+                    Err(()) => {
+                        short = true;
+                        break;
+                    }
+                }
+            }
+            drop(dst);
+            if short {
+                return Err(self.err(BitmapError::UnexpectedEof));
+            }
+            self.count_input(used)?;
+            self.buf_start += used as u64;
+            self.next_row += rows;
+            return Ok((
+                used,
+                Step::Rows {
+                    meta: BatchMeta::final_rows(y),
+                    rows,
+                },
+            ));
+        }
+
+        // 3. The window is shorter than one guaranteed row: start the row in
+        //    place in the fallback buffer.
+        let mut partial = core::mem::take(&mut self.partial);
+        let (c, w) = if self.has_alpha {
+            self.state_rgba.decode_chunk(bytes, &mut partial[..])
+        } else {
+            self.state_rgb.decode_chunk(bytes, &mut partial[..])
+        };
+        self.partial = partial;
+        used += c;
+        self.partial_pos = w * self.channels();
+        self.count_input(used)?;
+        self.buf_start += used as u64;
+        if self.partial_pos == row_bytes {
+            let step = self.emit_partial(sink)?;
+            return Ok((used, step));
+        }
+        self.retain_tail(used, offset, bytes, eof)
     }
 
     fn wrap_sink_error(err: zencodec::decode::SinkError) -> Self::Error {
@@ -1142,14 +1362,6 @@ impl zencodec::decode::StreamingDecode for QoiStreamingDecoder<'_> {
 
         let y = self.current_row;
         self.current_row += 1;
-        if self.current_row == self.height {
-            // Every path agrees on what a complete file is.
-            crate::qoi::decode::end_marker_present(
-                self.data.len().saturating_sub(self.byte_offset),
-            )
-            .map_err(zencodec::CodecError::of)?;
-        }
-
         let stride = self.row_buf.len();
         let slice = PixelSlice::new(&self.row_buf, self.width, 1, stride, self.descriptor)
             .map_err(|inner| {
