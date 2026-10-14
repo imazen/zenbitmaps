@@ -288,6 +288,18 @@ fn testkit_honesty_checks_pass_for_qoi() {
     let data = encode_oneshot(&pixels, w, h, ch);
     zencodec_testkit::check_incremental_capability_honesty(QoiDecoderConfig::new(), &data).unwrap();
     zencodec_testkit::check_seekable_capability_honesty(QoiDecoderConfig::new(), &data).unwrap();
+    for img in [
+        zencodec_testkit::TestImage::rgba8_gradient(40, 24),
+        zencodec_testkit::TestImage::rgba8_gradient(1, 1),
+        zencodec_testkit::TestImage::rgba8_gradient(97, 33),
+    ] {
+        zencodec_testkit::check_streaming_output_honesty(
+            QoiEncoderConfig::new(),
+            QoiDecoderConfig::new(),
+            &img,
+        )
+        .unwrap();
+    }
 }
 
 #[test]

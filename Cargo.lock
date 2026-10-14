@@ -877,6 +877,7 @@ dependencies = [
 [[package]]
 name = "zencodec"
 version = "0.1.27"
+source = "git+https://github.com/imazen/zencodec?branch=feat%2Fsansio-feed-step#1a438eda99c393f8a91a53f78b78d526b2178506"
 dependencies = [
  "almost-enough",
  "enough",
@@ -888,6 +889,7 @@ dependencies = [
 [[package]]
 name = "zencodec-io"
 version = "0.1.0"
+source = "git+https://github.com/imazen/zencodec?branch=feat%2Fsansio-feed-step#1a438eda99c393f8a91a53f78b78d526b2178506"
 dependencies = [
  "enough",
  "how-far",
@@ -898,7 +900,7 @@ dependencies = [
 [[package]]
 name = "zencodec-testkit"
 version = "0.2.0"
-source = "git+https://github.com/imazen/zencodec?branch=feat%2Fsansio-feed-step#34346a0524a99e78f85c5aeae3a44fd4f3aaa5fd"
+source = "git+https://github.com/imazen/zencodec?branch=feat%2Fsansio-feed-step#1a438eda99c393f8a91a53f78b78d526b2178506"
 dependencies = [
  "enough",
  "whereat",
@@ -1018,7 +1020,3 @@ name = "zmij"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
-
-[[patch.unused]]
-name = "zencodec-testkit"
-version = "0.2.0"
