@@ -1,5 +1,5 @@
 //! QOI on real photos at several sizes, through every path: the one-shot
-//! functions, and zencodec's sans-I/O contract (feed/step decode from a
+//! functions, and zencodec's sans-I/O contract (incremental step decode from a
 //! slice in one piece and in 64 KiB windows, the stream pump, streaming
 //! `push_rows` encode, and a decode-to-encode transcode with no image
 //! buffer).
@@ -110,20 +110,13 @@ fn photos_at(sources: &[(String, u32, u32, usize, Vec<u8>)], width: Option<u32>)
         .collect()
 }
 
-fn decode_feed_step(p: &Photo, chunk: usize) -> CollectSink {
+fn decode_step(p: &Photo, chunk: usize) -> CollectSink {
     let mut dec = QoiDecoderConfig::new()
         .job()
         .dyn_incremental_decoder(&[])
         .unwrap();
     let mut sink = CollectSink::new();
-    drive_from_slice(
-        &mut zencodec_io::Dyn(&mut *dec),
-        &p.qoi,
-        &mut sink,
-        None,
-        chunk,
-    )
-    .unwrap();
+    drive_from_slice(&mut *dec, &p.qoi, &mut sink, None, chunk).unwrap();
     sink
 }
 
@@ -135,10 +128,11 @@ fn decode_pumped(p: &Photo) -> CollectSink {
     let mut sink = CollectSink::new();
     pump_read_to_sink(
         std::io::Cursor::new(&p.qoi),
-        &mut zencodec_io::Dyn(&mut *dec),
+        &mut *dec,
         &mut sink,
         None,
         64 << 10,
+        16 << 20,
     )
     .unwrap();
     sink
@@ -172,14 +166,7 @@ fn transcode_streaming(p: &Photo, chunk: usize) -> Vec<u8> {
         .unwrap();
     let enc = QoiEncoderConfig::new().job().encoder().unwrap();
     let mut sink = EncoderSink::new(enc);
-    drive_from_slice(
-        &mut zencodec_io::Dyn(&mut *dec),
-        &p.qoi,
-        &mut sink,
-        None,
-        chunk,
-    )
-    .unwrap();
+    drive_from_slice(&mut *dec, &p.qoi, &mut sink, None, chunk).unwrap();
     sink.finish().unwrap().into_vec()
 }
 
@@ -219,13 +206,13 @@ zenbench::main!(|suite| {
         // Every path agrees before anything is timed.
         for p in photos {
             assert_eq!(
-                decode_feed_step(p, usize::MAX).bytes(),
+                decode_step(p, usize::MAX).bytes(),
                 &p.pixels[..],
                 "{}",
                 p.name
             );
             assert_eq!(
-                decode_feed_step(p, 64 << 10).bytes(),
+                decode_step(p, 64 << 10).bytes(),
                 &p.pixels[..],
                 "{}",
                 p.name
@@ -257,21 +244,21 @@ zenbench::main!(|suite| {
                     }
                 })
             });
-            g.bench("feed/step, whole slice", move |b| {
+            g.bench("step, whole slice", move |b| {
                 b.iter(|| {
                     for p in photos {
-                        black_box(decode_feed_step(p, usize::MAX));
+                        black_box(decode_step(p, usize::MAX));
                     }
                 })
             });
-            g.bench("feed/step, 64 KiB windows", move |b| {
+            g.bench("step, 64 KiB windows", move |b| {
                 b.iter(|| {
                     for p in photos {
-                        black_box(decode_feed_step(p, 64 << 10));
+                        black_box(decode_step(p, 64 << 10));
                     }
                 })
             });
-            g.bench("feed/step, stream pump 64 KiB", move |b| {
+            g.bench("step, stream pump 64 KiB", move |b| {
                 b.iter(|| {
                     for p in photos {
                         black_box(decode_pumped(p));
@@ -348,7 +335,7 @@ zenbench::main!(|suite| {
                     }
                 })
             });
-            g.bench("feed/step -> EncoderSink, 64 KiB windows", move |b| {
+            g.bench("step -> EncoderSink, 64 KiB windows", move |b| {
                 b.iter(|| {
                     for p in photos {
                         black_box(transcode_streaming(p, 64 << 10));

@@ -192,13 +192,4 @@ where
         rapid_qoi::Qoi::decode_range::<N>(&mut self.index, &mut self.px, &mut self.run, bytes, out)
             .map_err(|_| ())
     }
-
-    /// Decode an arbitrary chunk of bytes into `out`.
-    ///
-    /// Returns `(bytes_consumed, pixels_written)`.
-    #[inline]
-    #[allow(dead_code)]
-    pub(crate) fn decode_chunk(&mut self, bytes: &[u8], out: &mut [u8]) -> (usize, usize) {
-        rapid_qoi::Qoi::decode_chunk::<N>(&mut self.index, &mut self.px, &mut self.run, bytes, out)
-    }
 }

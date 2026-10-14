@@ -1,7 +1,8 @@
-//! QOI on the feed/step contract: the incremental decoder against the
-//! one-shot decoder at every chunk size, the streaming encoder against the
-//! one-shot encoder byte for byte, truncation, limits, and a zero-copy
-//! decode-to-encode transcode.
+//! QOI on zencodec's sans-I/O contract: the incremental decoder against
+//! the one-shot decoder at every chunk size, the streaming encoder against
+//! the one-shot encoder byte for byte (with and without `begin`, draining
+//! output as rows arrive), truncation, limits, and a zero-copy
+//! decode-to-encode transcode with bounded output.
 
 #![cfg(all(feature = "qoi", feature = "zencodec", feature = "std"))]
 
@@ -9,7 +10,7 @@ use std::borrow::Cow;
 
 use enough::Unstoppable;
 use zenbitmaps::{PixelLayout, QoiDecoderConfig, QoiEncoderConfig};
-use zencodec::decode::{Decode, DecodeJob, DecoderConfig, Step};
+use zencodec::decode::{Decode, DecodeJob, DecoderConfig, Event, Input, StepError};
 use zencodec::encode::{EncodeJob, Encoder, EncoderConfig};
 use zencodec_io::{CollectSink, DriveError, EncoderSink, drive_from_slice, pump_read_to_sink};
 use zenpixels::{PixelDescriptor, PixelSlice};
@@ -162,14 +163,8 @@ fn incremental_decoder_matches_one_shot_at_every_chunk_size() {
                 .dyn_incremental_decoder(&[])
                 .unwrap();
             let mut sink = CollectSink::new();
-            let (info, stats) = drive_from_slice(
-                &mut zencodec_io::Dyn(&mut *dec),
-                &data,
-                &mut sink,
-                None,
-                chunk,
-            )
-            .unwrap_or_else(|e| panic!("kind {kind} {w}x{h}x{ch} chunk {chunk}: {e}"));
+            let (info, stats) = drive_from_slice(&mut *dec, &data, &mut sink, None, chunk)
+                .unwrap_or_else(|e| panic!("kind {kind} {w}x{h}x{ch} chunk {chunk}: {e}"));
             assert_eq!((info.width, info.height), (w, h));
             assert_eq!(sink.descriptor(), Some(desc(ch)));
             assert!(sink.finished());
@@ -189,10 +184,11 @@ fn incremental_decoder_matches_one_shot_at_every_chunk_size() {
         let mut sink = CollectSink::new();
         pump_read_to_sink(
             std::io::Cursor::new(&data),
-            &mut zencodec_io::Dyn(&mut *dec),
+            &mut *dec,
             &mut sink,
             None,
             512,
+            1 << 20,
         )
         .unwrap();
         assert_eq!(sink.bytes(), &pixels[..]);
@@ -212,17 +208,39 @@ fn direct_strips_are_used_when_input_suffices() {
         .dyn_incremental_decoder(&[])
         .unwrap();
     let mut sink = CollectSink::new();
-    assert!(matches!(dec.step(&mut sink, None).unwrap(), Step::Need(_)));
-    assert_eq!(dec.feed(0, &data, true).unwrap(), data.len());
-    assert!(matches!(
-        dec.step(&mut sink, None).unwrap(),
-        Step::Metadata(_)
-    ));
-    match dec.step(&mut sink, None).unwrap() {
-        Step::Rows { rows, .. } => assert_eq!(rows, 64),
+    let total = data.len() as u64;
+    let p = dec.step(Input::empty(), &mut sink, &Unstoppable).unwrap();
+    assert_eq!((p.consumed, p.event), (0, Event::Need));
+    let p = dec
+        .step(
+            Input::new(0, &data).with_total_len(total),
+            &mut sink,
+            &Unstoppable,
+        )
+        .unwrap();
+    assert_eq!(p.consumed, 14, "the header only");
+    assert!(matches!(p.event, Event::Metadata(_)));
+    let p = dec
+        .step(
+            Input::new(14, &data[14..]).with_total_len(total),
+            &mut sink,
+            &Unstoppable,
+        )
+        .unwrap();
+    match p.event {
+        Event::Rows { rows, .. } => assert_eq!(rows, 64),
         other => panic!("{other:?}"),
     }
-    assert!(matches!(dec.step(&mut sink, None).unwrap(), Step::Done(_)));
+    assert!(p.consumed < data.len() - 14, "the end marker is left");
+    let rest = 14 + p.consumed;
+    let p = dec
+        .step(
+            Input::new(rest as u64, &data[rest..]).with_total_len(total),
+            &mut sink,
+            &Unstoppable,
+        )
+        .unwrap();
+    assert!(p.event.is_done());
     assert_eq!(sink.bytes(), &pixels[..]);
 }
 
@@ -247,14 +265,10 @@ fn truncated_input_is_an_error_at_every_cut() {
             .unwrap();
         let mut sink = CollectSink::new();
         let one_shot = zenbitmaps::decode_qoi(&data[..cut], Unstoppable);
-        match drive_from_slice(
-            &mut zencodec_io::Dyn(&mut *dec),
-            &data[..cut],
-            &mut sink,
-            None,
-            64,
-        ) {
-            Err(DriveError::Codec(_)) => assert!(one_shot.is_err(), "cut {cut}: paths disagree"),
+        match drive_from_slice(&mut *dec, &data[..cut], &mut sink, None, 64) {
+            Err(DriveError::Step(StepError::Codec(_))) => {
+                assert!(one_shot.is_err(), "cut {cut}: paths disagree")
+            }
             // Cutting inside the 8-byte end marker leaves every pixel; the
             // end marker is not pixel data (the inventory classifies it as
             // skipped), so both paths accept it.
@@ -288,9 +302,11 @@ fn input_limit_is_enforced_on_fed_bytes() {
         .dyn_incremental_decoder(&[])
         .unwrap();
     let mut sink = CollectSink::new();
-    let err =
-        drive_from_slice(&mut zencodec_io::Dyn(&mut *dec), &data, &mut sink, None, 64).unwrap_err();
-    assert!(matches!(err, DriveError::Codec(_)), "{err:?}");
+    let err = drive_from_slice(&mut *dec, &data, &mut sink, None, 64).unwrap_err();
+    assert!(
+        matches!(err, DriveError::Step(StepError::Codec(_))),
+        "{err:?}"
+    );
 }
 
 #[test]
@@ -304,14 +320,7 @@ fn transcode_through_encoder_sink_matches_one_shot() {
             .unwrap();
         let enc = QoiEncoderConfig::new().job().encoder().unwrap();
         let mut sink = EncoderSink::new(enc);
-        drive_from_slice(
-            &mut zencodec_io::Dyn(&mut *dec),
-            &data,
-            &mut sink,
-            None,
-            1024,
-        )
-        .unwrap();
+        drive_from_slice(&mut *dec, &data, &mut sink, None, 1024).unwrap();
         assert_eq!(sink.rows_pushed(), h as u64);
         let out = sink.finish().unwrap().into_vec();
         assert_eq!(out, data, "kind {kind} {w}x{h}x{ch}");
@@ -356,14 +365,8 @@ fn every_small_chunk_size_is_pixel_exact() {
                 .dyn_incremental_decoder(&[])
                 .unwrap();
             let mut sink = CollectSink::new();
-            drive_from_slice(
-                &mut zencodec_io::Dyn(&mut *dec),
-                &data,
-                &mut sink,
-                None,
-                chunk,
-            )
-            .unwrap_or_else(|e| panic!("kind {kind} {w}x{h}x{ch} chunk {chunk}: {e}"));
+            drive_from_slice(&mut *dec, &data, &mut sink, None, chunk)
+                .unwrap_or_else(|e| panic!("kind {kind} {w}x{h}x{ch} chunk {chunk}: {e}"));
             assert_eq!(
                 sink.bytes(),
                 &pixels[..],
@@ -380,10 +383,11 @@ fn every_small_chunk_size_is_pixel_exact() {
                     pos: 0,
                     max: chunk,
                 },
-                &mut zencodec_io::Dyn(&mut *dec),
+                &mut *dec,
                 &mut sink,
                 None,
                 512,
+                1 << 20,
             )
             .unwrap_or_else(|e| panic!("pump kind {kind} chunk {chunk}: {e}"));
             assert_eq!(sink.bytes(), &pixels[..], "pump kind {kind} chunk {chunk}");
@@ -405,4 +409,142 @@ impl std::io::Read for OneShotReader<'_> {
         self.pos += n;
         Ok(n)
     }
+}
+
+/// Push `pixels` in strips of `strip` rows, draining `pending_output` after
+/// every strip. Returns the concatenated output and the largest amount of
+/// output ever pending.
+fn encode_streaming(
+    pixels: &[u8],
+    w: u32,
+    h: u32,
+    ch: usize,
+    strip: u32,
+    declare: bool,
+) -> (Vec<u8>, usize) {
+    let stride = w as usize * ch;
+    let mut enc = QoiEncoderConfig::new().job().encoder().unwrap();
+    if declare {
+        enc.begin(w, h, desc(ch)).unwrap();
+    }
+    let mut out = Vec::new();
+    let mut peak = 0;
+    let mut y = 0;
+    while y < h {
+        let rows = (h - y).min(strip);
+        let start = y as usize * stride;
+        let s = PixelSlice::new(
+            &pixels[start..start + rows as usize * stride],
+            w,
+            rows,
+            stride,
+            desc(ch),
+        )
+        .unwrap();
+        enc.push_rows(s).unwrap();
+        let pending = enc.pending_output();
+        peak = peak.max(pending.len());
+        out.extend_from_slice(pending);
+        let n = pending.len();
+        enc.consume_output(n);
+        y += rows;
+    }
+    out.extend_from_slice(&enc.finish().unwrap().into_vec());
+    (out, peak)
+}
+
+#[test]
+fn declared_encoder_streams_output_and_stays_byte_identical() {
+    assert!(QoiEncoderConfig::capabilities().streaming_output());
+    assert!(QoiEncoderConfig::capabilities().push_rows());
+    for (kind, w, h, ch) in cases() {
+        let pixels = image(kind, w, h, ch);
+        let expected = encode_oneshot(&pixels, w, h, ch);
+        for strip in [1u32, 7, h] {
+            let (out, peak) = encode_streaming(&pixels, w, h, ch, strip, true);
+            assert_eq!(out, expected, "kind {kind} {w}x{h}x{ch} strip {strip}");
+            // A strip's output is at most 5 bytes per pixel plus the header.
+            assert!(
+                peak <= 14 + (strip as usize * w as usize) * 5,
+                "kind {kind} {w}x{h}x{ch} strip {strip}: {peak} bytes pending"
+            );
+            // Without `begin` the header height is patched at the end, so
+            // nothing streams early, and the bytes are the same.
+            let (out, peak) = encode_streaming(&pixels, w, h, ch, strip, false);
+            assert_eq!(out, expected);
+            assert_eq!(peak, 0);
+        }
+    }
+}
+
+#[test]
+fn declared_height_is_enforced() {
+    let (w, h, ch) = (8u32, 4u32, 4usize);
+    let pixels = image(1, w, h, ch);
+    let stride = w as usize * ch;
+    let strip = |rows: u32| {
+        PixelSlice::new(&pixels[..rows as usize * stride], w, rows, stride, desc(ch)).unwrap()
+    };
+
+    let mut enc = QoiEncoderConfig::new().job().encoder().unwrap();
+    enc.begin(w, 2, desc(ch)).unwrap();
+    enc.push_rows(strip(2)).unwrap();
+    assert!(enc.push_rows(strip(1)).is_err(), "more rows than declared");
+
+    let mut enc = QoiEncoderConfig::new().job().encoder().unwrap();
+    enc.begin(w, h, desc(ch)).unwrap();
+    enc.push_rows(strip(2)).unwrap();
+    assert!(enc.finish().is_err(), "fewer rows than declared");
+
+    let mut enc = QoiEncoderConfig::new().job().encoder().unwrap();
+    enc.push_rows(strip(1)).unwrap();
+    assert!(enc.begin(w, h, desc(ch)).is_err(), "begin after rows");
+
+    let mut enc = QoiEncoderConfig::new().job().encoder().unwrap();
+    enc.begin(w, h, PixelDescriptor::RGBA8).unwrap();
+    let bgra =
+        PixelSlice::new(&pixels[..stride], w, 1, stride, PixelDescriptor::BGRA8_SRGB).unwrap();
+    assert!(enc.push_rows(bgra).is_err(), "layout changed after begin");
+}
+
+#[test]
+fn streaming_transcode_keeps_output_bounded() {
+    // Decode a QOI stream and re-encode it with output drained after every
+    // decoded strip: the bytes match, and output never piles up.
+    let (w, h, ch) = (256u32, 256u32, 4usize);
+    let pixels = image(1, w, h, ch);
+    let data = encode_oneshot(&pixels, w, h, ch);
+    let mut dec = QoiDecoderConfig::new()
+        .job()
+        .dyn_incremental_decoder(&[])
+        .unwrap();
+    let enc = QoiEncoderConfig::new().job().encoder().unwrap();
+    let mut sink = EncoderSink::new(enc);
+    let mut out = Vec::new();
+    let mut peak = 0usize;
+    let total = data.len() as u64;
+    let mut at = 0usize;
+    let mut window = 0usize;
+    loop {
+        let end = (at + window).min(data.len());
+        let input = Input::new(at as u64, &data[at..end]).with_total_len(total);
+        let p = dec.step(input, &mut sink, &Unstoppable).unwrap();
+        at += p.consumed;
+        window -= p.consumed.min(window);
+        peak = peak.max(sink.pending_output().len());
+        sink.write_pending(&mut out).unwrap();
+        match p.event {
+            Event::Done(_) => break,
+            Event::Need => {
+                let r = dec.requested()[0];
+                at = r.offset().unwrap() as usize;
+                window = 4096;
+            }
+            _ => {}
+        }
+    }
+    out.extend_from_slice(&sink.finish().unwrap().into_vec());
+    assert_eq!(out, data);
+    // One 64-row strip of noise is at most 64 * 256 * 5 bytes encoded.
+    assert!(peak <= 64 * 256 * 5 + 14, "{peak} bytes pending");
 }

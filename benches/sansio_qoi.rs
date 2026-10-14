@@ -1,10 +1,10 @@
 //! QOI through the sans-I/O contract versus the one-shot paths.
 //!
-//! Decode: `decode_qoi` (one-shot) against the feed/step decoder driven
+//! Decode: `decode_qoi` (one-shot) against the incremental step decoder driven
 //! from a slice in one piece, in 64 KiB chunks, and through the stream
 //! pump. Encode: `encode_qoi` against `Encoder::encode` and streaming
 //! `push_rows` in 16-row and 1-row strips. Transcode: one-shot decode plus
-//! one-shot encode against feed/step decode straight into the streaming
+//! one-shot encode against incremental step decode straight into the streaming
 //! encoder through `EncoderSink` (no intermediate image).
 //!
 //! `cargo bench --bench sansio_qoi --features all,zencodec,std`
@@ -53,14 +53,7 @@ fn decode_incremental(data: &[u8], chunk: usize) -> CollectSink {
         .dyn_incremental_decoder(&[])
         .unwrap();
     let mut sink = CollectSink::new();
-    drive_from_slice(
-        &mut zencodec_io::Dyn(&mut *dec),
-        data,
-        &mut sink,
-        None,
-        chunk,
-    )
-    .unwrap();
+    drive_from_slice(&mut *dec, data, &mut sink, None, chunk).unwrap();
     sink
 }
 
@@ -72,10 +65,11 @@ fn decode_pumped(data: &[u8], buffer: usize) -> CollectSink {
     let mut sink = CollectSink::new();
     pump_read_to_sink(
         std::io::Cursor::new(data),
-        &mut zencodec_io::Dyn(&mut *dec),
+        &mut *dec,
         &mut sink,
         None,
         buffer,
+        16 << 20,
     )
     .unwrap();
     sink
@@ -109,14 +103,7 @@ fn transcode_streaming(data: &[u8], chunk: usize) -> Vec<u8> {
         .unwrap();
     let enc = QoiEncoderConfig::new().job().encoder().unwrap();
     let mut sink = EncoderSink::new(enc);
-    drive_from_slice(
-        &mut zencodec_io::Dyn(&mut *dec),
-        data,
-        &mut sink,
-        None,
-        chunk,
-    )
-    .unwrap();
+    drive_from_slice(&mut *dec, data, &mut sink, None, chunk).unwrap();
     sink.finish().unwrap().into_vec()
 }
 
@@ -147,13 +134,13 @@ zenbench::main!(|suite| {
                     g.bench("one-shot decode_qoi", move |b| {
                         b.iter(|| black_box(zenbitmaps::decode_qoi(encoded, Unstoppable).unwrap()))
                     });
-                    g.bench("feed/step, whole slice", move |b| {
+                    g.bench("step, whole slice", move |b| {
                         b.iter(|| black_box(decode_incremental(encoded, usize::MAX)))
                     });
-                    g.bench("feed/step, 64 KiB chunks", move |b| {
+                    g.bench("step, 64 KiB chunks", move |b| {
                         b.iter(|| black_box(decode_incremental(encoded, 64 << 10)))
                     });
-                    g.bench("feed/step, stream pump 64 KiB", move |b| {
+                    g.bench("step, stream pump 64 KiB", move |b| {
                         b.iter(|| black_box(decode_pumped(encoded, 64 << 10)))
                     });
                 },
@@ -220,10 +207,10 @@ zenbench::main!(|suite| {
                         )
                     })
                 });
-                g.bench("feed/step -> EncoderSink, whole slice", move |b| {
+                g.bench("step -> EncoderSink, whole slice", move |b| {
                     b.iter(|| black_box(transcode_streaming(encoded, usize::MAX)))
                 });
-                g.bench("feed/step -> EncoderSink, 64 KiB chunks", move |b| {
+                g.bench("step -> EncoderSink, 64 KiB chunks", move |b| {
                     b.iter(|| black_box(transcode_streaming(encoded, 64 << 10)))
                 });
             });

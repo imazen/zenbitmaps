@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- QOI incremental decoding on zencodec's sans-I/O contract (PR 32,
+  `bc4397a`, `0c018f4`, and the v2 port): `QoiIncrementalDecoder` holds no
+  input and decodes every row the offered bytes guarantee straight into the
+  sink; `DecodeCapabilities::incremental` is declared.
+- QOI streaming encode: `push_rows` encodes each strip as it arrives,
+  byte-identical to the one-shot encoder; `begin` writes the final header so
+  `pending_output`/`consume_output` stream the file while rows arrive.
+  Declares `push_rows` and `streaming_output`.
+
 ### Dependency integration
 
 - Align temporary zencodec/zenmeta/testkit pins with the checked fidelity and operation-matrix contracts (`4fda4391`). Replace coordinated git pins with released versions before publication.

@@ -48,7 +48,7 @@ zenbench = "0.1.10"
 # zencodec repo `4391021`) before 0.2.0 ships, or this dev-dep graph gains a
 # second zencodec copy.
 zencodec-testkit = ">=0.1.0, <0.3.0"
-# Drivers for the feed/step incremental path (benches + tests); unpublished,
+# Drivers for the incremental (sans-I/O) path (benches + tests); unpublished,
 # so it comes from the zencodec repo at the same ref the patch below pins.
 zencodec-io = { git = "https://github.com/imazen/zencodec", branch = "feat/sansio-feed-step", features = ["std"] }
 # Real-photo benchmark inputs (benches/qoi_photos.rs): decode the corpus
@@ -114,7 +114,7 @@ required-features = ["simd"]
 # Structural inventories (imazen/zencodec#133). Swap for the released
 # zencodec/zencodec-testkit before merge.
 [patch.crates-io]
-# zencodec's feed/step incremental contract (PR 147) is unpublished: pin the
+# zencodec's sans-I/O incremental contract (PR 147) is unpublished: pin the
 # interface crate and the testkit to the same ref so one zencodec resolves.
 # Drop these when zencodec 0.1.27+ and testkit 0.2 publish.
 zencodec = { git = "https://github.com/imazen/zencodec", branch = "feat/sansio-feed-step" }
