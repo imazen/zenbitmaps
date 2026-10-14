@@ -51,6 +51,10 @@ zencodec-testkit = ">=0.1.0, <0.3.0"
 # Drivers for the feed/step incremental path (benches + tests); unpublished,
 # so it comes from the zencodec repo at the same ref the patch below pins.
 zencodec-io = { git = "https://github.com/imazen/zencodec", branch = "feat/sansio-feed-step", features = ["std"] }
+# Real-photo benchmark inputs (benches/qoi_photos.rs): decode the corpus
+# PNGs and resample them to each benchmarked size with our own crates.
+zenpng = "0.1.4"
+zenresize = "0.3.1"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 codec-corpus = "1.1.0"
@@ -84,6 +88,11 @@ all = ["bmp", "qoi", "tga", "hdr", "simd", "rgb", "imgref"]
 
 [[test]]
 name = "qoi_sansio"
+required-features = ["qoi", "zencodec", "std"]
+
+[[bench]]
+name = "qoi_photos"
+harness = false
 required-features = ["qoi", "zencodec", "std"]
 
 [[bench]]

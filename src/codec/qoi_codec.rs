@@ -162,10 +162,9 @@ struct QoiStreamState {
     needs_swizzle: bool,
     /// Scratch for BGRA input, swizzled to RGBA before encoding.
     swizzle_buf: Vec<u8>,
-    /// Strip-sized encode scratch at the worst-case size, zeroed once: the
-    /// kernel writes before it reads, so only the written prefix is copied
-    /// to the output and no per-strip headroom is zero-filled.
-    scratch: Vec<u8>,
+    /// Bytes of `out` that hold encoded data; `out[len..]` is zeroed
+    /// headroom the next strip encodes into directly.
+    len: usize,
     limits: Option<Limits>,
 }
 
@@ -282,6 +281,7 @@ impl zencodec::encode::Encoder for QoiEncoder {
             out.extend_from_slice(&0u32.to_be_bytes());
             out.push(channels as u8);
             out.push(0); // sRGB colour space, as the one-shot path writes
+            let len = out.len();
             QoiStreamState {
                 out,
                 index: [[0; 4]; 64],
@@ -293,7 +293,7 @@ impl zencodec::encode::Encoder for QoiEncoder {
                 channels,
                 needs_swizzle: desc.layout() == ChannelLayout::Bgra,
                 swizzle_buf: Vec::new(),
-                scratch: Vec::new(),
+                len,
                 limits: limits_once.flatten(),
             }
         });
@@ -326,32 +326,39 @@ impl zencodec::encode::Encoder for QoiEncoder {
         };
         let px_count = pixels.len() / channels;
         // Worst case per pixel is one RGBA opcode (5 bytes) plus the
-        // kernel's 8-byte headroom; grown only when a larger strip arrives.
+        // kernel's 8-byte headroom. Encode straight into `out`'s zeroed
+        // headroom; when it runs short, move to a fresh zeroed buffer of at
+        // least double the size (calloc'd pages arrive zeroed for free, so
+        // growth costs one copy of the data so far and no memset).
         let worst = px_count * (channels + 1) + 8;
-        if st.scratch.len() < worst {
-            st.scratch.resize(worst, 0);
+        let needed = st.len + worst;
+        if st.out.len() < needed {
+            let new_len = needed.max(st.out.len().saturating_mul(2));
+            let mut grown = alloc::vec![0u8; new_len];
+            grown[..st.len].copy_from_slice(&st.out[..st.len]);
+            st.out = grown;
         }
+        let dst = &mut st.out[st.len..st.len + worst];
+        // The kernel runs on stack copies of its state, as in the one-shot
+        // encoder, so the compiler can keep the previous pixel and run count
+        // in registers; the state is written back after the strip.
+        let mut index = st.index;
+        let mut run = st.run;
         let written = if channels == 4 {
-            Qoi::encode_range::<4>(
-                &mut st.index,
-                &mut st.px_rgba,
-                &mut st.run,
-                pixels,
-                &mut st.scratch[..worst],
-                false,
-            )
+            let mut px = st.px_rgba;
+            let r = Qoi::encode_range::<4>(&mut index, &mut px, &mut run, pixels, dst, false);
+            st.px_rgba = px;
+            r
         } else {
-            Qoi::encode_range::<3>(
-                &mut st.index,
-                &mut st.px_rgb,
-                &mut st.run,
-                pixels,
-                &mut st.scratch[..worst],
-                false,
-            )
+            let mut px = st.px_rgb;
+            let r = Qoi::encode_range::<3>(&mut index, &mut px, &mut run, pixels, dst, false);
+            st.px_rgb = px;
+            r
         }
         .map_err(|e| At::<zencodec::CodecError>::from(BitmapError::InvalidData(e.to_string())))?;
-        st.out.extend_from_slice(&st.scratch[..written]);
+        st.index = index;
+        st.run = run;
+        st.len += written;
         st.rows = total_rows;
         Ok(())
     }
@@ -364,6 +371,7 @@ impl zencodec::encode::Encoder for QoiEncoder {
                 "finish() without push_rows()".into(),
             ))
         })?;
+        st.out.truncate(st.len);
         if st.run > 0 {
             // The kernel counts repeats; the opcode stores length - 1.
             st.out.push(QOI_OP_RUN | (st.run as u8 - 1));
@@ -1060,7 +1068,7 @@ impl zencodec::decode::IncrementalDecode for QoiIncrementalDecoder {
         sink: &mut dyn zencodec::decode::DecodeRowSink,
         stop: Option<&dyn Stop>,
     ) -> Result<(usize, zencodec::decode::Step<'_>), Self::Error> {
-        use zencodec::decode::{BatchMeta, IncrementalDecode as _, Step};
+        use zencodec::decode::{BatchMeta, Step};
 
         if self.failed || self.done.is_some() || offset != self.cursor() {
             let accepted = self.feed(offset, bytes, eof)?;

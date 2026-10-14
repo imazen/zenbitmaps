@@ -321,6 +321,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
 
 [[package]]
+name = "lz4_flex"
+version = "0.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7ef0d4ed8669f8f8826eb00dc878084aa8f253506c4fd5e8f58f5bce72ddb97e"
+
+[[package]]
 name = "magetypes"
 version = "0.9.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -852,13 +858,26 @@ dependencies = [
  "zencodec-testkit",
  "zenpixels",
  "zenpixels-convert",
+ "zenpng",
+ "zenresize",
  "zenutils-fuzz",
+]
+
+[[package]]
+name = "zenblend"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d66daf1f95f9f3a3c7c4529ea1f993069e2691cc89a4f8b0f4002ced96179f68"
+dependencies = [
+ "archmage",
+ "magetypes",
+ "safe_unaligned_simd",
 ]
 
 [[package]]
 name = "zencodec"
 version = "0.1.27"
-source = "git+https://github.com/imazen/zencodec?branch=feat%2Fsansio-feed-step#f17c2ac5289c2fe37a57b7c63920a8144e0302be"
+source = "git+https://github.com/imazen/zencodec?branch=feat%2Fsansio-feed-step#e97476cce0c2ff1cbc9c443fd13b1a249d03dcf8"
 dependencies = [
  "almost-enough",
  "enough",
@@ -870,7 +889,7 @@ dependencies = [
 [[package]]
 name = "zencodec-io"
 version = "0.1.0"
-source = "git+https://github.com/imazen/zencodec?branch=feat%2Fsansio-feed-step#f17c2ac5289c2fe37a57b7c63920a8144e0302be"
+source = "git+https://github.com/imazen/zencodec?branch=feat%2Fsansio-feed-step#e97476cce0c2ff1cbc9c443fd13b1a249d03dcf8"
 dependencies = [
  "enough",
  "how-far",
@@ -881,13 +900,24 @@ dependencies = [
 [[package]]
 name = "zencodec-testkit"
 version = "0.2.0"
-source = "git+https://github.com/imazen/zencodec?branch=feat%2Fsansio-feed-step#f17c2ac5289c2fe37a57b7c63920a8144e0302be"
+source = "git+https://github.com/imazen/zencodec?branch=feat%2Fsansio-feed-step#e97476cce0c2ff1cbc9c443fd13b1a249d03dcf8"
 dependencies = [
  "enough",
  "whereat",
  "zencodec",
  "zencodec-io",
  "zenpixels",
+]
+
+[[package]]
+name = "zenflate"
+version = "0.3.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8409543ad469f954834da58409f0d9c463156f01cfaf8a8a03fe277c73b1e0f5"
+dependencies = [
+ "archmage",
+ "enough",
+ "libm",
 ]
 
 [[package]]
@@ -913,10 +943,69 @@ dependencies = [
  "garb",
  "libm",
  "linear-srgb",
+ "lz4_flex",
  "magetypes",
  "once_cell",
  "paste",
+ "rgb",
  "whereat",
+ "zenpixels",
+]
+
+[[package]]
+name = "zenpng"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "34ef0ff0cfac28ce74a9241dbe8ba3abe60f385819d55675c4daced1ac8ac4bd"
+dependencies = [
+ "almost-enough",
+ "archmage",
+ "bytemuck",
+ "enough",
+ "imgref",
+ "linear-srgb",
+ "memchr",
+ "rgb",
+ "safe_unaligned_simd",
+ "thiserror",
+ "whereat",
+ "zencodec",
+ "zenflate",
+ "zenpixels",
+ "zenpixels-convert",
+ "zenquant",
+]
+
+[[package]]
+name = "zenquant"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "440257260e03abacc233712332cd164f59afb98e8385e49ca5a0581ef0c7269d"
+dependencies = [
+ "archmage",
+ "imgref",
+ "linear-srgb",
+ "magetypes",
+ "num-traits",
+ "rgb",
+ "thiserror",
+]
+
+[[package]]
+name = "zenresize"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0703679da7af627f10429532d0633b3d32fa0fd10d2b48ca94b5fcd0dbfd6e5a"
+dependencies = [
+ "archmage",
+ "imgref",
+ "libm",
+ "linear-srgb",
+ "magetypes",
+ "rgb",
+ "safe_unaligned_simd",
+ "whereat",
+ "zenblend",
  "zenpixels",
 ]
 

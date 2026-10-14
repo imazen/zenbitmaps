@@ -102,3 +102,22 @@ shared-contract-check:
 # Capped at 2 s per group (27 groups); narrow with `just bench-qoi-sansio GROUP`.
 bench-qoi-sansio filter="":
     CARGO_BUILD_JOBS=4 nice -n 19 cargo bench --bench sansio_qoi --features all,zencodec,std -- --cpu-policy=unrestricted {{ if filter == "" { "" } else { "--group=" + filter } }}
+
+# QOI on real photos at widths 64..2048 and original size. On first use,
+# fetches the first two SDR renders of each imazen-26 camera category
+# (1000/1200/1400/1600, about 120 MB) using the render index in the
+# imazen-26 checkout. Takes a few minutes.
+bench-qoi-photos filter="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    dir="${ZENBITMAPS_PHOTO_DIR:-$HOME/tmp/qoi-photos/src}"
+    index="${IMAZEN26:-$HOME/work/zen/imazen-26}/variant-sets/png-v3-index.tsv"
+    mkdir -p "$dir"
+    if [ -z "$(ls "$dir"/*.png 2>/dev/null)" ]; then
+      for c in 10 12 14 16; do
+        awk -F'\t' -v c="^$c" 'NR>1 && $1 ~ c && $3 != "" {print $1"\t"$3}' "$index" | head -2
+      done | while IFS=$'\t' read -r id url; do
+        curl -sSf -o "$dir/$id.png" "$url"
+      done
+    fi
+    ZENBITMAPS_PHOTO_DIR="$dir" CARGO_BUILD_JOBS=4 nice -n 19 cargo bench --bench qoi_photos --features all,zencodec,std -- --cpu-policy=unrestricted {{ if filter == "" { "" } else { "--group=" + filter } }}
