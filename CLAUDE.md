@@ -56,6 +56,16 @@ Same as other zen* codecs — see codec-design/README.md. Key points:
 
 ## Known Bugs
 
+- PNM RGB8 preflight/decode transfer disagreement (2026-10-14):
+  `PnmDecodeJob::output_info` uses `layout_to_descriptor` and advertises sRGB,
+  while `layout_to_pixel_buffer` constructs RGB8 with unknown transfer. A P6
+  2x1 fixture with samples `[20,80,140,180,40,100]` reproduces this; samples
+  themselves match. The zencodecs structural-prefix oracle explicitly expects
+  unknown transfer and does not count that as color delivery. Decide the PNM
+  interpretation policy, then synchronize preflight and actual descriptors;
+  do not silently relabel the returned pixels just to satisfy the preflight.
+
+
 - i686 inventory CI failed with `PermissionDenied` while initializing codec-corpus. The workflow now prefetches on the host and mounts that cache into cross.
 
 - QOI inventory previously checked cancellation only before/after the complete opcode walk. The one-shot timeout regression now passes with in-walk polling. PNM, HDR, TGA and BMP walkers now also poll during traversal; `long_inventory_walks_retain_one_shot_timeout` exercises each with an in-walk one-shot timeout. Header interpretation runs after the input limit check.
