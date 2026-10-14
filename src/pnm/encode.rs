@@ -46,6 +46,45 @@ pub(crate) fn encode_pnm(
     }
 }
 
+#[cfg(feature = "zencodec")]
+/// Encode `rows` rows of `pixels` under a header that names `height`. With
+/// `rows == 0` the result is the header alone; with `rows == height` it is
+/// [`encode_pnm`]. The streaming encoder writes the final header once and
+/// each strip's rows without one, so a streamed file is byte-identical to a
+/// one-shot encode of the same pixels. PFM stores rows bottom-up and is not
+/// split this way.
+pub(crate) fn encode_parts(
+    pixels: &[u8],
+    width: u32,
+    height: u32,
+    rows: u32,
+    layout: PixelLayout,
+    fmt: PnmFormat,
+    stop: &dyn Stop,
+) -> crate::Result<Vec<u8>> {
+    let w = width as usize;
+    let h = rows as usize;
+    let expected = w
+        .checked_mul(h)
+        .and_then(|wh| wh.checked_mul(layout.bytes_per_pixel()))
+        .ok_or_else(|| whereat::at!(BitmapError::DimensionsTooLarge { width, height }))?;
+    if pixels.len() < expected {
+        return Err(whereat::at!(BitmapError::BufferTooSmall {
+            needed: expected,
+            actual: pixels.len(),
+        }));
+    }
+    match fmt {
+        PnmFormat::Pgm => encode_pgm(pixels, width, height, w, h, layout, stop),
+        PnmFormat::Ppm => encode_ppm(pixels, width, height, w, h, layout, stop),
+        PnmFormat::Pam => encode_pam(pixels, width, height, w, h, layout, stop),
+        PnmFormat::Pbm | PnmFormat::Pfm => Err(whereat::at!(BitmapError::UnsupportedVariant(
+            UnsupportedKind::Type,
+            "PBM and PFM are not split into header and rows".into(),
+        ))),
+    }
+}
+
 /// Copy `src` into `out` in bounded chunks, polling `stop` between chunks.
 ///
 /// A one-shot `extend_from_slice` of a 100+ MiB payload is an uninterruptible

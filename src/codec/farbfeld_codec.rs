@@ -9,6 +9,8 @@ use crate::alloc_util::AllocPref;
 
 static FF_ENCODE_CAPS: EncodeCapabilities = EncodeCapabilities::new()
     .with_lossless(true)
+    .with_push_rows(true)
+    .with_streaming_output(true)
     .with_native_alpha(true)
     .with_native_16bit(true)
     .with_stop(true)
@@ -19,6 +21,7 @@ static FF_DECODE_CAPS: DecodeCapabilities = DecodeCapabilities::new()
     .with_native_alpha(true)
     .with_native_16bit(true)
     .with_stop(true)
+    .with_incremental(true)
     .with_enforces_max_pixels(true)
     .with_enforces_max_memory(true)
     .with_enforces_max_input_bytes(true)
@@ -138,6 +141,7 @@ impl zencodec::encode::EncodeJob for FarbfeldEncodeJob {
             config: self.config,
             limits: self.limits,
             stop: self.stop,
+            stream: None,
         })
     }
 
@@ -153,6 +157,21 @@ pub struct FarbfeldEncoder {
     config: FarbfeldEncoderConfig,
     limits: Option<ResourceLimits>,
     stop: Option<zencodec::StopToken>,
+    stream: Option<super::row_stream::RowStream>,
+}
+
+/// The farbfeld layout `encode` writes `desc` from.
+fn farbfeld_file(
+    desc: PixelDescriptor,
+) -> Result<super::row_stream::RowFile, At<zencodec::CodecError>> {
+    let layout = match (desc.channel_type(), desc.layout()) {
+        (ChannelType::U16, ChannelLayout::Rgba) => crate::PixelLayout::Rgba16,
+        (ChannelType::U8, ChannelLayout::Rgba) => crate::PixelLayout::Rgba8,
+        (ChannelType::U8, ChannelLayout::Rgb) => crate::PixelLayout::Rgb8,
+        (ChannelType::U8, ChannelLayout::Gray) => crate::PixelLayout::Gray8,
+        _ => return Err(BitmapError::from(zencodec::UnsupportedOperation::PixelFormat).into()),
+    };
+    Ok(super::row_stream::RowFile::Farbfeld(layout))
 }
 
 impl FarbfeldEncoder {
@@ -177,6 +196,83 @@ impl zencodec::encode::Encoder for FarbfeldEncoder {
 
     fn reject(op: zencodec::UnsupportedOperation) -> At<zencodec::CodecError> {
         BitmapError::from(op).into()
+    }
+
+    fn begin(
+        &mut self,
+        width: u32,
+        height: u32,
+        descriptor: PixelDescriptor,
+    ) -> Result<(), Self::Error> {
+        if self.stream.is_some() {
+            return Err(BitmapError::InvalidData("begin after rows were pushed".into()).into());
+        }
+        let file = farbfeld_file(descriptor)?;
+        let limits = self.effective_limits();
+        let stop: &dyn Stop = match &self.stop {
+            Some(s) => s,
+            None => &enough::Unstoppable,
+        };
+        self.stream = Some(super::row_stream::RowStream::start(
+            file,
+            width,
+            Some(height),
+            descriptor,
+            limits,
+            stop,
+        )?);
+        Ok(())
+    }
+
+    /// Encode a strip as it arrives; after `begin` the bytes stream through
+    /// `pending_output`. Byte-identical to `encode` on the same pixels.
+    fn push_rows(&mut self, rows: PixelSlice<'_>) -> Result<(), Self::Error> {
+        let stop: &dyn Stop = match &self.stop {
+            Some(s) => s,
+            None => &enough::Unstoppable,
+        };
+        if self.stream.is_none() {
+            let file = farbfeld_file(rows.descriptor())?;
+            let limits = self.effective_limits();
+            self.stream = Some(super::row_stream::RowStream::start(
+                file,
+                rows.width(),
+                None,
+                rows.descriptor(),
+                limits,
+                stop,
+            )?);
+        }
+        self.stream
+            .as_mut()
+            .expect("started above")
+            .push(rows, stop)
+    }
+
+    fn pending_output(&self) -> &[u8] {
+        self.stream.as_ref().map_or(&[], |s| s.pending())
+    }
+
+    fn consume_output(&mut self, n: usize) {
+        if let Some(s) = &mut self.stream {
+            s.consume(n);
+        }
+    }
+
+    fn finish(self) -> Result<EncodeOutput, Self::Error> {
+        let stop: &dyn Stop = match &self.stop {
+            Some(s) => s,
+            None => &enough::Unstoppable,
+        };
+        let stream = self.stream.ok_or_else(|| {
+            At::<zencodec::CodecError>::from(BitmapError::InvalidData(
+                "finish() without push_rows()".into(),
+            ))
+        })?;
+        Ok(EncodeOutput::new(
+            stream.finish(stop)?,
+            ImageFormat::Farbfeld,
+        ))
     }
 
     fn encode(self, pixels: PixelSlice<'_>) -> Result<EncodeOutput, Self::Error> {
@@ -311,12 +407,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for FarbfeldDecodeJob {
     fn probe(&self, data: &[u8]) -> Result<ImageInfo, Self::Error> {
         let (width, height) =
             crate::farbfeld::decode::parse_header(data).map_err(zencodec::CodecError::of)?;
-        Ok(ImageInfo::new(width, height, ImageFormat::Farbfeld)
-            .with_alpha(true)
-            .with_bit_depth(16)
-            .with_channel_count(4)
-            .with_cicp(zencodec::Cicp::SRGB)
-            .with_source_encoding_details(BitmapSourceEncoding))
+        Ok(farbfeld_info(width, height))
     }
 
     fn output_info(&self, data: &[u8]) -> Result<OutputInfo, Self::Error> {
@@ -391,6 +482,99 @@ impl<'a> zencodec::decode::DecodeJob<'a> for FarbfeldDecodeJob {
         _preferred: &[PixelDescriptor],
     ) -> Result<zencodec::Unsupported<At<zencodec::CodecError>>, Self::Error> {
         Err(BitmapError::from(zencodec::UnsupportedOperation::AnimationDecode).into())
+    }
+
+    fn dyn_incremental_decoder(
+        self,
+        _preferred: &[PixelDescriptor],
+    ) -> Result<
+        alloc::boxed::Box<zencodec::decode::DynIncrementalDecoder>,
+        zencodec::decode::BoxedError,
+    > {
+        let limits = self.limits.clone().or_else(|| self.config.limits.clone());
+        Ok(zencodec::decode::erase_incremental(
+            super::strips::StripDecoder::new(
+                FarbfeldStrips {
+                    limits,
+                    alloc_pref: self.alloc_pref,
+                    width: 0,
+                },
+                self.stop,
+                self.max_input_bytes,
+            ),
+        ))
+    }
+}
+
+fn farbfeld_info(width: u32, height: u32) -> ImageInfo {
+    ImageInfo::new(width, height, ImageFormat::Farbfeld)
+        .with_alpha(true)
+        .with_bit_depth(16)
+        .with_channel_count(4)
+        .with_cicp(zencodec::Cicp::SRGB)
+        .with_source_encoding_details(BitmapSourceEncoding)
+}
+
+/// Farbfeld on the strip decoder: 16-byte header, then big-endian RGBA16
+/// rows, converted a strip at a time with the one-shot row function.
+struct FarbfeldStrips {
+    limits: Option<Limits>,
+    alloc_pref: AllocPref,
+    width: u32,
+}
+
+impl super::strips::StripFormat for FarbfeldStrips {
+    fn geometry(
+        &mut self,
+        prefix: &[u8],
+        at_end: bool,
+    ) -> crate::Result<Option<super::strips::Geometry>> {
+        use crate::limits;
+        let (width, height) = match crate::farbfeld::decode::parse_header(prefix) {
+            Ok(wh) => wh,
+            Err(e) if !at_end && matches!(e.error(), BitmapError::UnexpectedEof) => {
+                return Ok(None);
+            }
+            Err(e) => return Err(e),
+        };
+        let lim = self.limits.as_ref();
+        limits::check_dimensions(width, height, lim)?;
+        let out_bytes = (width as usize)
+            .checked_mul(height as usize)
+            .and_then(|px| px.checked_mul(8))
+            .ok_or_else(|| {
+                whereat::at!(BitmapError::OutOfMemory(
+                    "output size overflows usize".into()
+                ))
+            })?;
+        limits::check_output_size(out_bytes, lim)?;
+        self.width = width;
+        Ok(Some(super::strips::Geometry {
+            width,
+            height,
+            layout: crate::PixelLayout::Rgba16,
+            info: farbfeld_info(width, height),
+            body: super::strips::Body::Rows {
+                data_offset: 16,
+                row_bytes: width as usize * 8,
+                bottom_up: false,
+            },
+        }))
+    }
+
+    fn decode_rows<'s>(
+        &mut self,
+        src: &'s [u8],
+        n: u32,
+        stop: &dyn Stop,
+    ) -> crate::Result<(crate::decode::DecodeOutput<'s>, usize)> {
+        stop.check()
+            .map_err(|r| whereat::at!(BitmapError::from(r)))?;
+        let rows = crate::farbfeld::decode::decode_rows(src, self.alloc_pref)?;
+        Ok((
+            crate::decode::DecodeOutput::owned(rows, self.width, n, crate::PixelLayout::Rgba16),
+            src.len(),
+        ))
     }
 }
 

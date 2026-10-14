@@ -90,6 +90,10 @@ all = ["bmp", "qoi", "tga", "hdr", "simd", "rgb", "imgref"]
 name = "qoi_sansio"
 required-features = ["qoi", "zencodec", "std"]
 
+[[test]]
+name = "sansio_bitmaps"
+required-features = ["zencodec", "std"]
+
 [[bench]]
 name = "qoi_photos"
 harness = false

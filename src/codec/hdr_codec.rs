@@ -9,6 +9,8 @@ use crate::alloc_util::AllocPref;
 
 static HDR_ENCODE_CAPS: EncodeCapabilities = EncodeCapabilities::new()
     .with_hdr(true)
+    .with_push_rows(true)
+    .with_streaming_output(true)
     .with_native_f32(true)
     .with_stop(true)
     .with_enforces_max_pixels(true);
@@ -18,6 +20,7 @@ static HDR_DECODE_CAPS: DecodeCapabilities = DecodeCapabilities::new()
     .with_hdr(true)
     .with_native_f32(true)
     .with_streaming(true)
+    .with_incremental(true)
     .with_stop(true)
     .with_enforces_max_pixels(true)
     .with_enforces_max_memory(true)
@@ -130,7 +133,7 @@ impl zencodec::encode::EncodeJob for HdrEncodeJob {
             config: self.config,
             limits: self.limits,
             stop: self.stop,
-            accumulator: None,
+            stream: None,
         })
     }
 
@@ -141,20 +144,12 @@ impl zencodec::encode::EncodeJob for HdrEncodeJob {
 
 // ── HdrEncoder ───────────────────────────────────────────────────
 
-/// Accumulator for streaming HDR encode via `push_rows`/`finish`.
-struct HdrEncodeAccumulator {
-    data: Vec<u8>,
-    width: u32,
-    total_rows: u32,
-    layout: crate::PixelLayout,
-}
-
 /// Single-image HDR encoder.
 pub struct HdrEncoder {
     config: HdrEncoderConfig,
     limits: Option<ResourceLimits>,
     stop: Option<zencodec::StopToken>,
-    accumulator: Option<HdrEncodeAccumulator>,
+    stream: Option<super::row_stream::RowStream>,
 }
 
 impl HdrEncoder {
@@ -172,6 +167,12 @@ impl HdrEncoder {
             }
         })
     }
+}
+
+fn hdr_file(desc: PixelDescriptor) -> Result<super::row_stream::RowFile, At<zencodec::CodecError>> {
+    Ok(super::row_stream::RowFile::Hdr(pixel_slice_to_hdr_layout(
+        desc,
+    )?))
 }
 
 fn pixel_slice_to_hdr_layout(
@@ -217,46 +218,78 @@ impl zencodec::encode::Encoder for HdrEncoder {
         Ok(EncodeOutput::new(encoded, ImageFormat::Hdr))
     }
 
-    fn push_rows(&mut self, rows: PixelSlice<'_>) -> Result<(), Self::Error> {
-        let layout = pixel_slice_to_hdr_layout(rows.descriptor())?;
-
-        let acc = self
-            .accumulator
-            .get_or_insert_with(|| HdrEncodeAccumulator {
-                data: Vec::new(),
-                width: rows.width(),
-                total_rows: 0,
-                layout,
-            });
-
-        if acc.width != rows.width() || acc.layout != layout {
-            return Err(BitmapError::InvalidData(
-                "push_rows: width or pixel format changed".into(),
-            )
-            .into());
+    fn begin(
+        &mut self,
+        width: u32,
+        height: u32,
+        descriptor: PixelDescriptor,
+    ) -> Result<(), Self::Error> {
+        if self.stream.is_some() {
+            return Err(BitmapError::InvalidData("begin after rows were pushed".into()).into());
         }
-
-        let bytes = rows.contiguous_bytes();
-        acc.data.extend_from_slice(&bytes);
-        acc.total_rows += rows.rows();
-        Ok(())
-    }
-
-    fn finish(self) -> Result<EncodeOutput, Self::Error> {
-        let acc = self.accumulator.ok_or_else(|| {
-            At::<zencodec::CodecError>::from(BitmapError::InvalidData(
-                "finish() without push_rows()".into(),
-            ))
-        })?;
-
+        let file = hdr_file(descriptor)?;
+        let limits = self.effective_limits();
         let stop: &dyn Stop = match &self.stop {
             Some(s) => s,
             None => &enough::Unstoppable,
         };
+        self.stream = Some(super::row_stream::RowStream::start(
+            file,
+            width,
+            Some(height),
+            descriptor,
+            limits,
+            stop,
+        )?);
+        Ok(())
+    }
 
-        let encoded = crate::hdr::encode(&acc.data, acc.width, acc.total_rows, acc.layout, stop)
-            .map_err(zencodec::CodecError::of)?;
-        Ok(EncodeOutput::new(encoded, ImageFormat::Hdr))
+    /// Encode a strip as it arrives; after `begin` the bytes stream through
+    /// `pending_output`. Byte-identical to `encode` on the same pixels.
+    fn push_rows(&mut self, rows: PixelSlice<'_>) -> Result<(), Self::Error> {
+        let stop: &dyn Stop = match &self.stop {
+            Some(s) => s,
+            None => &enough::Unstoppable,
+        };
+        if self.stream.is_none() {
+            let file = hdr_file(rows.descriptor())?;
+            let limits = self.effective_limits();
+            self.stream = Some(super::row_stream::RowStream::start(
+                file,
+                rows.width(),
+                None,
+                rows.descriptor(),
+                limits,
+                stop,
+            )?);
+        }
+        self.stream
+            .as_mut()
+            .expect("started above")
+            .push(rows, stop)
+    }
+
+    fn pending_output(&self) -> &[u8] {
+        self.stream.as_ref().map_or(&[], |s| s.pending())
+    }
+
+    fn consume_output(&mut self, n: usize) {
+        if let Some(s) = &mut self.stream {
+            s.consume(n);
+        }
+    }
+
+    fn finish(self) -> Result<EncodeOutput, Self::Error> {
+        let stop: &dyn Stop = match &self.stop {
+            Some(s) => s,
+            None => &enough::Unstoppable,
+        };
+        let stream = self.stream.ok_or_else(|| {
+            At::<zencodec::CodecError>::from(BitmapError::InvalidData(
+                "finish() without push_rows()".into(),
+            ))
+        })?;
+        Ok(EncodeOutput::new(stream.finish(stop)?, ImageFormat::Hdr))
     }
 }
 
@@ -358,13 +391,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for HdrDecodeJob {
     fn probe(&self, data: &[u8]) -> Result<ImageInfo, Self::Error> {
         let (width, height, _offset) =
             crate::hdr::decode::parse_header(data).map_err(zencodec::CodecError::of)?;
-        let cicp = zencodec::Cicp::new(1, 8, 0, true);
-        Ok(ImageInfo::new(width, height, ImageFormat::Hdr)
-            .with_alpha(false)
-            .with_bit_depth(32)
-            .with_channel_count(3)
-            .with_cicp(cicp)
-            .with_source_encoding_details(BitmapSourceEncoding))
+        Ok(hdr_info(width, height))
     }
 
     fn output_info(&self, data: &[u8]) -> Result<OutputInfo, Self::Error> {
@@ -494,6 +521,110 @@ impl<'a> zencodec::decode::DecodeJob<'a> for HdrDecodeJob {
         _preferred: &[PixelDescriptor],
     ) -> Result<zencodec::Unsupported<At<zencodec::CodecError>>, Self::Error> {
         Err(BitmapError::from(zencodec::UnsupportedOperation::AnimationDecode).into())
+    }
+
+    fn dyn_incremental_decoder(
+        self,
+        _preferred: &[PixelDescriptor],
+    ) -> Result<
+        alloc::boxed::Box<zencodec::decode::DynIncrementalDecoder>,
+        zencodec::decode::BoxedError,
+    > {
+        let limits = self.limits.clone().or_else(|| self.config.limits.clone());
+        Ok(zencodec::decode::erase_incremental(
+            super::strips::StripDecoder::new(
+                HdrStrips {
+                    limits,
+                    alloc_pref: self.alloc_pref,
+                    width: 0,
+                    scanline: Vec::new(),
+                },
+                self.stop,
+                self.max_input_bytes,
+            ),
+        ))
+    }
+}
+
+fn hdr_info(width: u32, height: u32) -> ImageInfo {
+    ImageInfo::new(width, height, ImageFormat::Hdr)
+        .with_alpha(false)
+        .with_bit_depth(32)
+        .with_channel_count(3)
+        .with_cicp(zencodec::Cicp::new(1, 8, 0, true))
+        .with_source_encoding_details(BitmapSourceEncoding)
+}
+
+/// Radiance HDR on the strip decoder: scanlines vary in length (RLE), so
+/// each step decodes the scanlines the offered bytes guarantee, with the
+/// one-shot scanline decoder.
+struct HdrStrips {
+    limits: Option<Limits>,
+    alloc_pref: AllocPref,
+    width: u32,
+    /// New-style RLE scratch, `4 * width` bytes, reused across steps.
+    scanline: Vec<u8>,
+}
+
+impl super::strips::StripFormat for HdrStrips {
+    fn geometry(
+        &mut self,
+        prefix: &[u8],
+        at_end: bool,
+    ) -> crate::Result<Option<super::strips::Geometry>> {
+        use crate::limits;
+        // A prefix fails to parse until its resolution line has arrived; only
+        // a foreign magic is final before the end of the input.
+        let (width, height, offset) = match crate::hdr::decode::parse_header(prefix) {
+            Ok(h) => h,
+            Err(e) if matches!(e.error(), BitmapError::UnrecognizedFormat) => return Err(e),
+            Err(_) if !at_end => return Ok(None),
+            Err(e) => return Err(e),
+        };
+        let lim = self.limits.as_ref();
+        limits::check_dimensions(width, height, lim)?;
+        let out_bytes = (width as usize)
+            .checked_mul(height as usize)
+            .and_then(|px| px.checked_mul(12))
+            .ok_or_else(|| {
+                whereat::at!(BitmapError::OutOfMemory(
+                    "output size overflows usize".into()
+                ))
+            })?;
+        limits::check_output_size(out_bytes, lim)?;
+        self.width = width;
+        self.scanline =
+            crate::alloc_util::alloc_zeroed(self.alloc_pref, false, width as usize * 4)?;
+        Ok(Some(super::strips::Geometry {
+            width,
+            height,
+            layout: crate::PixelLayout::RgbF32,
+            info: hdr_info(width, height),
+            body: super::strips::Body::VarRows {
+                data_offset: offset as u64,
+                worst_row_bytes: crate::hdr::decode::worst_scanline_bytes(width as usize),
+            },
+        }))
+    }
+
+    fn decode_rows<'s>(
+        &mut self,
+        src: &'s [u8],
+        n: u32,
+        stop: &dyn Stop,
+    ) -> crate::Result<(crate::decode::DecodeOutput<'s>, usize)> {
+        stop.check()
+            .map_err(|r| whereat::at!(BitmapError::from(r)))?;
+        let w = self.width as usize;
+        let mut out = crate::alloc_util::alloc_zeroed(self.alloc_pref, true, w * 12 * n as usize)?;
+        let mut pos = 0;
+        for row_out in out.chunks_exact_mut(w * 12) {
+            pos = crate::hdr::decode::decode_scanline(src, pos, w, &mut self.scanline, row_out)?;
+        }
+        Ok((
+            crate::decode::DecodeOutput::owned(out, self.width, n, crate::PixelLayout::RgbF32),
+            pos,
+        ))
     }
 }
 

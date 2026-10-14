@@ -10,6 +10,15 @@ use crate::pixel::PixelLayout;
 /// Encode pixel data as Radiance HDR (RGBE with new-style RLE).
 ///
 /// Accepts `RgbF32` (12 bytes/pixel, 3×f32) or `Rgb8` (converted via /255.0).
+/// The header and resolution line [`encode_hdr`] writes; scanlines follow.
+pub(crate) fn write_header(out: &mut Vec<u8>, width: u32, height: u32) {
+    out.extend_from_slice(b"#?RADIANCE\n");
+    out.extend_from_slice(b"FORMAT=32-bit_rle_rgbe\n");
+    out.extend_from_slice(b"\n");
+    let res_line = alloc::format!("-Y {height} +X {width}\n");
+    out.extend_from_slice(res_line.as_bytes());
+}
+
 pub(crate) fn encode_hdr(
     pixels: &[u8],
     width: u32,
@@ -35,14 +44,7 @@ pub(crate) fn encode_hdr(
     let est_size = 64 + w * h * 4;
     let mut out = Vec::with_capacity(est_size);
 
-    // Write header
-    out.extend_from_slice(b"#?RADIANCE\n");
-    out.extend_from_slice(b"FORMAT=32-bit_rle_rgbe\n");
-    out.extend_from_slice(b"\n");
-
-    // Write resolution line
-    let res_line = alloc::format!("-Y {height} +X {width}\n");
-    out.extend_from_slice(res_line.as_bytes());
+    write_header(&mut out, width, height);
 
     stop.check().map_err(|r| at!(BitmapError::from(r)))?;
 

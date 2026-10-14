@@ -140,93 +140,115 @@ pub(crate) fn decode_pixels(
         if row % 16 == 0 {
             stop.check().map_err(|r| at!(BitmapError::from(r)))?;
         }
-
-        if pos + 4 > data.len() {
-            return Err(at!(BitmapError::UnexpectedEof));
-        }
-
-        // Check for new-style RLE marker
-        if (8..=0x7FFF).contains(&w) && data[pos] == 2 && data[pos + 1] == 2 && data[pos + 2] < 128
-        {
-            // New-style RLE scanline
-            let encoded_width = ((data[pos + 2] as usize) << 8) | (data[pos + 3] as usize);
-            if encoded_width != w {
-                return Err(at!(BitmapError::InvalidData(alloc::format!(
-                    "HDR RLE: scanline width mismatch (expected {w}, got {encoded_width})"
-                ))));
-            }
-            pos += 4;
-
-            // Decode 4 channel runs (R, G, B, E)
-            for ch in 0..4 {
-                let mut col = 0;
-                while col < w {
-                    if pos >= data.len() {
-                        return Err(at!(BitmapError::UnexpectedEof));
-                    }
-                    let code = data[pos];
-                    pos += 1;
-
-                    if code > 128 {
-                        // Run: (code - 128) copies of next byte
-                        let count = (code - 128) as usize;
-                        if col + count > w {
-                            return Err(at!(BitmapError::InvalidData(
-                                "HDR RLE: run overflows scanline".into(),
-                            )));
-                        }
-                        if pos >= data.len() {
-                            return Err(at!(BitmapError::UnexpectedEof));
-                        }
-                        let val = data[pos];
-                        pos += 1;
-                        for i in 0..count {
-                            scanline_buf[(col + i) * 4 + ch] = val;
-                        }
-                        col += count;
-                    } else {
-                        // Literal: `code` distinct values
-                        let count = code as usize;
-                        if count == 0 {
-                            return Err(at!(BitmapError::InvalidData(
-                                "HDR RLE: zero-length literal run".into(),
-                            )));
-                        }
-                        if col + count > w {
-                            return Err(at!(BitmapError::InvalidData(
-                                "HDR RLE: literal overflows scanline".into(),
-                            )));
-                        }
-                        if pos + count > data.len() {
-                            return Err(at!(BitmapError::UnexpectedEof));
-                        }
-                        for i in 0..count {
-                            scanline_buf[(col + i) * 4 + ch] = data[pos + i];
-                        }
-                        pos += count;
-                        col += count;
-                    }
-                }
-            }
-
-            // Convert RGBE to f32 and write directly into output
-            let row_out = &mut out[out_pos..out_pos + w * 12];
-            rgbe_deinterleaved_to_f32(&scanline_buf[..w * 4], w, row_out);
-            out_pos += w * 12;
-        } else {
-            // Uncompressed: read flat RGBE quads
-            let needed = w * 4;
-            if pos + needed > data.len() {
-                return Err(at!(BitmapError::UnexpectedEof));
-            }
-            let row_out = &mut out[out_pos..out_pos + w * 12];
-            rgbe_scanline_to_f32(&data[pos..pos + needed], row_out);
-            out_pos += w * 12;
-            pos += needed;
-        }
+        let row_out = &mut out[out_pos..out_pos + w * 12];
+        pos = decode_scanline(data, pos, w, &mut scanline_buf, row_out)?;
+        out_pos += w * 12;
     }
 
     Ok(out)
+}
+
+/// Decode one scanline starting at `data[pos]` into `row_out` (`w * 12`
+/// bytes of f32 RGB), returning the position after it. New-style RLE
+/// scanlines are decoded through `scanline_buf` (`w * 4` bytes).
+///
+/// The worst case is [`worst_scanline_bytes`]`(w)` input bytes.
+pub(crate) fn decode_scanline(
+    data: &[u8],
+    mut pos: usize,
+    w: usize,
+    scanline_buf: &mut [u8],
+    row_out: &mut [u8],
+) -> crate::Result<usize> {
+    if pos + 4 > data.len() {
+        return Err(at!(BitmapError::UnexpectedEof));
+    }
+
+    // Check for new-style RLE marker
+    if (8..=0x7FFF).contains(&w) && data[pos] == 2 && data[pos + 1] == 2 && data[pos + 2] < 128 {
+        // New-style RLE scanline
+        let encoded_width = ((data[pos + 2] as usize) << 8) | (data[pos + 3] as usize);
+        if encoded_width != w {
+            return Err(at!(BitmapError::InvalidData(alloc::format!(
+                "HDR RLE: scanline width mismatch (expected {w}, got {encoded_width})"
+            ))));
+        }
+        pos += 4;
+
+        // Decode 4 channel runs (R, G, B, E)
+        for ch in 0..4 {
+            let mut col = 0;
+            while col < w {
+                if pos >= data.len() {
+                    return Err(at!(BitmapError::UnexpectedEof));
+                }
+                let code = data[pos];
+                pos += 1;
+
+                if code > 128 {
+                    // Run: (code - 128) copies of next byte
+                    let count = (code - 128) as usize;
+                    if col + count > w {
+                        return Err(at!(BitmapError::InvalidData(
+                            "HDR RLE: run overflows scanline".into(),
+                        )));
+                    }
+                    if pos >= data.len() {
+                        return Err(at!(BitmapError::UnexpectedEof));
+                    }
+                    let val = data[pos];
+                    pos += 1;
+                    for i in 0..count {
+                        scanline_buf[(col + i) * 4 + ch] = val;
+                    }
+                    col += count;
+                } else {
+                    // Literal: `code` distinct values
+                    let count = code as usize;
+                    if count == 0 {
+                        return Err(at!(BitmapError::InvalidData(
+                            "HDR RLE: zero-length literal run".into(),
+                        )));
+                    }
+                    if col + count > w {
+                        return Err(at!(BitmapError::InvalidData(
+                            "HDR RLE: literal overflows scanline".into(),
+                        )));
+                    }
+                    if pos + count > data.len() {
+                        return Err(at!(BitmapError::UnexpectedEof));
+                    }
+                    for i in 0..count {
+                        scanline_buf[(col + i) * 4 + ch] = data[pos + i];
+                    }
+                    pos += count;
+                    col += count;
+                }
+            }
+        }
+
+        // Convert RGBE to f32 and write directly into output
+        rgbe_deinterleaved_to_f32(&scanline_buf[..w * 4], w, row_out);
+    } else {
+        // Uncompressed: read flat RGBE quads
+        let needed = w * 4;
+        if pos + needed > data.len() {
+            return Err(at!(BitmapError::UnexpectedEof));
+        }
+        rgbe_scanline_to_f32(&data[pos..pos + needed], row_out);
+        pos += needed;
+    }
+    Ok(pos)
+}
+
+#[cfg(feature = "zencodec")]
+/// The most input bytes one scanline of width `w` can take: a new-style RLE
+/// marker plus four channels of single-pixel runs (2 bytes per pixel each),
+/// which exceeds a flat RGBE scanline (`4 * w`).
+pub(crate) fn worst_scanline_bytes(w: usize) -> usize {
+    w.saturating_mul(8)
+        .saturating_add(4)
+        .max(w.saturating_mul(4))
 }
 
 /// Convert RGBE (4 bytes) to 3×f32 linear RGB.

@@ -75,6 +75,15 @@ pub(crate) fn decode_pixels(
     Ok(out)
 }
 
+#[cfg(feature = "zencodec")]
+/// Convert `src` (whole big-endian RGBA16 rows) to native-endian bytes, the
+/// per-row step of [`decode_pixels`] (incremental decoding runs it per strip).
+pub(crate) fn decode_rows(src: &[u8], alloc_pref: AllocPref) -> crate::Result<alloc::vec::Vec<u8>> {
+    let mut out = alloc_util::alloc_zeroed(alloc_pref, true, src.len())?;
+    be16_to_ne_bulk(src, &mut out);
+    Ok(out)
+}
+
 /// Batch big-endian u16 → native endian u16, writing directly into output.
 ///
 /// Processes 8 u16s (16 bytes) per iteration for pipeline-friendly throughput.

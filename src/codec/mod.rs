@@ -103,6 +103,9 @@ pub(crate) fn trivial_decode_resources(
 // Per-format codec modules
 // ══════════════════════════════════════════════════════════════════════
 
+mod row_stream;
+mod strips;
+
 mod pnm_codec;
 pub use pnm_codec::*;
 

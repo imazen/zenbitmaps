@@ -346,9 +346,19 @@ directly (`tracing::error!("{e}")`) records where it came from.
 | `simd` | SIMD-accelerated BGR↔RGB swizzle via [garb](https://lib.rs/crates/garb) |
 | `rgb` | Typed pixel API (`RGB8`, `RGBA8`, `as_pixels()`, `encode_*_pixels()`) |
 | `imgref` | 2D buffer API (`ImgVec`/`ImgRef`, `as_imgref()`, `decode_into()`) — implies `rgb` |
-| `zencodec` | zencodec trait integration: streaming decode/encode, probe, CICP (implies `rgb` + `imgref`) |
+| `zencodec` | zencodec trait integration: streaming decode/encode, sans-I/O incremental decode and streaming encode output (see below), probe, CICP (implies `rgb` + `imgref`) |
 | `std` | Enable `std` support (not required — `no_std` + `alloc` by default) |
 | `all` | All format + pixel API features |
+
+With `zencodec`, every format decodes incrementally through
+`DecodeJob::dyn_incremental_decoder`, so the drivers in zencodec-io run it over
+files, streams and async sources and rows arrive as bytes do. QOI, binary PNM,
+farbfeld and HDR decode each strip straight from the driver's bytes; PFM reads
+its bottom-up rows with range requests; ASCII PNM, BMP and TGA report the header
+early and decode once the whole file is there. QOI, PNM, farbfeld and HDR
+encoders stream their output after `Encoder::begin`, byte-identical to a one-shot
+encode of the same pixels (PFM, BMP and TGA store rows bottom-up and write at
+`finish`).
 
 ## API
 

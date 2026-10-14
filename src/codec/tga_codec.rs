@@ -16,6 +16,7 @@ static TGA_ENCODE_CAPS: EncodeCapabilities = EncodeCapabilities::new()
 
 static TGA_DECODE_CAPS: DecodeCapabilities = DecodeCapabilities::new()
     .with_cheap_probe(true)
+    .with_incremental(true)
     .with_native_gray(true)
     .with_native_alpha(true)
     .with_streaming(true)
@@ -533,6 +534,26 @@ impl<'a> zencodec::decode::DecodeJob<'a> for TgaDecodeJob {
         _preferred: &[PixelDescriptor],
     ) -> Result<zencodec::Unsupported<At<zencodec::CodecError>>, Self::Error> {
         Err(BitmapError::from(zencodec::UnsupportedOperation::AnimationDecode).into())
+    }
+
+    fn dyn_incremental_decoder(
+        self,
+        _preferred: &[PixelDescriptor],
+    ) -> Result<
+        alloc::boxed::Box<zencodec::decode::DynIncrementalDecoder>,
+        zencodec::decode::BoxedError,
+    > {
+        // Rows are not decodable before the whole file is here (bottom-up
+        // and RLE bodies): report the header early, decode at the end with
+        // this job's own one-shot path.
+        let (stop, max_input_bytes) = (self.stop.clone(), self.max_input_bytes);
+        Ok(zencodec::decode::erase_incremental(
+            super::strips::StripDecoder::new(
+                super::strips::WholeFile::new(self, ImageFormat::Tga),
+                stop,
+                max_input_bytes,
+            ),
+        ))
     }
 }
 

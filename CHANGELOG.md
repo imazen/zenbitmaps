@@ -10,6 +10,17 @@ All notable changes to this project will be documented in this file.
   `bc4397a`, `0c018f4`, and the v2 port): `QoiIncrementalDecoder` holds no
   input and decodes every row the offered bytes guarantee straight into the
   sink; `DecodeCapabilities::incremental` is declared.
+- Incremental decode for every format on a shared strip decoder: binary
+  PNM (P4-P7) and farbfeld decode strips in place, PFM reads its bottom-up
+  rows with range requests, HDR decodes the scanlines the offered bytes
+  guarantee (worst case 8 bytes per pixel), and ASCII PNM, BMP and TGA report
+  the header early and decode through their one-shot path at the end. Pixels
+  match one-shot decoding at every chunk size and truncation point
+  (`tests/sansio_bitmaps.rs`).
+- Streaming encode output for PNM (P5/P6/P7), farbfeld and HDR: `begin`
+  writes the header, `push_rows` encodes each strip, `pending_output` streams
+  it, byte-identical to the one-shot encoders; PFM buffers until `finish`.
+  These encoders now declare `push_rows` and `streaming_output`.
 - QOI streaming encode: `push_rows` encodes each strip as it arrives,
   byte-identical to the one-shot encoder; `begin` writes the final header so
   `pending_output`/`consume_output` stream the file while rows arrive.

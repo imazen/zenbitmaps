@@ -4,7 +4,7 @@
 //! by Caleb Etemesi (MIT/Apache-2.0/Zlib licensed).
 
 pub(crate) mod decode;
-mod encode;
+pub(crate) mod encode;
 
 use crate::alloc_util::AllocPref;
 use crate::decode::DecodeOutput;
@@ -24,6 +24,7 @@ pub(crate) enum PnmFormat {
 }
 
 /// Parsed PNM header (internal).
+#[derive(Clone)]
 pub(crate) struct PnmHeader {
     pub format: PnmFormat,
     pub width: u32,

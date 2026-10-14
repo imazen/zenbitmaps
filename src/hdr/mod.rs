@@ -4,7 +4,7 @@
 //! (shared exponent). Output is always `RgbF32` (3 channels, 32-bit float).
 
 pub(crate) mod decode;
-mod encode;
+pub(crate) mod encode;
 
 use crate::alloc_util::AllocPref;
 use crate::decode::DecodeOutput;
