@@ -93,5 +93,5 @@ required-features = ["simd"]
 # Structural inventories (imazen/zencodec#133). Swap for the released
 # zencodec/zencodec-testkit before merge.
 [patch.crates-io]
-zencodec = { git = "https://github.com/imazen/zencodec", rev = "c1c3292ff10f386191780ad407526951165da47a" }
-zencodec-testkit = { git = "https://github.com/imazen/zencodec", rev = "c1c3292ff10f386191780ad407526951165da47a" }
+zencodec = { git = "https://github.com/imazen/zencodec", rev = "ab420b6c064eaa9c3abecb01f51b85413c0f2529" }
+zencodec-testkit = { git = "https://github.com/imazen/zencodec", rev = "ab420b6c064eaa9c3abecb01f51b85413c0f2529" }

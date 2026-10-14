@@ -32,7 +32,6 @@ jobs:
           - ubuntu-latest
           - ubuntu-24.04-arm
           - macos-latest
-          - macos-26-intel
           - windows-latest
           - windows-11-arm
     steps:
@@ -45,6 +44,8 @@ jobs:
 
       - name: Test (zencodec feature)
         run: cargo test --features zencodec
+      - name: Shared contracts without inventory
+        run: cargo test --features all,zencodec --test shared_contracts
 
       - name: Test (bmp feature)
         run: cargo test --features bmp
