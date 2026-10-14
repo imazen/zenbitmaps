@@ -202,9 +202,9 @@ dependencies = [
 
 [[package]]
 name = "enough"
-version = "0.4.4"
+version = "0.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f8e1bd41ecce82c300d0c84fa35b080fa6db50a5398b18f1abf0357bb067549e"
+checksum = "877362cb7b70d1c617f0cd3c67708bd58d894a86af5104018e2c10ebaee3c02f"
 
 [[package]]
 name = "errno"
@@ -253,6 +253,15 @@ name = "heck"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
+
+[[package]]
+name = "how-far"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "090dfeab9752b8574ff7b6fcfc96af46f4e4fc5b2cd0a3462e6d419b076eb7d1"
+dependencies = [
+ "enough",
+]
 
 [[package]]
 name = "imgref"
@@ -839,6 +848,7 @@ dependencies = [
  "whereat",
  "zenbench",
  "zencodec",
+ "zencodec-io",
  "zencodec-testkit",
  "zenpixels",
  "zenpixels-convert",
@@ -848,22 +858,33 @@ dependencies = [
 [[package]]
 name = "zencodec"
 version = "0.1.27"
-source = "git+https://github.com/imazen/zencodec?rev=ab420b6c064eaa9c3abecb01f51b85413c0f2529#ab420b6c064eaa9c3abecb01f51b85413c0f2529"
 dependencies = [
  "almost-enough",
  "enough",
+ "how-far",
  "whereat",
  "zenpixels",
 ]
 
 [[package]]
-name = "zencodec-testkit"
+name = "zencodec-io"
 version = "0.1.0"
-source = "git+https://github.com/imazen/zencodec?rev=ab420b6c064eaa9c3abecb01f51b85413c0f2529#ab420b6c064eaa9c3abecb01f51b85413c0f2529"
+dependencies = [
+ "enough",
+ "how-far",
+ "zencodec",
+ "zenpixels",
+]
+
+[[package]]
+name = "zencodec-testkit"
+version = "0.2.0"
+source = "git+https://github.com/imazen/zencodec?branch=feat%2Fsansio-feed-step#bded7b439d329d0ee04245109cbf1c2e31676383"
 dependencies = [
  "enough",
  "whereat",
  "zencodec",
+ "zencodec-io",
  "zenpixels",
 ]
 
@@ -908,3 +929,7 @@ name = "zmij"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
+
+[[patch.unused]]
+name = "zencodec-testkit"
+version = "0.2.0"

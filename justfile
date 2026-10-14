@@ -97,3 +97,8 @@ shared-contract-check:
     cargo test --features all,inventory --test shared_contracts
     cargo test --features all,zencodec --test shared_contracts
     cargo clippy --features all,inventory --test shared_contracts -- -D warnings
+
+# QOI through zencodec's sans-I/O contract vs the one-shot paths.
+# Capped at 2 s per group (27 groups); narrow with `just bench-qoi-sansio GROUP`.
+bench-qoi-sansio filter="":
+    CARGO_BUILD_JOBS=4 nice -n 19 cargo bench --bench sansio_qoi --features all,zencodec,std -- --cpu-policy=unrestricted {{ if filter == "" { "" } else { "--group=" + filter } }}

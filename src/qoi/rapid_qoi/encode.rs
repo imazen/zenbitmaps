@@ -91,6 +91,7 @@ impl Qoi {
                 &mut 0,
                 pixels,
                 &mut output[QOI_HEADER_SIZE..],
+                true,
             )?,
             false => Self::encode_range::<3>(
                 &mut [[0; 4]; 64],
@@ -98,6 +99,7 @@ impl Qoi {
                 &mut 0,
                 pixels,
                 &mut output[QOI_HEADER_SIZE..],
+                true,
             )?,
         };
 
@@ -116,12 +118,18 @@ impl Qoi {
     // Vendored upstream; the `index_pos as u8` casts are no-ops here but kept to
     // match upstream verbatim.
     #[allow(clippy::unnecessary_cast)]
+    ///
+    /// `flush_at_end` emits a pending run when `pixels` ends (the whole-image
+    /// behaviour). A streaming encoder passes `false` so a run carries across
+    /// calls in `run` and is flushed once by the caller at the end of the
+    /// image, which makes the streamed bytes identical to a one-shot encode.
     pub(crate) fn encode_range<const N: usize>(
         index: &mut [[u8; 4]; 64],
         px_prev: &mut [u8; N],
         run: &mut usize,
         pixels: &[u8],
         output: &mut [u8],
+        flush_at_end: bool,
     ) -> Result<usize, EncodeError>
     where
         [u8; N]: Pixel,
@@ -141,7 +149,7 @@ impl Qoi {
                     pixels = tail;
                     if likely(rest.len() > 7) {
                         if *px == *px_prev {
-                            if *run == 61 || unlikely(pixels.is_empty()) {
+                            if *run == 61 || unlikely(flush_at_end && pixels.is_empty()) {
                                 rest[0] = QOI_OP_RUN | (*run as u8);
                                 rest = &mut rest[1..];
                                 *run = 0;

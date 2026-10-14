@@ -37,13 +37,13 @@ pub(crate) use decode::DecodeError;
 const QOI_OP_INDEX: u8 = 0x00; /* 00xxxxxx */
 const QOI_OP_DIFF: u8 = 0x40; /* 01xxxxxx */
 const QOI_OP_LUMA: u8 = 0x80; /* 10xxxxxx */
-const QOI_OP_RUN: u8 = 0xc0; /* 11xxxxxx */
+pub(crate) const QOI_OP_RUN: u8 = 0xc0; /* 11xxxxxx */
 const QOI_OP_RGB: u8 = 0xfe; /* 11111110 */
 const QOI_OP_RGBA: u8 = 0xff; /* 11111111 */
 
-const QOI_MAGIC: u32 = u32::from_be_bytes(*b"qoif");
-const QOI_HEADER_SIZE: usize = 14;
-const QOI_PADDING: usize = 8;
+pub(crate) const QOI_MAGIC: u32 = u32::from_be_bytes(*b"qoif");
+pub(crate) const QOI_HEADER_SIZE: usize = 14;
+pub(crate) const QOI_PADDING: usize = 8;
 
 /// Trait for pixel types.
 /// Supports byte operations, channels accessing and modifying.
