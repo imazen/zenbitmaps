@@ -168,6 +168,20 @@ pub use tga_codec::*;
 // Shared helpers
 // ══════════════════════════════════════════════════════════════════════
 
+/// The job's `max_output_bytes` against `total`: the whole file, bytes already
+/// handed out included.
+pub(crate) fn check_output_total(
+    limits: Option<&ResourceLimits>,
+    total: u64,
+) -> Result<(), whereat::At<zencodec::CodecError>> {
+    match limits {
+        Some(l) => l
+            .check_output_size(total)
+            .map_err(|e| crate::error::BitmapError::LimitExceeded(alloc::format!("{e}")).into()),
+        None => Ok(()),
+    }
+}
+
 pub(crate) fn convert_limits(limits: &ResourceLimits) -> Limits {
     Limits {
         max_width: limits.max_width.map(u64::from),

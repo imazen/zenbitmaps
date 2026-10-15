@@ -413,12 +413,12 @@ fn input_limit_matches_one_shot() {
 
 // ── streaming encode ─────────────────────────────────────────────────────
 
-use zencodec::encode::{EncodeJob, Encoder, EncoderConfig};
+use zencodec::encode::{EncodeJob, Encoder, EncoderConfig, OutputTiming};
 use zenpixels::PixelSlice;
 
 /// Push `pixels` in strips, draining `pending_output` after each when
-/// `declare` (`begin` called). Returns the file and the most bytes ever
-/// pending.
+/// `declare` (`begin` called, and its answer must be `timing`). Returns the
+/// file and the most bytes ever pending.
 fn stream_encode<C: EncoderConfig>(
     cfg: &C,
     pixels: &[u8],
@@ -426,15 +426,15 @@ fn stream_encode<C: EncoderConfig>(
     h: u32,
     desc: PixelDescriptor,
     strip: u32,
-    declare: bool,
+    declare: Option<OutputTiming>,
 ) -> (Vec<u8>, usize)
 where
     <C::Job as EncodeJob>::Enc: Encoder,
 {
     let stride = w as usize * desc.bytes_per_pixel();
     let mut enc = cfg.clone().job().encoder().unwrap();
-    if declare {
-        enc.begin(w, h, desc).unwrap();
+    if let Some(timing) = declare {
+        assert_eq!(enc.begin(w, h, desc).unwrap(), timing);
     }
     let mut out = Vec::new();
     let mut peak = 0;
@@ -474,14 +474,15 @@ fn check_stream<C: EncoderConfig>(
 {
     assert!(C::capabilities().streaming_output(), "{name}");
     for strip in [1u32, 3, h] {
-        let (out, peak) = stream_encode(&cfg, pixels, w, h, desc, strip, true);
+        let streams = Some(OutputTiming::streaming(0));
+        let (out, peak) = stream_encode(&cfg, pixels, w, h, desc, strip, streams);
         assert_eq!(out, expected, "{name} strip {strip} with begin");
         let row_out = expected.len() / h as usize + 1;
         assert!(
             peak <= 256 + strip as usize * row_out * 2,
             "{name} strip {strip}: {peak} bytes pending"
         );
-        let (out, peak) = stream_encode(&cfg, pixels, w, h, desc, strip, false);
+        let (out, peak) = stream_encode(&cfg, pixels, w, h, desc, strip, None);
         assert_eq!(out, expected, "{name} strip {strip} without begin");
         assert_eq!(peak, 0, "{name}: nothing streams without begin");
     }
@@ -547,7 +548,8 @@ fn pnm_streams_byte_identical() {
         .encode(PixelSlice::new(&floats, w, h, w as usize * 12, desc).unwrap())
         .unwrap()
         .into_vec();
-    let (out, peak) = stream_encode(&cfg, &floats, w, h, desc, 4, true);
+    let at_finish = Some(OutputTiming::AT_FINISH);
+    let (out, peak) = stream_encode(&cfg, &floats, w, h, desc, 4, at_finish);
     assert_eq!(out, one);
     assert_eq!(peak, 0);
     zencodec_testkit::check_streaming_output_honesty(
@@ -607,4 +609,80 @@ fn hdr_streams_byte_identical() {
         &zencodec_testkit::TestImage::rgb8_gradient(40, 24),
     )
     .unwrap();
+}
+
+/// TGA stores rows bottom-up: `begin` reports `AT_FINISH`, nothing is
+/// pending before `finish`, and the file equals the one-shot encode. BMP
+/// has no row-level encode; its `begin` keeps the trait default.
+#[cfg(all(feature = "bmp", feature = "tga"))]
+#[test]
+fn bottom_up_formats_report_at_finish() {
+    let (w, h) = (13u32, 7u32);
+    let rgba = noise((w * h * 4) as usize, 9);
+    let desc = PixelDescriptor::RGBA8_SRGB;
+    let tga = zenbitmaps::TgaEncoderConfig::new();
+    let at_finish = Some(OutputTiming::AT_FINISH);
+    let (out, peak) = stream_encode(&tga, &rgba, w, h, desc, 3, at_finish);
+    assert_eq!(peak, 0);
+    let s = PixelSlice::new(&rgba, w, h, w as usize * 4, desc).unwrap();
+    let one = tga.clone().job().encoder().unwrap().encode(s).unwrap();
+    assert_eq!(out, one.into_vec());
+    let mut bmp = zenbitmaps::BmpEncoderConfig::new().job().encoder().unwrap();
+    assert_eq!(bmp.begin(w, h, desc).unwrap(), OutputTiming::AT_FINISH);
+    assert!(bmp.pending_output().is_empty());
+}
+
+/// `max_output_bytes` bounds the whole file on every path, streamed bytes
+/// already handed out included, and the usage paths stay exclusive.
+#[test]
+fn output_limit_and_exclusive_paths() {
+    let (w, h) = (64u32, 64u32);
+    let rgb = noise((w * h * 3) as usize, 7);
+    let cfg = zenbitmaps::PnmEncoderConfig::new();
+    let total = zenbitmaps::encode_ppm(&rgb, w, h, PixelLayout::Rgb8, Unstoppable)
+        .unwrap()
+        .len() as u64;
+    let limited = |max: u64| {
+        cfg.clone()
+            .job()
+            .with_limits(zencodec::ResourceLimits::none().with_max_output(max))
+            .encoder()
+            .unwrap()
+    };
+    let stream = |max: u64| -> Result<(), Box<dyn std::error::Error>> {
+        let mut enc = limited(max);
+        enc.begin(w, h, PixelDescriptor::RGB8_SRGB)?;
+        for y in 0..h as usize {
+            let n = enc.pending_output().len();
+            enc.consume_output(n);
+            let s = PixelSlice::new(
+                &rgb[y * 192..(y + 1) * 192],
+                w,
+                1,
+                192,
+                PixelDescriptor::RGB8_SRGB,
+            )?;
+            enc.push_rows(s)?;
+        }
+        enc.finish()?;
+        Ok(())
+    };
+    assert!(stream(total).is_ok());
+    assert!(
+        stream(total - 1).is_err(),
+        "streamed bytes count toward the limit"
+    );
+    let whole = PixelSlice::new(&rgb, w, h, 192, PixelDescriptor::RGB8_SRGB).unwrap();
+    assert!(limited(total).encode(whole.clone()).is_ok());
+    assert!(
+        limited(total - 1).encode(whole.clone()).is_err(),
+        "one-shot too"
+    );
+    // encode after begin, and a second begin, are refused.
+    let mut enc = cfg.clone().job().encoder().unwrap();
+    enc.begin(w, h, PixelDescriptor::RGB8_SRGB).unwrap();
+    assert!(enc.begin(w, h, PixelDescriptor::RGB8_SRGB).is_err());
+    let mut enc = cfg.job().encoder().unwrap();
+    enc.begin(w, h, PixelDescriptor::RGB8_SRGB).unwrap();
+    assert!(enc.encode(whole).is_err());
 }

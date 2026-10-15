@@ -25,6 +25,22 @@ All notable changes to this project will be documented in this file.
   byte-identical to the one-shot encoder; `begin` writes the final header so
   `pending_output`/`consume_output` stream the file while rows arrive.
   Declares `push_rows` and `streaming_output`.
+- `Encoder::take_output` on every streaming encoder: PNM, farbfeld and HDR keep
+  their output in zencodec's `OutputBuffer` and hand it over without a copy; QOI
+  hands over its strip buffer when nothing was partly consumed.
+- Farbfeld `encode` and `begin` refuse a zero width (encode panicked in
+  `chunks_exact(0)`; the decoder already refuses such files). Found by the
+  testkit's rule that `begin` agrees with `encode` on zero sizes.
+- `begin` reports zencodec's `OutputTiming` (zencodec PR 149): PNM P5/P6/P7,
+  QOI, farbfeld and HDR answer `streaming(0)` (each strip is written as it
+  arrives); PFM, stored bottom-up, answers `AT_FINISH`, as do TGA and BMP
+  through the trait default. Tests assert each answer.
+- Streaming-output rules (zencodec PR 149's contract, from an adversarial
+  review): a second `begin` says "called twice"; `encode` after `begin` or
+  `push_rows` is refused; the job's `max_output_bytes` now bounds the whole
+  file on every PNM, QOI, farbfeld and HDR encode path, counting bytes
+  already handed out. Before, no encode path checked it (the decode-side
+  checks used the memory limit).
 
 ### Dependency integration
 

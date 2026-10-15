@@ -134,6 +134,8 @@ impl zencodec::encode::EncodeJob for HdrEncodeJob {
             limits: self.limits,
             stop: self.stop,
             stream: None,
+            sent: 0,
+            begun: false,
         })
     }
 
@@ -150,6 +152,10 @@ pub struct HdrEncoder {
     limits: Option<ResourceLimits>,
     stop: Option<zencodec::StopToken>,
     stream: Option<super::row_stream::RowStream>,
+    /// Bytes handed out through `consume_output` (whole-file output limit).
+    sent: u64,
+    /// `begin` succeeded.
+    begun: bool,
 }
 
 impl HdrEncoder {
@@ -200,22 +206,14 @@ impl zencodec::encode::Encoder for HdrEncoder {
     }
 
     fn encode(self, pixels: PixelSlice<'_>) -> Result<EncodeOutput, Self::Error> {
-        let stop: &dyn Stop = match &self.stop {
-            Some(s) => s,
-            None => &enough::Unstoppable,
-        };
-        let w = pixels.width();
-        let h = pixels.rows();
-
-        if let Some(limits) = self.effective_limits() {
-            limits.check(w, h).map_err(zencodec::CodecError::of)?;
+        // The usage paths are exclusive.
+        if self.begun || self.stream.is_some() {
+            return Err(BitmapError::InvalidData("encode after begin or push_rows".into()).into());
         }
-
-        let layout = pixel_slice_to_hdr_layout(pixels.descriptor())?;
-        let bytes = pixels.contiguous_bytes();
-        let encoded =
-            crate::hdr::encode(&bytes, w, h, layout, stop).map_err(zencodec::CodecError::of)?;
-        Ok(EncodeOutput::new(encoded, ImageFormat::Hdr))
+        let limits = self.limits;
+        let out = self.encode_inner(pixels)?;
+        super::check_output_total(limits.as_ref(), out.data().len() as u64)?;
+        Ok(out)
     }
 
     fn begin(
@@ -223,50 +221,22 @@ impl zencodec::encode::Encoder for HdrEncoder {
         width: u32,
         height: u32,
         descriptor: PixelDescriptor,
-    ) -> Result<(), Self::Error> {
-        if self.stream.is_some() {
-            return Err(BitmapError::InvalidData("begin after rows were pushed".into()).into());
+    ) -> Result<zencodec::encode::OutputTiming, Self::Error> {
+        if self.begun {
+            return Err(BitmapError::InvalidData("begin called twice".into()).into());
         }
-        let file = hdr_file(descriptor)?;
-        let limits = self.effective_limits();
-        let stop: &dyn Stop = match &self.stop {
-            Some(s) => s,
-            None => &enough::Unstoppable,
-        };
-        self.stream = Some(super::row_stream::RowStream::start(
-            file,
-            width,
-            Some(height),
-            descriptor,
-            limits,
-            stop,
-        )?);
-        Ok(())
+        let timing = self.begin_inner(width, height, descriptor)?;
+        self.begun = true;
+        super::check_output_total(self.limits.as_ref(), self.pending_output().len() as u64)?;
+        Ok(timing)
     }
 
     /// Encode a strip as it arrives; after `begin` the bytes stream through
     /// `pending_output`. Byte-identical to `encode` on the same pixels.
     fn push_rows(&mut self, rows: PixelSlice<'_>) -> Result<(), Self::Error> {
-        let stop: &dyn Stop = match &self.stop {
-            Some(s) => s,
-            None => &enough::Unstoppable,
-        };
-        if self.stream.is_none() {
-            let file = hdr_file(rows.descriptor())?;
-            let limits = self.effective_limits();
-            self.stream = Some(super::row_stream::RowStream::start(
-                file,
-                rows.width(),
-                None,
-                rows.descriptor(),
-                limits,
-                stop,
-            )?);
-        }
-        self.stream
-            .as_mut()
-            .expect("started above")
-            .push(rows, stop)
+        self.push_rows_inner(rows)?;
+        let total = self.sent + self.pending_output().len() as u64;
+        super::check_output_total(self.limits.as_ref(), total)
     }
 
     fn pending_output(&self) -> &[u8] {
@@ -274,22 +244,24 @@ impl zencodec::encode::Encoder for HdrEncoder {
     }
 
     fn consume_output(&mut self, n: usize) {
+        self.sent += n.min(self.pending_output().len()) as u64;
         if let Some(s) = &mut self.stream {
             s.consume(n);
         }
     }
 
+    fn take_output(&mut self, into: &mut Vec<u8>) {
+        self.sent += self.pending_output().len() as u64;
+        if let Some(s) = &mut self.stream {
+            s.take_into(into);
+        }
+    }
+
     fn finish(self) -> Result<EncodeOutput, Self::Error> {
-        let stop: &dyn Stop = match &self.stop {
-            Some(s) => s,
-            None => &enough::Unstoppable,
-        };
-        let stream = self.stream.ok_or_else(|| {
-            At::<zencodec::CodecError>::from(BitmapError::InvalidData(
-                "finish() without push_rows()".into(),
-            ))
-        })?;
-        Ok(EncodeOutput::new(stream.finish(stop)?, ImageFormat::Hdr))
+        let (sent, limits) = (self.sent, self.limits);
+        let out = self.finish_inner()?;
+        super::check_output_total(limits.as_ref(), sent + out.data().len() as u64)?;
+        Ok(out)
     }
 }
 
@@ -701,5 +673,92 @@ impl zencodec::decode::StreamingDecode for HdrStreamingDecoder {
 
     fn info(&self) -> &ImageInfo {
         &self.info
+    }
+}
+
+impl HdrEncoder {
+    fn begin_inner(
+        &mut self,
+        width: u32,
+        height: u32,
+        descriptor: PixelDescriptor,
+    ) -> Result<zencodec::encode::OutputTiming, At<zencodec::CodecError>> {
+        if self.stream.is_some() {
+            return Err(BitmapError::InvalidData("begin after rows were pushed".into()).into());
+        }
+        let file = hdr_file(descriptor)?;
+        let limits = self.effective_limits();
+        let stop: &dyn Stop = match &self.stop {
+            Some(s) => s,
+            None => &enough::Unstoppable,
+        };
+        self.stream = Some(super::row_stream::RowStream::start(
+            file,
+            width,
+            Some(height),
+            descriptor,
+            limits,
+            stop,
+        )?);
+        // Each strip is written as it arrives.
+        Ok(zencodec::encode::OutputTiming::streaming(0))
+    }
+
+    fn push_rows_inner(&mut self, rows: PixelSlice<'_>) -> Result<(), At<zencodec::CodecError>> {
+        let stop: &dyn Stop = match &self.stop {
+            Some(s) => s,
+            None => &enough::Unstoppable,
+        };
+        if self.stream.is_none() {
+            let file = hdr_file(rows.descriptor())?;
+            let limits = self.effective_limits();
+            self.stream = Some(super::row_stream::RowStream::start(
+                file,
+                rows.width(),
+                None,
+                rows.descriptor(),
+                limits,
+                stop,
+            )?);
+        }
+        self.stream
+            .as_mut()
+            .expect("started above")
+            .push(rows, stop)
+    }
+
+    fn finish_inner(self) -> Result<EncodeOutput, At<zencodec::CodecError>> {
+        let stop: &dyn Stop = match &self.stop {
+            Some(s) => s,
+            None => &enough::Unstoppable,
+        };
+        let stream = self.stream.ok_or_else(|| {
+            At::<zencodec::CodecError>::from(BitmapError::InvalidData(
+                "finish() without push_rows()".into(),
+            ))
+        })?;
+        Ok(EncodeOutput::new(stream.finish(stop)?, ImageFormat::Hdr))
+    }
+
+    fn encode_inner(
+        self,
+        pixels: PixelSlice<'_>,
+    ) -> Result<EncodeOutput, At<zencodec::CodecError>> {
+        let stop: &dyn Stop = match &self.stop {
+            Some(s) => s,
+            None => &enough::Unstoppable,
+        };
+        let w = pixels.width();
+        let h = pixels.rows();
+
+        if let Some(limits) = self.effective_limits() {
+            limits.check(w, h).map_err(zencodec::CodecError::of)?;
+        }
+
+        let layout = pixel_slice_to_hdr_layout(pixels.descriptor())?;
+        let bytes = pixels.contiguous_bytes();
+        let encoded =
+            crate::hdr::encode(&bytes, w, h, layout, stop).map_err(zencodec::CodecError::of)?;
+        Ok(EncodeOutput::new(encoded, ImageFormat::Hdr))
     }
 }

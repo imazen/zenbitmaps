@@ -290,7 +290,9 @@ fn testkit_honesty_checks_pass_for_qoi() {
     zencodec_testkit::check_seekable_capability_honesty(QoiDecoderConfig::new(), &data).unwrap();
     for img in [
         zencodec_testkit::TestImage::rgba8_gradient(40, 24),
-        zencodec_testkit::TestImage::rgba8_gradient(1, 1),
+        // One pixel wide (the run edge case), tall enough that the check can
+        // verify the lag: it refuses images of fewer than lag + 2 strips.
+        zencodec_testkit::TestImage::rgba8_gradient(1, 64),
         zencodec_testkit::TestImage::rgba8_gradient(97, 33),
     ] {
         zencodec_testkit::check_streaming_output_honesty(
@@ -437,7 +439,10 @@ fn encode_streaming(
     let stride = w as usize * ch;
     let mut enc = QoiEncoderConfig::new().job().encoder().unwrap();
     if declare {
-        enc.begin(w, h, desc(ch)).unwrap();
+        assert_eq!(
+            enc.begin(w, h, desc(ch)).unwrap(),
+            zencodec::encode::OutputTiming::streaming(0)
+        );
     }
     let mut out = Vec::new();
     let mut peak = 0;

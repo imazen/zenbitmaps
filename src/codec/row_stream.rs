@@ -9,6 +9,7 @@
 //! one-shot encoder's output for those rows minus its own header.
 
 use alloc::vec::Vec;
+use zencodec::encode::OutputBuffer;
 
 use enough::Stop;
 use whereat::At;
@@ -35,6 +36,12 @@ impl RowFile {
                 crate::pnm::encode::encode_parts(&[], width, height, 0, layout, fmt, stop)
             }
             Self::Farbfeld(_) => {
+                // As `encode` does.
+                if width == 0 {
+                    return Err(whereat::at!(BitmapError::InvalidData(
+                        "farbfeld width is zero".into()
+                    )));
+                }
                 let mut v = Vec::with_capacity(16);
                 v.extend_from_slice(b"farbfeld");
                 v.extend_from_slice(&width.to_be_bytes());
@@ -82,10 +89,9 @@ pub(crate) struct RowStream {
     width: u32,
     rows: u32,
     declared: Option<u32>,
-    /// With `begin`: the file so far, of which `out[..drained]` was handed
-    /// out. Without: the encoded rows, the header still to come.
-    out: Vec<u8>,
-    drained: usize,
+    /// With `begin`: the file not yet handed out. Without: the encoded
+    /// rows, the header still to come.
+    out: OutputBuffer,
     limits: Option<Limits>,
 }
 
@@ -107,10 +113,10 @@ impl RowStream {
         if let (Some(l), Some(h)) = (&limits, height) {
             l.check(width, h).map_err(CodecError::of)?;
         }
-        let out = match height {
-            Some(h) => file.header(width, h, stop).map_err(CodecError::of)?,
-            None => Vec::new(),
-        };
+        let mut out = OutputBuffer::new();
+        if let Some(h) = height {
+            *out.vec_mut() = file.header(width, h, stop).map_err(CodecError::of)?;
+        }
         Ok(Self {
             file,
             descriptor,
@@ -118,7 +124,6 @@ impl RowStream {
             rows: 0,
             declared: height,
             out,
-            drained: 0,
             limits,
         })
     }
@@ -155,34 +160,32 @@ impl RowStream {
             .file
             .rows(&bytes, self.width, rows.rows(), stop)
             .map_err(CodecError::of)?;
-        self.out.extend_from_slice(&encoded);
+        self.out.push(&encoded);
         self.rows = total;
         Ok(())
     }
 
     pub(crate) fn pending(&self) -> &[u8] {
         match self.declared {
-            Some(_) => &self.out[self.drained..],
+            Some(_) => self.out.pending(),
             None => &[],
         }
     }
 
     pub(crate) fn consume(&mut self, n: usize) {
-        if self.declared.is_none() {
-            return;
+        if self.declared.is_some() {
+            self.out.consume(n);
         }
-        self.drained = (self.drained + n).min(self.out.len());
-        if self.drained == self.out.len() {
-            self.out.clear();
-            self.drained = 0;
-        } else if self.drained >= 64 * 1024 && self.drained > self.out.len() / 2 {
-            self.out.drain(..self.drained);
-            self.drained = 0;
+    }
+
+    pub(crate) fn take_into(&mut self, into: &mut Vec<u8>) {
+        if self.declared.is_some() {
+            self.out.take_into(into);
         }
     }
 
     /// The bytes not yet handed out: the rest of the file.
-    pub(crate) fn finish(mut self, stop: &dyn Stop) -> Result<Vec<u8>, At<CodecError>> {
+    pub(crate) fn finish(self, stop: &dyn Stop) -> Result<Vec<u8>, At<CodecError>> {
         match self.declared {
             Some(declared) if declared != self.rows => {
                 Err(err(BitmapError::InvalidData(alloc::format!(
@@ -190,16 +193,13 @@ impl RowStream {
                     self.rows
                 ))))
             }
-            Some(_) => {
-                self.out.drain(..self.drained);
-                Ok(self.out)
-            }
+            Some(_) => Ok(self.out.into_remaining()),
             None => {
                 let mut file = self
                     .file
                     .header(self.width, self.rows, stop)
                     .map_err(CodecError::of)?;
-                file.extend_from_slice(&self.out);
+                file.extend_from_slice(self.out.pending());
                 Ok(file)
             }
         }
