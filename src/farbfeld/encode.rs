@@ -20,6 +20,13 @@ pub(crate) fn encode_farbfeld(
     layout: PixelLayout,
     stop: &dyn Stop,
 ) -> crate::Result<Vec<u8>> {
+    if width == 0 {
+        // Rows of zero bytes can't be split into rows; the decoder refuses
+        // such files too.
+        return Err(at!(BitmapError::InvalidData(
+            "farbfeld width is zero".into()
+        )));
+    }
     let w = width as usize;
     let h = height as usize;
     let bpp = layout.bytes_per_pixel();

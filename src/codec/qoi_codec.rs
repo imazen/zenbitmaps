@@ -284,6 +284,30 @@ impl zencodec::encode::Encoder for QoiEncoder {
         }
     }
 
+    /// Hands over the output buffer itself when `into` is empty and
+    /// nothing was partly consumed; the next strip then encodes into a new
+    /// buffer.
+    fn take_output(&mut self, into: &mut Vec<u8>) {
+        let n = self.pending_output().len();
+        if n == 0 {
+            return;
+        }
+        self.sent += n as u64;
+        let st = self
+            .stream
+            .as_mut()
+            .expect("bytes pending only while streaming");
+        if into.is_empty() && st.drained == 0 {
+            st.out.truncate(st.len);
+            core::mem::swap(into, &mut st.out);
+            st.out.clear();
+        } else {
+            into.extend_from_slice(&st.out[st.drained..st.len]);
+        }
+        st.len = 0;
+        st.drained = 0;
+    }
+
     fn finish(self) -> Result<EncodeOutput, Self::Error> {
         let (sent, limits) = (self.sent, self.limits);
         let out = self.finish_inner()?;

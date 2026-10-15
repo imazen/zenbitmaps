@@ -308,6 +308,13 @@ impl zencodec::encode::Encoder for PnmEncoder {
         }
     }
 
+    fn take_output(&mut self, into: &mut Vec<u8>) {
+        self.sent += self.pending_output().len() as u64;
+        if let Some(PnmStream::Rows(s)) = &mut self.stream {
+            s.take_into(into);
+        }
+    }
+
     fn finish(self) -> Result<EncodeOutput, Self::Error> {
         let (sent, limits) = (self.sent, self.limits);
         let out = self.finish_inner()?;
