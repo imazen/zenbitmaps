@@ -1,5 +1,6 @@
 use super::*;
 use whereat::At;
+use zencodec::encode::Encoder as _;
 
 use crate::alloc_util::AllocPref;
 use crate::pnm;
@@ -159,6 +160,8 @@ impl zencodec::encode::EncodeJob for PnmEncodeJob {
             limits: self.limits,
             stop: self.stop,
             stream: None,
+            sent: 0,
+            begun: false,
         })
     }
 
@@ -175,6 +178,10 @@ pub struct PnmEncoder {
     limits: Option<ResourceLimits>,
     stop: Option<zencodec::StopToken>,
     stream: Option<PnmStream>,
+    /// Bytes handed out through `consume_output` (whole-file output limit).
+    sent: u64,
+    /// `begin` succeeded.
+    begun: bool,
 }
 
 /// Row-level encode state.
@@ -269,59 +276,22 @@ impl zencodec::encode::Encoder for PnmEncoder {
         height: u32,
         descriptor: PixelDescriptor,
     ) -> Result<zencodec::encode::OutputTiming, Self::Error> {
-        if self.stream.is_some() {
-            return Err(BitmapError::InvalidData("begin after rows were pushed".into()).into());
+        if self.begun {
+            return Err(BitmapError::InvalidData("begin called twice".into()).into());
         }
-        self.start_stream(width, Some(height), descriptor)?;
-        Ok(match self.stream {
-            // PGM/PPM/PAM: each strip is written as it arrives.
-            Some(PnmStream::Rows(_)) => zencodec::encode::OutputTiming::streaming(0),
-            // PFM is stored bottom-up: nothing can be written before the last row.
-            _ => zencodec::encode::OutputTiming::AT_FINISH,
-        })
+        let timing = self.begin_inner(width, height, descriptor)?;
+        self.begun = true;
+        super::check_output_total(self.limits.as_ref(), self.pending_output().len() as u64)?;
+        Ok(timing)
     }
 
     /// Encode a strip as it arrives (PGM/PPM/PAM; PFM waits for `finish`).
     /// Unlike `encode`, rows are written in the layout given: whether alpha
     /// is dead cannot be known until the last row.
     fn push_rows(&mut self, rows: PixelSlice<'_>) -> Result<(), Self::Error> {
-        if self.stream.is_none() {
-            self.start_stream(rows.width(), None, rows.descriptor())?;
-        }
-        let stop: &dyn Stop = match &self.stop {
-            Some(s) => s,
-            None => &enough::Unstoppable,
-        };
-        match self.stream.as_mut().expect("started above") {
-            PnmStream::Rows(s) => s.push(rows, stop),
-            PnmStream::Buffered {
-                data,
-                width,
-                rows: n,
-                declared,
-                descriptor,
-            } => {
-                if rows.width() != *width || rows.descriptor() != *descriptor {
-                    return Err(BitmapError::InvalidData(
-                        "push_rows: width or pixel format changed".into(),
-                    )
-                    .into());
-                }
-                let total = n.saturating_add(rows.rows());
-                if declared.is_some_and(|d| total > d) {
-                    return Err(BitmapError::InvalidData(
-                        "push_rows: more rows than declared at begin".into(),
-                    )
-                    .into());
-                }
-                let row_bytes = *width as usize * descriptor.bytes_per_pixel();
-                for y in 0..rows.rows() {
-                    data.extend_from_slice(&rows.row(y)[..row_bytes]);
-                }
-                *n = total;
-                Ok(())
-            }
-        }
+        self.push_rows_inner(rows)?;
+        let total = self.sent + self.pending_output().len() as u64;
+        super::check_output_total(self.limits.as_ref(), total)
     }
 
     fn pending_output(&self) -> &[u8] {
@@ -332,169 +302,28 @@ impl zencodec::encode::Encoder for PnmEncoder {
     }
 
     fn consume_output(&mut self, n: usize) {
+        self.sent += n.min(self.pending_output().len()) as u64;
         if let Some(PnmStream::Rows(s)) = &mut self.stream {
             s.consume(n);
         }
     }
 
-    fn finish(mut self) -> Result<EncodeOutput, Self::Error> {
-        let stop: &dyn Stop = match &self.stop {
-            Some(s) => s,
-            None => &enough::Unstoppable,
-        };
-        match self.stream.take() {
-            None => Err(BitmapError::InvalidData("finish() without push_rows()".into()).into()),
-            Some(PnmStream::Rows(s)) => Ok(EncodeOutput::new(s.finish(stop)?, ImageFormat::Pnm)),
-            Some(PnmStream::Buffered {
-                data,
-                width,
-                rows,
-                declared,
-                descriptor,
-            }) => {
-                if declared.is_some_and(|d| d != rows) {
-                    return Err(BitmapError::InvalidData(
-                        "finish: rows pushed differ from the height declared at begin".into(),
-                    )
-                    .into());
-                }
-                let row_bytes = width as usize * descriptor.bytes_per_pixel();
-                let slice =
-                    PixelSlice::new(&data, width, rows, row_bytes, descriptor).map_err(|e| {
-                        At::<zencodec::CodecError>::from(BitmapError::InvalidData(e.to_string()))
-                    })?;
-                self.encode(slice)
-            }
-        }
+    fn finish(self) -> Result<EncodeOutput, Self::Error> {
+        let (sent, limits) = (self.sent, self.limits);
+        let out = self.finish_inner()?;
+        super::check_output_total(limits.as_ref(), sent + out.data().len() as u64)?;
+        Ok(out)
     }
 
     fn encode(self, pixels: PixelSlice<'_>) -> Result<EncodeOutput, Self::Error> {
-        // Bit-exact load-bearing narrowing (dead alpha / chroma-free /
-        // replicated-low-bits) before format mapping — see
-        // `super::reduce_for_raw_encode`. PNM encodes grayscale, so every
-        // narrowing target is encodable and the reduction is always safe.
-        let reduced = super::reduce_for_raw_encode(&pixels, |_| true);
-        let pixels = match &reduced {
-            Some(buf) => buf.as_slice(),
-            None => pixels,
-        };
-        let stop: &dyn Stop = match &self.stop {
-            Some(s) => s,
-            None => &enough::Unstoppable,
-        };
-        let desc = pixels.descriptor();
-        let w = pixels.width();
-        let h = pixels.rows();
-
-        if let Some(limits) = self.effective_limits() {
-            limits.check(w, h).map_err(zencodec::CodecError::of)?;
+        // The usage paths are exclusive.
+        if self.begun || self.stream.is_some() {
+            return Err(BitmapError::InvalidData("encode after begin or push_rows".into()).into());
         }
-
-        match (desc.channel_type(), desc.layout()) {
-            (ChannelType::U8, ChannelLayout::Rgb) => {
-                let bytes = pixels.contiguous_bytes();
-                let encoded = pnm::encode(
-                    &bytes,
-                    w,
-                    h,
-                    crate::PixelLayout::Rgb8,
-                    pnm::PnmFormat::Ppm,
-                    stop,
-                )
-                .map_err(zencodec::CodecError::of)?;
-                Ok(EncodeOutput::new(encoded, ImageFormat::Pnm))
-            }
-            (ChannelType::U8, ChannelLayout::Rgba) => {
-                let bytes = pixels.contiguous_bytes();
-                let encoded = pnm::encode(
-                    &bytes,
-                    w,
-                    h,
-                    crate::PixelLayout::Rgba8,
-                    pnm::PnmFormat::Pam,
-                    stop,
-                )
-                .map_err(zencodec::CodecError::of)?;
-                Ok(EncodeOutput::new(encoded, ImageFormat::Pnm))
-            }
-            (ChannelType::U8, ChannelLayout::Gray) => {
-                let bytes = pixels.contiguous_bytes();
-                let encoded = pnm::encode(
-                    &bytes,
-                    w,
-                    h,
-                    crate::PixelLayout::Gray8,
-                    pnm::PnmFormat::Pgm,
-                    stop,
-                )
-                .map_err(zencodec::CodecError::of)?;
-                Ok(EncodeOutput::new(encoded, ImageFormat::Pnm))
-            }
-            (ChannelType::U8, ChannelLayout::Bgra) => {
-                let bytes = pixels.contiguous_bytes();
-                let encoded = pnm::encode(
-                    &bytes,
-                    w,
-                    h,
-                    crate::PixelLayout::Bgra8,
-                    pnm::PnmFormat::Ppm,
-                    stop,
-                )
-                .map_err(zencodec::CodecError::of)?;
-                Ok(EncodeOutput::new(encoded, ImageFormat::Pnm))
-            }
-            (ChannelType::F32, ChannelLayout::Rgb) => {
-                let bytes = pixels.contiguous_bytes();
-                let encoded = pnm::encode(
-                    &bytes,
-                    w,
-                    h,
-                    crate::PixelLayout::RgbF32,
-                    pnm::PnmFormat::Pfm,
-                    stop,
-                )
-                .map_err(zencodec::CodecError::of)?;
-                Ok(EncodeOutput::new(encoded, ImageFormat::Pnm))
-            }
-            (ChannelType::F32, ChannelLayout::Rgba) => {
-                // PFM has no alpha channel — drop alpha and write PFM color.
-                let bpp = desc.bytes_per_pixel();
-                let mut rgb_bytes = Vec::with_capacity(w as usize * h as usize * 12);
-                for y in 0..h {
-                    let row = pixels.row(y);
-                    for chunk in row.chunks_exact(bpp) {
-                        rgb_bytes.extend_from_slice(&chunk[..12]);
-                    }
-                }
-                let encoded = pnm::encode(
-                    &rgb_bytes,
-                    w,
-                    h,
-                    crate::PixelLayout::RgbF32,
-                    pnm::PnmFormat::Pfm,
-                    stop,
-                )
-                .map_err(zencodec::CodecError::of)?;
-                Ok(EncodeOutput::new(encoded, ImageFormat::Pnm))
-            }
-            (ChannelType::F32, ChannelLayout::Gray) => {
-                let bytes = pixels.contiguous_bytes();
-                let encoded = pnm::encode(
-                    &bytes,
-                    w,
-                    h,
-                    crate::PixelLayout::GrayF32,
-                    pnm::PnmFormat::Pfm,
-                    stop,
-                )
-                .map_err(zencodec::CodecError::of)?;
-                Ok(EncodeOutput::new(encoded, ImageFormat::Pnm))
-            }
-            // A well-formed request for a pixel format this encoder does not
-            // support — caller-request-origin, routed via the existing
-            // zencodec::UnsupportedOperation::PixelFormat axis.
-            _ => Err(Self::reject(zencodec::UnsupportedOperation::PixelFormat)),
-        }
+        let limits = self.limits;
+        let out = self.encode_inner(pixels)?;
+        super::check_output_total(limits.as_ref(), out.data().len() as u64)?;
+        Ok(out)
     }
 }
 
@@ -921,5 +750,228 @@ impl zencodec::decode::Decode for PnmDecoder<'_> {
         let decoded = crate::pnm::decode_with_alloc_pref(&self.data, limits, self.alloc_pref, stop)
             .map_err(zencodec::CodecError::of)?;
         decode_output_from_internal(&decoded, ImageFormat::Pnm).map_err(zencodec::CodecError::of)
+    }
+}
+
+impl PnmEncoder {
+    fn begin_inner(
+        &mut self,
+        width: u32,
+        height: u32,
+        descriptor: PixelDescriptor,
+    ) -> Result<zencodec::encode::OutputTiming, At<zencodec::CodecError>> {
+        if self.stream.is_some() {
+            return Err(BitmapError::InvalidData("begin after rows were pushed".into()).into());
+        }
+        self.start_stream(width, Some(height), descriptor)?;
+        Ok(match self.stream {
+            // PGM/PPM/PAM: each strip is written as it arrives.
+            Some(PnmStream::Rows(_)) => zencodec::encode::OutputTiming::streaming(0),
+            // PFM is stored bottom-up: nothing can be written before the last row.
+            _ => zencodec::encode::OutputTiming::AT_FINISH,
+        })
+    }
+
+    fn push_rows_inner(&mut self, rows: PixelSlice<'_>) -> Result<(), At<zencodec::CodecError>> {
+        if self.stream.is_none() {
+            self.start_stream(rows.width(), None, rows.descriptor())?;
+        }
+        let stop: &dyn Stop = match &self.stop {
+            Some(s) => s,
+            None => &enough::Unstoppable,
+        };
+        match self.stream.as_mut().expect("started above") {
+            PnmStream::Rows(s) => s.push(rows, stop),
+            PnmStream::Buffered {
+                data,
+                width,
+                rows: n,
+                declared,
+                descriptor,
+            } => {
+                if rows.width() != *width || rows.descriptor() != *descriptor {
+                    return Err(BitmapError::InvalidData(
+                        "push_rows: width or pixel format changed".into(),
+                    )
+                    .into());
+                }
+                let total = n.saturating_add(rows.rows());
+                if declared.is_some_and(|d| total > d) {
+                    return Err(BitmapError::InvalidData(
+                        "push_rows: more rows than declared at begin".into(),
+                    )
+                    .into());
+                }
+                let row_bytes = *width as usize * descriptor.bytes_per_pixel();
+                for y in 0..rows.rows() {
+                    data.extend_from_slice(&rows.row(y)[..row_bytes]);
+                }
+                *n = total;
+                Ok(())
+            }
+        }
+    }
+
+    fn finish_inner(mut self) -> Result<EncodeOutput, At<zencodec::CodecError>> {
+        let stop: &dyn Stop = match &self.stop {
+            Some(s) => s,
+            None => &enough::Unstoppable,
+        };
+        match self.stream.take() {
+            None => Err(BitmapError::InvalidData("finish() without push_rows()".into()).into()),
+            Some(PnmStream::Rows(s)) => Ok(EncodeOutput::new(s.finish(stop)?, ImageFormat::Pnm)),
+            Some(PnmStream::Buffered {
+                data,
+                width,
+                rows,
+                declared,
+                descriptor,
+            }) => {
+                if declared.is_some_and(|d| d != rows) {
+                    return Err(BitmapError::InvalidData(
+                        "finish: rows pushed differ from the height declared at begin".into(),
+                    )
+                    .into());
+                }
+                let row_bytes = width as usize * descriptor.bytes_per_pixel();
+                let slice =
+                    PixelSlice::new(&data, width, rows, row_bytes, descriptor).map_err(|e| {
+                        At::<zencodec::CodecError>::from(BitmapError::InvalidData(e.to_string()))
+                    })?;
+                self.encode_inner(slice)
+            }
+        }
+    }
+
+    fn encode_inner(
+        self,
+        pixels: PixelSlice<'_>,
+    ) -> Result<EncodeOutput, At<zencodec::CodecError>> {
+        // Bit-exact load-bearing narrowing (dead alpha / chroma-free /
+        // replicated-low-bits) before format mapping — see
+        // `super::reduce_for_raw_encode`. PNM encodes grayscale, so every
+        // narrowing target is encodable and the reduction is always safe.
+        let reduced = super::reduce_for_raw_encode(&pixels, |_| true);
+        let pixels = match &reduced {
+            Some(buf) => buf.as_slice(),
+            None => pixels,
+        };
+        let stop: &dyn Stop = match &self.stop {
+            Some(s) => s,
+            None => &enough::Unstoppable,
+        };
+        let desc = pixels.descriptor();
+        let w = pixels.width();
+        let h = pixels.rows();
+
+        if let Some(limits) = self.effective_limits() {
+            limits.check(w, h).map_err(zencodec::CodecError::of)?;
+        }
+
+        match (desc.channel_type(), desc.layout()) {
+            (ChannelType::U8, ChannelLayout::Rgb) => {
+                let bytes = pixels.contiguous_bytes();
+                let encoded = pnm::encode(
+                    &bytes,
+                    w,
+                    h,
+                    crate::PixelLayout::Rgb8,
+                    pnm::PnmFormat::Ppm,
+                    stop,
+                )
+                .map_err(zencodec::CodecError::of)?;
+                Ok(EncodeOutput::new(encoded, ImageFormat::Pnm))
+            }
+            (ChannelType::U8, ChannelLayout::Rgba) => {
+                let bytes = pixels.contiguous_bytes();
+                let encoded = pnm::encode(
+                    &bytes,
+                    w,
+                    h,
+                    crate::PixelLayout::Rgba8,
+                    pnm::PnmFormat::Pam,
+                    stop,
+                )
+                .map_err(zencodec::CodecError::of)?;
+                Ok(EncodeOutput::new(encoded, ImageFormat::Pnm))
+            }
+            (ChannelType::U8, ChannelLayout::Gray) => {
+                let bytes = pixels.contiguous_bytes();
+                let encoded = pnm::encode(
+                    &bytes,
+                    w,
+                    h,
+                    crate::PixelLayout::Gray8,
+                    pnm::PnmFormat::Pgm,
+                    stop,
+                )
+                .map_err(zencodec::CodecError::of)?;
+                Ok(EncodeOutput::new(encoded, ImageFormat::Pnm))
+            }
+            (ChannelType::U8, ChannelLayout::Bgra) => {
+                let bytes = pixels.contiguous_bytes();
+                let encoded = pnm::encode(
+                    &bytes,
+                    w,
+                    h,
+                    crate::PixelLayout::Bgra8,
+                    pnm::PnmFormat::Ppm,
+                    stop,
+                )
+                .map_err(zencodec::CodecError::of)?;
+                Ok(EncodeOutput::new(encoded, ImageFormat::Pnm))
+            }
+            (ChannelType::F32, ChannelLayout::Rgb) => {
+                let bytes = pixels.contiguous_bytes();
+                let encoded = pnm::encode(
+                    &bytes,
+                    w,
+                    h,
+                    crate::PixelLayout::RgbF32,
+                    pnm::PnmFormat::Pfm,
+                    stop,
+                )
+                .map_err(zencodec::CodecError::of)?;
+                Ok(EncodeOutput::new(encoded, ImageFormat::Pnm))
+            }
+            (ChannelType::F32, ChannelLayout::Rgba) => {
+                // PFM has no alpha channel — drop alpha and write PFM color.
+                let bpp = desc.bytes_per_pixel();
+                let mut rgb_bytes = Vec::with_capacity(w as usize * h as usize * 12);
+                for y in 0..h {
+                    let row = pixels.row(y);
+                    for chunk in row.chunks_exact(bpp) {
+                        rgb_bytes.extend_from_slice(&chunk[..12]);
+                    }
+                }
+                let encoded = pnm::encode(
+                    &rgb_bytes,
+                    w,
+                    h,
+                    crate::PixelLayout::RgbF32,
+                    pnm::PnmFormat::Pfm,
+                    stop,
+                )
+                .map_err(zencodec::CodecError::of)?;
+                Ok(EncodeOutput::new(encoded, ImageFormat::Pnm))
+            }
+            (ChannelType::F32, ChannelLayout::Gray) => {
+                let bytes = pixels.contiguous_bytes();
+                let encoded = pnm::encode(
+                    &bytes,
+                    w,
+                    h,
+                    crate::PixelLayout::GrayF32,
+                    pnm::PnmFormat::Pfm,
+                    stop,
+                )
+                .map_err(zencodec::CodecError::of)?;
+                Ok(EncodeOutput::new(encoded, ImageFormat::Pnm))
+            }
+            // A well-formed request for a pixel format this encoder does not
+            // support — caller-request-origin, routed via the existing
+            // zencodec::UnsupportedOperation::PixelFormat axis.
+            _ => Err(Self::reject(zencodec::UnsupportedOperation::PixelFormat)),
+        }
     }
 }

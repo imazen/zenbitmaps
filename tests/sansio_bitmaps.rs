@@ -631,3 +631,58 @@ fn bottom_up_formats_report_at_finish() {
     assert_eq!(bmp.begin(w, h, desc).unwrap(), OutputTiming::AT_FINISH);
     assert!(bmp.pending_output().is_empty());
 }
+
+/// `max_output_bytes` bounds the whole file on every path, streamed bytes
+/// already handed out included, and the usage paths stay exclusive.
+#[test]
+fn output_limit_and_exclusive_paths() {
+    let (w, h) = (64u32, 64u32);
+    let rgb = noise((w * h * 3) as usize, 7);
+    let cfg = zenbitmaps::PnmEncoderConfig::new();
+    let total = zenbitmaps::encode_ppm(&rgb, w, h, PixelLayout::Rgb8, Unstoppable)
+        .unwrap()
+        .len() as u64;
+    let limited = |max: u64| {
+        cfg.clone()
+            .job()
+            .with_limits(zencodec::ResourceLimits::none().with_max_output(max))
+            .encoder()
+            .unwrap()
+    };
+    let stream = |max: u64| -> Result<(), Box<dyn std::error::Error>> {
+        let mut enc = limited(max);
+        enc.begin(w, h, PixelDescriptor::RGB8_SRGB)?;
+        for y in 0..h as usize {
+            let n = enc.pending_output().len();
+            enc.consume_output(n);
+            let s = PixelSlice::new(
+                &rgb[y * 192..(y + 1) * 192],
+                w,
+                1,
+                192,
+                PixelDescriptor::RGB8_SRGB,
+            )?;
+            enc.push_rows(s)?;
+        }
+        enc.finish()?;
+        Ok(())
+    };
+    assert!(stream(total).is_ok());
+    assert!(
+        stream(total - 1).is_err(),
+        "streamed bytes count toward the limit"
+    );
+    let whole = PixelSlice::new(&rgb, w, h, 192, PixelDescriptor::RGB8_SRGB).unwrap();
+    assert!(limited(total).encode(whole.clone()).is_ok());
+    assert!(
+        limited(total - 1).encode(whole.clone()).is_err(),
+        "one-shot too"
+    );
+    // encode after begin, and a second begin, are refused.
+    let mut enc = cfg.clone().job().encoder().unwrap();
+    enc.begin(w, h, PixelDescriptor::RGB8_SRGB).unwrap();
+    assert!(enc.begin(w, h, PixelDescriptor::RGB8_SRGB).is_err());
+    let mut enc = cfg.job().encoder().unwrap();
+    enc.begin(w, h, PixelDescriptor::RGB8_SRGB).unwrap();
+    assert!(enc.encode(whole).is_err());
+}

@@ -1,5 +1,6 @@
 use super::*;
 use whereat::At;
+use zencodec::encode::Encoder as _;
 
 use crate::alloc_util::AllocPref;
 
@@ -142,6 +143,8 @@ impl zencodec::encode::EncodeJob for FarbfeldEncodeJob {
             limits: self.limits,
             stop: self.stop,
             stream: None,
+            sent: 0,
+            begun: false,
         })
     }
 
@@ -158,6 +161,10 @@ pub struct FarbfeldEncoder {
     limits: Option<ResourceLimits>,
     stop: Option<zencodec::StopToken>,
     stream: Option<super::row_stream::RowStream>,
+    /// Bytes handed out through `consume_output` (whole-file output limit).
+    sent: u64,
+    /// `begin` succeeded.
+    begun: bool,
 }
 
 /// The farbfeld layout `encode` writes `desc` from.
@@ -204,50 +211,21 @@ impl zencodec::encode::Encoder for FarbfeldEncoder {
         height: u32,
         descriptor: PixelDescriptor,
     ) -> Result<zencodec::encode::OutputTiming, Self::Error> {
-        if self.stream.is_some() {
-            return Err(BitmapError::InvalidData("begin after rows were pushed".into()).into());
+        if self.begun {
+            return Err(BitmapError::InvalidData("begin called twice".into()).into());
         }
-        let file = farbfeld_file(descriptor)?;
-        let limits = self.effective_limits();
-        let stop: &dyn Stop = match &self.stop {
-            Some(s) => s,
-            None => &enough::Unstoppable,
-        };
-        self.stream = Some(super::row_stream::RowStream::start(
-            file,
-            width,
-            Some(height),
-            descriptor,
-            limits,
-            stop,
-        )?);
-        // Each strip is written as it arrives.
-        Ok(zencodec::encode::OutputTiming::streaming(0))
+        let timing = self.begin_inner(width, height, descriptor)?;
+        self.begun = true;
+        super::check_output_total(self.limits.as_ref(), self.pending_output().len() as u64)?;
+        Ok(timing)
     }
 
     /// Encode a strip as it arrives; after `begin` the bytes stream through
     /// `pending_output`. Byte-identical to `encode` on the same pixels.
     fn push_rows(&mut self, rows: PixelSlice<'_>) -> Result<(), Self::Error> {
-        let stop: &dyn Stop = match &self.stop {
-            Some(s) => s,
-            None => &enough::Unstoppable,
-        };
-        if self.stream.is_none() {
-            let file = farbfeld_file(rows.descriptor())?;
-            let limits = self.effective_limits();
-            self.stream = Some(super::row_stream::RowStream::start(
-                file,
-                rows.width(),
-                None,
-                rows.descriptor(),
-                limits,
-                stop,
-            )?);
-        }
-        self.stream
-            .as_mut()
-            .expect("started above")
-            .push(rows, stop)
+        self.push_rows_inner(rows)?;
+        let total = self.sent + self.pending_output().len() as u64;
+        super::check_output_total(self.limits.as_ref(), total)
     }
 
     fn pending_output(&self) -> &[u8] {
@@ -255,58 +233,28 @@ impl zencodec::encode::Encoder for FarbfeldEncoder {
     }
 
     fn consume_output(&mut self, n: usize) {
+        self.sent += n.min(self.pending_output().len()) as u64;
         if let Some(s) = &mut self.stream {
             s.consume(n);
         }
     }
 
     fn finish(self) -> Result<EncodeOutput, Self::Error> {
-        let stop: &dyn Stop = match &self.stop {
-            Some(s) => s,
-            None => &enough::Unstoppable,
-        };
-        let stream = self.stream.ok_or_else(|| {
-            At::<zencodec::CodecError>::from(BitmapError::InvalidData(
-                "finish() without push_rows()".into(),
-            ))
-        })?;
-        Ok(EncodeOutput::new(
-            stream.finish(stop)?,
-            ImageFormat::Farbfeld,
-        ))
+        let (sent, limits) = (self.sent, self.limits);
+        let out = self.finish_inner()?;
+        super::check_output_total(limits.as_ref(), sent + out.data().len() as u64)?;
+        Ok(out)
     }
 
     fn encode(self, pixels: PixelSlice<'_>) -> Result<EncodeOutput, Self::Error> {
-        let stop: &dyn Stop = match &self.stop {
-            Some(s) => s,
-            None => &enough::Unstoppable,
-        };
-        let desc = pixels.descriptor();
-        let w = pixels.width();
-        let h = pixels.rows();
-
-        if let Some(limits) = self.effective_limits() {
-            limits.check(w, h).map_err(zencodec::CodecError::of)?;
+        // The usage paths are exclusive.
+        if self.begun || self.stream.is_some() {
+            return Err(BitmapError::InvalidData("encode after begin or push_rows".into()).into());
         }
-
-        let bytes = pixels.contiguous_bytes();
-        let layout = match (desc.channel_type(), desc.layout()) {
-            (ChannelType::U16, ChannelLayout::Rgba) => crate::PixelLayout::Rgba16,
-            (ChannelType::U8, ChannelLayout::Rgba) => crate::PixelLayout::Rgba8,
-            (ChannelType::U8, ChannelLayout::Rgb) => crate::PixelLayout::Rgb8,
-            (ChannelType::U8, ChannelLayout::Gray) => crate::PixelLayout::Gray8,
-            // A well-formed request for a pixel format this encoder does not
-            // support — a caller-request-origin failure (routed via the
-            // existing zencodec::UnsupportedOperation::PixelFormat axis),
-            // not an image-bytes-origin `UnsupportedVariant`.
-            _ => {
-                return Err(Self::reject(zencodec::UnsupportedOperation::PixelFormat));
-            }
-        };
-
-        let encoded = crate::farbfeld::encode(&bytes, w, h, layout, stop)
-            .map_err(zencodec::CodecError::of)?;
-        Ok(EncodeOutput::new(encoded, ImageFormat::Farbfeld))
+        let limits = self.limits;
+        let out = self.encode_inner(pixels)?;
+        super::check_output_total(limits.as_ref(), out.data().len() as u64)?;
+        Ok(out)
     }
 }
 
@@ -610,5 +558,109 @@ impl zencodec::decode::Decode for FarbfeldDecoder<'_> {
                 .map_err(zencodec::CodecError::of)?;
         decode_output_from_internal(&decoded, ImageFormat::Farbfeld)
             .map_err(zencodec::CodecError::of)
+    }
+}
+
+impl FarbfeldEncoder {
+    fn begin_inner(
+        &mut self,
+        width: u32,
+        height: u32,
+        descriptor: PixelDescriptor,
+    ) -> Result<zencodec::encode::OutputTiming, At<zencodec::CodecError>> {
+        if self.stream.is_some() {
+            return Err(BitmapError::InvalidData("begin after rows were pushed".into()).into());
+        }
+        let file = farbfeld_file(descriptor)?;
+        let limits = self.effective_limits();
+        let stop: &dyn Stop = match &self.stop {
+            Some(s) => s,
+            None => &enough::Unstoppable,
+        };
+        self.stream = Some(super::row_stream::RowStream::start(
+            file,
+            width,
+            Some(height),
+            descriptor,
+            limits,
+            stop,
+        )?);
+        // Each strip is written as it arrives.
+        Ok(zencodec::encode::OutputTiming::streaming(0))
+    }
+
+    fn push_rows_inner(&mut self, rows: PixelSlice<'_>) -> Result<(), At<zencodec::CodecError>> {
+        let stop: &dyn Stop = match &self.stop {
+            Some(s) => s,
+            None => &enough::Unstoppable,
+        };
+        if self.stream.is_none() {
+            let file = farbfeld_file(rows.descriptor())?;
+            let limits = self.effective_limits();
+            self.stream = Some(super::row_stream::RowStream::start(
+                file,
+                rows.width(),
+                None,
+                rows.descriptor(),
+                limits,
+                stop,
+            )?);
+        }
+        self.stream
+            .as_mut()
+            .expect("started above")
+            .push(rows, stop)
+    }
+
+    fn finish_inner(self) -> Result<EncodeOutput, At<zencodec::CodecError>> {
+        let stop: &dyn Stop = match &self.stop {
+            Some(s) => s,
+            None => &enough::Unstoppable,
+        };
+        let stream = self.stream.ok_or_else(|| {
+            At::<zencodec::CodecError>::from(BitmapError::InvalidData(
+                "finish() without push_rows()".into(),
+            ))
+        })?;
+        Ok(EncodeOutput::new(
+            stream.finish(stop)?,
+            ImageFormat::Farbfeld,
+        ))
+    }
+
+    fn encode_inner(
+        self,
+        pixels: PixelSlice<'_>,
+    ) -> Result<EncodeOutput, At<zencodec::CodecError>> {
+        let stop: &dyn Stop = match &self.stop {
+            Some(s) => s,
+            None => &enough::Unstoppable,
+        };
+        let desc = pixels.descriptor();
+        let w = pixels.width();
+        let h = pixels.rows();
+
+        if let Some(limits) = self.effective_limits() {
+            limits.check(w, h).map_err(zencodec::CodecError::of)?;
+        }
+
+        let bytes = pixels.contiguous_bytes();
+        let layout = match (desc.channel_type(), desc.layout()) {
+            (ChannelType::U16, ChannelLayout::Rgba) => crate::PixelLayout::Rgba16,
+            (ChannelType::U8, ChannelLayout::Rgba) => crate::PixelLayout::Rgba8,
+            (ChannelType::U8, ChannelLayout::Rgb) => crate::PixelLayout::Rgb8,
+            (ChannelType::U8, ChannelLayout::Gray) => crate::PixelLayout::Gray8,
+            // A well-formed request for a pixel format this encoder does not
+            // support — a caller-request-origin failure (routed via the
+            // existing zencodec::UnsupportedOperation::PixelFormat axis),
+            // not an image-bytes-origin `UnsupportedVariant`.
+            _ => {
+                return Err(Self::reject(zencodec::UnsupportedOperation::PixelFormat));
+            }
+        };
+
+        let encoded = crate::farbfeld::encode(&bytes, w, h, layout, stop)
+            .map_err(zencodec::CodecError::of)?;
+        Ok(EncodeOutput::new(encoded, ImageFormat::Farbfeld))
     }
 }

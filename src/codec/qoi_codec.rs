@@ -1,5 +1,6 @@
 use super::*;
 use whereat::At;
+use zencodec::encode::Encoder as _;
 
 use crate::alloc_util::AllocPref;
 
@@ -138,6 +139,8 @@ impl zencodec::encode::EncodeJob for QoiEncodeJob {
             limits: self.limits,
             stop: self.stop,
             stream: None,
+            sent: 0,
+            begun: false,
         })
     }
 
@@ -183,6 +186,10 @@ pub struct QoiEncoder {
     limits: Option<ResourceLimits>,
     stop: Option<zencodec::StopToken>,
     stream: Option<QoiStreamState>,
+    /// Bytes handed out through `consume_output` (whole-file output limit).
+    sent: u64,
+    /// `begin` succeeded.
+    begun: bool,
 }
 
 impl QoiEncoder {
@@ -214,51 +221,14 @@ impl zencodec::encode::Encoder for QoiEncoder {
     }
 
     fn encode(self, pixels: PixelSlice<'_>) -> Result<EncodeOutput, Self::Error> {
-        // Bit-exact load-bearing narrowing (dead alpha / chroma-free /
-        // replicated-low-bits) before format mapping — see
-        // `super::reduce_for_raw_encode`. QOI has no grayscale layout, so
-        // the predicate forbids the →Gray narrowing (chroma-free RGB stays
-        // RGB) while still allowing dead-alpha and bit-depth reductions.
-        let reduced = super::reduce_for_raw_encode(&pixels, |d| {
-            matches!(
-                (d.channel_type(), d.layout()),
-                (ChannelType::U8, ChannelLayout::Rgb)
-                    | (ChannelType::U8, ChannelLayout::Rgba)
-                    | (ChannelType::U8, ChannelLayout::Bgra)
-            )
-        });
-        let pixels = match &reduced {
-            Some(buf) => buf.as_slice(),
-            None => pixels,
-        };
-        let stop: &dyn Stop = match &self.stop {
-            Some(s) => s,
-            None => &enough::Unstoppable,
-        };
-        let desc = pixels.descriptor();
-        let w = pixels.width();
-        let h = pixels.rows();
-
-        if let Some(limits) = self.effective_limits() {
-            limits.check(w, h).map_err(zencodec::CodecError::of)?;
+        // The usage paths are exclusive.
+        if self.begun || self.stream.is_some() {
+            return Err(BitmapError::InvalidData("encode after begin or push_rows".into()).into());
         }
-
-        let bytes = pixels.contiguous_bytes();
-        let layout = match (desc.channel_type(), desc.layout()) {
-            (ChannelType::U8, ChannelLayout::Rgb) => crate::PixelLayout::Rgb8,
-            (ChannelType::U8, ChannelLayout::Rgba) => crate::PixelLayout::Rgba8,
-            (ChannelType::U8, ChannelLayout::Bgra) => crate::PixelLayout::Bgra8,
-            // A well-formed request for a pixel format this encoder does not
-            // support — caller-request-origin, routed via the existing
-            // zencodec::UnsupportedOperation::PixelFormat axis.
-            _ => {
-                return Err(Self::reject(zencodec::UnsupportedOperation::PixelFormat));
-            }
-        };
-
-        let encoded =
-            crate::qoi::encode(&bytes, w, h, layout, stop).map_err(zencodec::CodecError::of)?;
-        Ok(EncodeOutput::new(encoded, ImageFormat::Qoi))
+        let limits = self.limits;
+        let out = self.encode_inner(pixels)?;
+        super::check_output_total(limits.as_ref(), out.data().len() as u64)?;
+        Ok(out)
     }
 
     /// Encode `rows` as they arrive. The first call fixes width and
@@ -267,85 +237,9 @@ impl zencodec::encode::Encoder for QoiEncoder {
     /// bytes per call; the kernel's run state carries across calls, so the
     /// result is byte-identical to `encode`.
     fn push_rows(&mut self, rows: PixelSlice<'_>) -> Result<(), Self::Error> {
-        let desc = rows.descriptor();
-        let channels: usize = match (desc.channel_type(), desc.layout()) {
-            (ChannelType::U8, ChannelLayout::Rgb) => 3,
-            (ChannelType::U8, ChannelLayout::Rgba) => 4,
-            (ChannelType::U8, ChannelLayout::Bgra) => 4,
-            _ => {
-                return Err(Self::reject(zencodec::UnsupportedOperation::PixelFormat));
-            }
-        };
-        if let Some(s) = &self.stop {
-            s.check()
-                .map_err(|r| At::<zencodec::CodecError>::from(BitmapError::from(r)))?;
-        }
-        if self.stream.is_none() {
-            self.start_stream(rows.width(), desc, None)?;
-        }
-        let st = self.stream.as_mut().expect("started above");
-        if st.width != rows.width()
-            || st.channels != channels
-            || st.needs_swizzle != (desc.layout() == ChannelLayout::Bgra)
-        {
-            return Err(BitmapError::InvalidData(
-                "push_rows: width or pixel layout changed".into(),
-            )
-            .into());
-        }
-        if let Some(declared) = st.declared_height
-            && total_rows_would_exceed(st.rows, rows.rows(), declared)
-        {
-            return Err(BitmapError::InvalidData(alloc::format!(
-                "push_rows: more than the {declared} rows declared at begin"
-            ))
-            .into());
-        }
-        let total_rows = st.rows.checked_add(rows.rows()).ok_or_else(|| {
-            At::<zencodec::CodecError>::from(BitmapError::DimensionsTooLarge {
-                width: st.width,
-                height: u32::MAX,
-            })
-        })?;
-        if let Some(limits) = &st.limits {
-            limits
-                .check(st.width, total_rows)
-                .map_err(zencodec::CodecError::of)?;
-        }
-
-        let bytes = rows.contiguous_bytes();
-        let pixels: &[u8] = if st.needs_swizzle {
-            st.swizzle_buf.clear();
-            st.swizzle_buf.extend_from_slice(&bytes);
-            crate::swizzle::swap_rb_4(&mut st.swizzle_buf);
-            &st.swizzle_buf
-        } else {
-            &bytes
-        };
-        let px_count = pixels.len() / channels;
-        // Worst case per pixel is one RGBA opcode (5 bytes) plus the
-        // kernel's 8-byte headroom. Encode straight into `out`'s zeroed
-        // headroom; when it runs short, move to a fresh zeroed buffer of at
-        // least double the size (calloc'd pages arrive zeroed for free, so
-        // growth costs one copy of the data so far and no memset).
-        let worst = px_count * (channels + 1) + 8;
-        let needed = st.len + worst;
-        if st.out.len() < needed {
-            let new_len = needed.max(st.out.len().saturating_mul(2));
-            let mut grown = alloc::vec![0u8; new_len];
-            grown[..st.len].copy_from_slice(&st.out[..st.len]);
-            st.out = grown;
-        }
-        let dst = &mut st.out[st.len..st.len + worst];
-        let written = if channels == 4 {
-            encode_strip::<4>(&mut st.index, &mut st.px_rgba, &mut st.run, pixels, dst)
-        } else {
-            encode_strip::<3>(&mut st.index, &mut st.px_rgb, &mut st.run, pixels, dst)
-        }
-        .map_err(At::<zencodec::CodecError>::from)?;
-        st.len += written;
-        st.rows = total_rows;
-        Ok(())
+        self.push_rows_inner(rows)?;
+        let total = self.sent + self.pending_output().len() as u64;
+        super::check_output_total(self.limits.as_ref(), total)
     }
 
     fn begin(
@@ -354,17 +248,13 @@ impl zencodec::encode::Encoder for QoiEncoder {
         height: u32,
         descriptor: PixelDescriptor,
     ) -> Result<zencodec::encode::OutputTiming, Self::Error> {
-        if self.stream.is_some() {
-            return Err(BitmapError::InvalidData("begin after rows were pushed".into()).into());
+        if self.begun {
+            return Err(BitmapError::InvalidData("begin called twice".into()).into());
         }
-        if let Some(limits) = self.effective_limits() {
-            limits
-                .check(width, height)
-                .map_err(zencodec::CodecError::of)?;
-        }
-        self.start_stream(width, descriptor, Some(height))?;
-        // Each pixel is coded as it arrives; only an open run waits.
-        Ok(zencodec::encode::OutputTiming::streaming(0))
+        let timing = self.begin_inner(width, height, descriptor)?;
+        self.begun = true;
+        super::check_output_total(self.limits.as_ref(), self.pending_output().len() as u64)?;
+        Ok(timing)
     }
 
     fn pending_output(&self) -> &[u8] {
@@ -375,6 +265,7 @@ impl zencodec::encode::Encoder for QoiEncoder {
     }
 
     fn consume_output(&mut self, n: usize) {
+        self.sent += n.min(self.pending_output().len()) as u64;
         let Some(st) = self.stream.as_mut() else {
             return;
         };
@@ -394,36 +285,10 @@ impl zencodec::encode::Encoder for QoiEncoder {
     }
 
     fn finish(self) -> Result<EncodeOutput, Self::Error> {
-        use crate::qoi::rapid_qoi::{QOI_OP_RUN, QOI_PADDING};
-
-        let mut st = self.stream.ok_or_else(|| {
-            At::<zencodec::CodecError>::from(BitmapError::InvalidData(
-                "finish() without push_rows()".into(),
-            ))
-        })?;
-        st.out.truncate(st.len);
-        if st.run > 0 {
-            // The kernel counts repeats; the opcode stores length - 1.
-            st.out.push(QOI_OP_RUN | (st.run as u8 - 1));
-            st.run = 0;
-        }
-        st.out.extend_from_slice(&[0u8; QOI_PADDING - 1]);
-        st.out.push(1);
-        match st.declared_height {
-            Some(declared) if declared != st.rows => {
-                return Err(BitmapError::InvalidData(alloc::format!(
-                    "finish: {} rows pushed, {declared} declared at begin",
-                    st.rows
-                ))
-                .into());
-            }
-            Some(_) => {}
-            None => st.out[8..12].copy_from_slice(&st.rows.to_be_bytes()),
-        }
-        if st.drained > 0 {
-            st.out.drain(..st.drained);
-        }
-        Ok(EncodeOutput::new(st.out, ImageFormat::Qoi))
+        let (sent, limits) = (self.sent, self.limits);
+        let out = self.finish_inner()?;
+        super::check_output_total(limits.as_ref(), sent + out.data().len() as u64)?;
+        Ok(out)
     }
 }
 
@@ -1161,5 +1026,192 @@ impl zencodec::decode::StreamingDecode for QoiStreamingDecoder<'_> {
 
     fn info(&self) -> &ImageInfo {
         &self.info
+    }
+}
+
+impl QoiEncoder {
+    fn begin_inner(
+        &mut self,
+        width: u32,
+        height: u32,
+        descriptor: PixelDescriptor,
+    ) -> Result<zencodec::encode::OutputTiming, At<zencodec::CodecError>> {
+        if self.stream.is_some() {
+            return Err(BitmapError::InvalidData("begin after rows were pushed".into()).into());
+        }
+        if let Some(limits) = self.effective_limits() {
+            limits
+                .check(width, height)
+                .map_err(zencodec::CodecError::of)?;
+        }
+        self.start_stream(width, descriptor, Some(height))?;
+        // Each pixel is coded as it arrives; only an open run waits.
+        Ok(zencodec::encode::OutputTiming::streaming(0))
+    }
+
+    fn push_rows_inner(&mut self, rows: PixelSlice<'_>) -> Result<(), At<zencodec::CodecError>> {
+        let desc = rows.descriptor();
+        let channels: usize = match (desc.channel_type(), desc.layout()) {
+            (ChannelType::U8, ChannelLayout::Rgb) => 3,
+            (ChannelType::U8, ChannelLayout::Rgba) => 4,
+            (ChannelType::U8, ChannelLayout::Bgra) => 4,
+            _ => {
+                return Err(Self::reject(zencodec::UnsupportedOperation::PixelFormat));
+            }
+        };
+        if let Some(s) = &self.stop {
+            s.check()
+                .map_err(|r| At::<zencodec::CodecError>::from(BitmapError::from(r)))?;
+        }
+        if self.stream.is_none() {
+            self.start_stream(rows.width(), desc, None)?;
+        }
+        let st = self.stream.as_mut().expect("started above");
+        if st.width != rows.width()
+            || st.channels != channels
+            || st.needs_swizzle != (desc.layout() == ChannelLayout::Bgra)
+        {
+            return Err(BitmapError::InvalidData(
+                "push_rows: width or pixel layout changed".into(),
+            )
+            .into());
+        }
+        if let Some(declared) = st.declared_height
+            && total_rows_would_exceed(st.rows, rows.rows(), declared)
+        {
+            return Err(BitmapError::InvalidData(alloc::format!(
+                "push_rows: more than the {declared} rows declared at begin"
+            ))
+            .into());
+        }
+        let total_rows = st.rows.checked_add(rows.rows()).ok_or_else(|| {
+            At::<zencodec::CodecError>::from(BitmapError::DimensionsTooLarge {
+                width: st.width,
+                height: u32::MAX,
+            })
+        })?;
+        if let Some(limits) = &st.limits {
+            limits
+                .check(st.width, total_rows)
+                .map_err(zencodec::CodecError::of)?;
+        }
+
+        let bytes = rows.contiguous_bytes();
+        let pixels: &[u8] = if st.needs_swizzle {
+            st.swizzle_buf.clear();
+            st.swizzle_buf.extend_from_slice(&bytes);
+            crate::swizzle::swap_rb_4(&mut st.swizzle_buf);
+            &st.swizzle_buf
+        } else {
+            &bytes
+        };
+        let px_count = pixels.len() / channels;
+        // Worst case per pixel is one RGBA opcode (5 bytes) plus the
+        // kernel's 8-byte headroom. Encode straight into `out`'s zeroed
+        // headroom; when it runs short, move to a fresh zeroed buffer of at
+        // least double the size (calloc'd pages arrive zeroed for free, so
+        // growth costs one copy of the data so far and no memset).
+        let worst = px_count * (channels + 1) + 8;
+        let needed = st.len + worst;
+        if st.out.len() < needed {
+            let new_len = needed.max(st.out.len().saturating_mul(2));
+            let mut grown = alloc::vec![0u8; new_len];
+            grown[..st.len].copy_from_slice(&st.out[..st.len]);
+            st.out = grown;
+        }
+        let dst = &mut st.out[st.len..st.len + worst];
+        let written = if channels == 4 {
+            encode_strip::<4>(&mut st.index, &mut st.px_rgba, &mut st.run, pixels, dst)
+        } else {
+            encode_strip::<3>(&mut st.index, &mut st.px_rgb, &mut st.run, pixels, dst)
+        }
+        .map_err(At::<zencodec::CodecError>::from)?;
+        st.len += written;
+        st.rows = total_rows;
+        Ok(())
+    }
+
+    fn finish_inner(self) -> Result<EncodeOutput, At<zencodec::CodecError>> {
+        use crate::qoi::rapid_qoi::{QOI_OP_RUN, QOI_PADDING};
+
+        let mut st = self.stream.ok_or_else(|| {
+            At::<zencodec::CodecError>::from(BitmapError::InvalidData(
+                "finish() without push_rows()".into(),
+            ))
+        })?;
+        st.out.truncate(st.len);
+        if st.run > 0 {
+            // The kernel counts repeats; the opcode stores length - 1.
+            st.out.push(QOI_OP_RUN | (st.run as u8 - 1));
+            st.run = 0;
+        }
+        st.out.extend_from_slice(&[0u8; QOI_PADDING - 1]);
+        st.out.push(1);
+        match st.declared_height {
+            Some(declared) if declared != st.rows => {
+                return Err(BitmapError::InvalidData(alloc::format!(
+                    "finish: {} rows pushed, {declared} declared at begin",
+                    st.rows
+                ))
+                .into());
+            }
+            Some(_) => {}
+            None => st.out[8..12].copy_from_slice(&st.rows.to_be_bytes()),
+        }
+        if st.drained > 0 {
+            st.out.drain(..st.drained);
+        }
+        Ok(EncodeOutput::new(st.out, ImageFormat::Qoi))
+    }
+
+    fn encode_inner(
+        self,
+        pixels: PixelSlice<'_>,
+    ) -> Result<EncodeOutput, At<zencodec::CodecError>> {
+        // Bit-exact load-bearing narrowing (dead alpha / chroma-free /
+        // replicated-low-bits) before format mapping — see
+        // `super::reduce_for_raw_encode`. QOI has no grayscale layout, so
+        // the predicate forbids the →Gray narrowing (chroma-free RGB stays
+        // RGB) while still allowing dead-alpha and bit-depth reductions.
+        let reduced = super::reduce_for_raw_encode(&pixels, |d| {
+            matches!(
+                (d.channel_type(), d.layout()),
+                (ChannelType::U8, ChannelLayout::Rgb)
+                    | (ChannelType::U8, ChannelLayout::Rgba)
+                    | (ChannelType::U8, ChannelLayout::Bgra)
+            )
+        });
+        let pixels = match &reduced {
+            Some(buf) => buf.as_slice(),
+            None => pixels,
+        };
+        let stop: &dyn Stop = match &self.stop {
+            Some(s) => s,
+            None => &enough::Unstoppable,
+        };
+        let desc = pixels.descriptor();
+        let w = pixels.width();
+        let h = pixels.rows();
+
+        if let Some(limits) = self.effective_limits() {
+            limits.check(w, h).map_err(zencodec::CodecError::of)?;
+        }
+
+        let bytes = pixels.contiguous_bytes();
+        let layout = match (desc.channel_type(), desc.layout()) {
+            (ChannelType::U8, ChannelLayout::Rgb) => crate::PixelLayout::Rgb8,
+            (ChannelType::U8, ChannelLayout::Rgba) => crate::PixelLayout::Rgba8,
+            (ChannelType::U8, ChannelLayout::Bgra) => crate::PixelLayout::Bgra8,
+            // A well-formed request for a pixel format this encoder does not
+            // support — caller-request-origin, routed via the existing
+            // zencodec::UnsupportedOperation::PixelFormat axis.
+            _ => {
+                return Err(Self::reject(zencodec::UnsupportedOperation::PixelFormat));
+            }
+        };
+
+        let encoded =
+            crate::qoi::encode(&bytes, w, h, layout, stop).map_err(zencodec::CodecError::of)?;
+        Ok(EncodeOutput::new(encoded, ImageFormat::Qoi))
     }
 }
