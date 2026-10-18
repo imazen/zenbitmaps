@@ -55,6 +55,9 @@ zencodec-io = { git = "https://github.com/imazen/zencodec", rev = "5ed2daded8140
 # PNGs and resample them to each benchmarked size with our own crates.
 zenpng = "0.1.4"
 zenresize = "0.3.1"
+# Counts allocations in tests/stream_allocations.rs (the unsafe allocator
+# wrapper lives in the dependency, not in this crate's tests).
+stats_alloc = "0.1.10"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 codec-corpus = "1.1.0"

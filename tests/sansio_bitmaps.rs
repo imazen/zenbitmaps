@@ -486,6 +486,43 @@ fn check_stream<C: EncoderConfig>(
         assert_eq!(out, expected, "{name} strip {strip} without begin");
         assert_eq!(peak, 0, "{name}: nothing streams without begin");
     }
+    // Strided strips (rows padded apart) are written a row at a time, with
+    // no gathering copy; the bytes are the same.
+    let row_bytes = w as usize * desc.bytes_per_pixel();
+    // Three pixels of padding: a stride must hold whole pixels.
+    let padded_stride = row_bytes + 3 * desc.bytes_per_pixel();
+    let mut padded = vec![0xEEu8; padded_stride * h as usize];
+    for y in 0..h as usize {
+        padded[y * padded_stride..][..row_bytes]
+            .copy_from_slice(&pixels[y * row_bytes..][..row_bytes]);
+    }
+    for strip in [1u32, 3, h] {
+        let mut enc = cfg.clone().job().encoder().unwrap();
+        enc.begin(w, h, desc).unwrap();
+        let mut out = Vec::new();
+        let mut y = 0;
+        loop {
+            out.extend_from_slice(enc.pending_output());
+            let n = enc.pending_output().len();
+            enc.consume_output(n);
+            if y == h {
+                break;
+            }
+            let n = strip.min(h - y);
+            let s = PixelSlice::new(
+                &padded[y as usize * padded_stride..],
+                w,
+                n,
+                padded_stride,
+                desc,
+            )
+            .unwrap();
+            enc.push_rows(s).unwrap();
+            y += n;
+        }
+        out.extend_from_slice(enc.finish().unwrap().data());
+        assert_eq!(out, expected, "{name} strided strips of {strip}");
+    }
     // Declared height is enforced.
     let stride = w as usize * desc.bytes_per_pixel();
     let mut enc = cfg.clone().job().encoder().unwrap();

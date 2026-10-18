@@ -6,6 +6,14 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Streaming PNM, farbfeld and HDR encodes wrote each pushed strip with the one-shot
+  encoder into a temporary file, cut its header off and copied the rest into the
+  output buffer. Each format's row writer now appends a strip straight to the output
+  buffer (strided strips a row at a time, with no gathering copy), and a failed strip
+  leaves nothing behind. The bytes are unchanged; a packed strip into a drained stream
+  now allocates nothing where it made 4 allocations (`tests/stream_allocations.rs`,
+  which fails on the old path). Strided strips are checked byte-identical in
+  `tests/sansio_bitmaps.rs`.
 - Farbfeld encoding of supported layouts with zero height returns the existing header-only result on 32-bit targets, including widths whose row-byte products overflow; initial cancellation and unsupported-layout rejection are preserved (`325bd951`).
 
 ### Added

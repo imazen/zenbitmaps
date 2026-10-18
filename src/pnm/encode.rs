@@ -85,6 +85,48 @@ pub(crate) fn encode_parts(
     }
 }
 
+#[cfg(feature = "zencodec")]
+/// Append `rows` packed rows of `pixels` (`width` wide) to `out` without a
+/// header: the bytes [`encode_pnm`] writes after its header for those rows.
+/// The streaming encoder writes each strip this way, straight into its output
+/// buffer. PBM and PFM are not split into rows.
+pub(crate) fn append_rows(
+    pixels: &[u8],
+    width: u32,
+    rows: u32,
+    layout: PixelLayout,
+    fmt: PnmFormat,
+    out: &mut Vec<u8>,
+    stop: &dyn Stop,
+) -> crate::Result<()> {
+    let w = width as usize;
+    let h = rows as usize;
+    let expected = w
+        .checked_mul(h)
+        .and_then(|wh| wh.checked_mul(layout.bytes_per_pixel()))
+        .ok_or_else(|| {
+            whereat::at!(BitmapError::DimensionsTooLarge {
+                width,
+                height: rows
+            })
+        })?;
+    if pixels.len() < expected {
+        return Err(whereat::at!(BitmapError::BufferTooSmall {
+            needed: expected,
+            actual: pixels.len(),
+        }));
+    }
+    match fmt {
+        PnmFormat::Pgm => write_pgm_rows(pixels, w, h, layout, out, stop),
+        PnmFormat::Ppm => write_ppm_rows(pixels, w, h, layout, out, stop),
+        PnmFormat::Pam => write_pam_rows(pixels, w, h, layout, out, stop),
+        PnmFormat::Pbm | PnmFormat::Pfm => Err(whereat::at!(BitmapError::UnsupportedVariant(
+            UnsupportedKind::Type,
+            "PBM and PFM are not split into header and rows".into(),
+        ))),
+    }
+}
+
 /// Copy `src` into `out` in bounded chunks, polling `stop` between chunks.
 ///
 /// A one-shot `extend_from_slice` of a 100+ MiB payload is an uninterruptible
@@ -118,9 +160,22 @@ fn encode_pgm(
     let mut out = Vec::with_capacity(header.len() + w * h);
     out.extend_from_slice(header.as_bytes());
 
+    write_pgm_rows(pixels, w, h, layout, &mut out, stop)?;
+    Ok(out)
+}
+
+/// The P5 rows of `pixels` (`h` packed rows of `w` pixels), appended to `out`.
+fn write_pgm_rows(
+    pixels: &[u8],
+    w: usize,
+    h: usize,
+    layout: PixelLayout,
+    out: &mut Vec<u8>,
+    stop: &dyn Stop,
+) -> crate::Result<()> {
     match layout {
         PixelLayout::Gray8 => {
-            extend_copy_polled(&mut out, &pixels[..w * h], w, stop)?;
+            extend_copy_polled(out, &pixels[..w * h], w, stop)?;
         }
         PixelLayout::Rgb8 => {
             let band = w.saturating_mul(16).max(1);
@@ -186,7 +241,7 @@ fn encode_pgm(
         }
     }
 
-    Ok(out)
+    Ok(())
 }
 
 fn encode_ppm(
@@ -202,9 +257,22 @@ fn encode_ppm(
     let mut out = Vec::with_capacity(header.len() + w * h * 3);
     out.extend_from_slice(header.as_bytes());
 
+    write_ppm_rows(pixels, w, h, layout, &mut out, stop)?;
+    Ok(out)
+}
+
+/// The P6 rows of `pixels` (`h` packed rows of `w` pixels), appended to `out`.
+fn write_ppm_rows(
+    pixels: &[u8],
+    w: usize,
+    h: usize,
+    layout: PixelLayout,
+    out: &mut Vec<u8>,
+    stop: &dyn Stop,
+) -> crate::Result<()> {
     match layout {
         PixelLayout::Rgb8 => {
-            extend_copy_polled(&mut out, &pixels[..w * h * 3], w * 3, stop)?;
+            extend_copy_polled(out, &pixels[..w * h * 3], w * 3, stop)?;
         }
         PixelLayout::Bgr8 => {
             // Row-at-a-time slice writes instead of per-pixel `Vec::push`.
@@ -271,7 +339,7 @@ fn encode_ppm(
         }
     }
 
-    Ok(out)
+    Ok(())
 }
 
 fn encode_pam(
@@ -283,21 +351,7 @@ fn encode_pam(
     layout: PixelLayout,
     stop: &dyn Stop,
 ) -> crate::Result<Vec<u8>> {
-    let (depth, tupltype, maxval) = match layout {
-        PixelLayout::Gray8 => (1, "GRAYSCALE", 255),
-        PixelLayout::Gray16 => (1, "GRAYSCALE", 65535),
-        PixelLayout::Rgb8 => (3, "RGB", 255),
-        PixelLayout::Rgba8 => (4, "RGB_ALPHA", 255),
-        PixelLayout::Bgr8 => (3, "RGB", 255),
-        PixelLayout::Bgra8 => (4, "RGB_ALPHA", 255),
-        PixelLayout::Bgrx8 => (4, "RGB_ALPHA", 255),
-        _ => {
-            return Err(whereat::at!(BitmapError::UnsupportedVariant(
-                UnsupportedKind::Feature,
-                format!("cannot encode {:?} as PAM", layout)
-            )));
-        }
-    };
+    let (depth, tupltype, maxval) = pam_params(layout)?;
 
     let header = format!(
         "P7\nWIDTH {width}\nHEIGHT {height}\nDEPTH {depth}\nMAXVAL {maxval}\nTUPLTYPE {tupltype}\nENDHDR\n"
@@ -310,6 +364,21 @@ fn encode_pam(
     let mut out = Vec::with_capacity(header.len() + out_bytes);
     out.extend_from_slice(header.as_bytes());
 
+    write_pam_rows(pixels, w, h, layout, &mut out, stop)?;
+    Ok(out)
+}
+
+/// The P7 rows of `pixels` (`h` packed rows of `w` pixels), appended to `out`.
+fn write_pam_rows(
+    pixels: &[u8],
+    w: usize,
+    h: usize,
+    layout: PixelLayout,
+    out: &mut Vec<u8>,
+    stop: &dyn Stop,
+) -> crate::Result<()> {
+    pam_params(layout)?;
+    let pixel_count = w * h;
     match layout {
         PixelLayout::Bgr8 => {
             // Swizzle BGR → RGB
@@ -377,7 +446,7 @@ fn encode_pam(
             // payload stays cancellable.
             let pixel_bytes = pixel_count * layout.bytes_per_pixel();
             extend_copy_polled(
-                &mut out,
+                out,
                 &pixels[..pixel_bytes],
                 w * layout.bytes_per_pixel(),
                 stop,
@@ -385,7 +454,27 @@ fn encode_pam(
         }
     }
 
-    Ok(out)
+    Ok(())
+}
+
+/// PAM `DEPTH`, `TUPLTYPE` and `MAXVAL` for `layout`; layouts PAM can't carry
+/// are refused.
+fn pam_params(layout: PixelLayout) -> crate::Result<(u32, &'static str, u32)> {
+    Ok(match layout {
+        PixelLayout::Gray8 => (1, "GRAYSCALE", 255),
+        PixelLayout::Gray16 => (1, "GRAYSCALE", 65535),
+        PixelLayout::Rgb8 => (3, "RGB", 255),
+        PixelLayout::Rgba8 => (4, "RGB_ALPHA", 255),
+        PixelLayout::Bgr8 => (3, "RGB", 255),
+        PixelLayout::Bgra8 => (4, "RGB_ALPHA", 255),
+        PixelLayout::Bgrx8 => (4, "RGB_ALPHA", 255),
+        _ => {
+            return Err(whereat::at!(BitmapError::UnsupportedVariant(
+                UnsupportedKind::Feature,
+                format!("cannot encode {:?} as PAM", layout)
+            )));
+        }
+    })
 }
 
 fn encode_pfm(

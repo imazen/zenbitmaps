@@ -5,8 +5,9 @@
 //! are encoded at once and handed out through `pending_output`. Without
 //! `begin`, the encoded rows wait and the header is written at `finish`. In
 //! both cases the bytes are those of the format's one-shot encoder run on the
-//! same pixels: the header comes from the same writer, and each strip is the
-//! one-shot encoder's output for those rows minus its own header.
+//! same pixels: the header comes from the same writer, and each strip is
+//! written by the one-shot encoder's own row writer, appended to the output
+//! buffer.
 
 use alloc::vec::Vec;
 use zencodec::encode::OutputBuffer;
@@ -57,28 +58,29 @@ impl RowFile {
         }
     }
 
-    /// The encoded rows of `pixels` (`rows` rows), without a header.
-    fn rows(self, pixels: &[u8], width: u32, rows: u32, stop: &dyn Stop) -> crate::Result<Vec<u8>> {
-        let (mut file, header_len) = match self {
+    /// Append the encoded rows of `pixels` (`rows` packed rows) to `out`,
+    /// without a header: the bytes the format's one-shot encoder writes
+    /// after its header for those rows.
+    fn append_rows(
+        self,
+        pixels: &[u8],
+        width: u32,
+        rows: u32,
+        out: &mut Vec<u8>,
+        stop: &dyn Stop,
+    ) -> crate::Result<()> {
+        match self {
             Self::Pnm(fmt, layout) => {
-                let file =
-                    crate::pnm::encode::encode_parts(pixels, width, rows, rows, layout, fmt, stop)?;
-                let header = self.header(width, rows, stop)?.len();
-                (file, header)
+                crate::pnm::encode::append_rows(pixels, width, rows, layout, fmt, out, stop)
             }
-            Self::Farbfeld(layout) => (
-                crate::farbfeld::encode(pixels, width, rows, layout, stop)?,
-                16,
-            ),
+            Self::Farbfeld(layout) => {
+                crate::farbfeld::append_rows(pixels, width, rows, layout, out, stop)
+            }
             #[cfg(feature = "hdr")]
             Self::Hdr(layout) => {
-                let file = crate::hdr::encode(pixels, width, rows, layout, stop)?;
-                let header = self.header(width, rows, stop)?.len();
-                (file, header)
+                crate::hdr::encode::append_rows(pixels, width, rows, layout, out, stop)
             }
-        };
-        file.drain(..header_len);
-        Ok(file)
+        }
     }
 }
 
@@ -155,12 +157,21 @@ impl RowStream {
         if let Some(l) = &self.limits {
             l.check(self.width, total).map_err(CodecError::of)?;
         }
-        let bytes = rows.contiguous_bytes();
-        let encoded = self
-            .file
-            .rows(&bytes, self.width, rows.rows(), stop)
-            .map_err(CodecError::of)?;
-        self.out.push(&encoded);
+        // Encode straight into the output buffer: packed strips in one call,
+        // strided ones a row at a time (no gathering copy). A strip that fails
+        // leaves nothing behind.
+        let (file, width) = (self.file, self.width);
+        let out = self.out.vec_mut();
+        let start = out.len();
+        let written = match rows.as_contiguous_bytes() {
+            Some(bytes) => file.append_rows(bytes, width, rows.rows(), out, stop),
+            None => (0..rows.rows())
+                .try_for_each(|y| file.append_rows(rows.row(y), width, 1, out, stop)),
+        };
+        if let Err(e) = written {
+            out.truncate(start);
+            return Err(CodecError::of(e));
+        }
         self.rows = total;
         Ok(())
     }

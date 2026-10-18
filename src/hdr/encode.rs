@@ -48,6 +48,20 @@ pub(crate) fn encode_hdr(
 
     stop.check().map_err(|r| at!(BitmapError::from(r)))?;
 
+    write_hdr_rows(pixels, w, h, layout, &mut out, stop)?;
+    Ok(out)
+}
+
+/// The RGBE scanlines of `pixels` (`h` packed rows of `w` pixels), appended
+/// to `out`.
+fn write_hdr_rows(
+    pixels: &[u8],
+    w: usize,
+    h: usize,
+    layout: PixelLayout,
+    out: &mut Vec<u8>,
+    stop: &dyn Stop,
+) -> crate::Result<()> {
     // Convert each scanline to RGBE, then RLE-encode
     let mut rgbe_scanline = alloc::vec![[0u8; 4]; w];
 
@@ -111,7 +125,7 @@ pub(crate) fn encode_hdr(
 
             // Encode each channel separately
             for ch in 0..4 {
-                rle_encode_channel(&rgbe_scanline, ch, &mut out);
+                rle_encode_channel(&rgbe_scanline, ch, out);
             }
         } else {
             // Flat RGBE (width < 8 or > 32767)
@@ -121,7 +135,38 @@ pub(crate) fn encode_hdr(
         }
     }
 
-    Ok(out)
+    Ok(())
+}
+
+/// Append `rows` packed rows of `pixels` (`width` wide) to `out` without a
+/// header: the scanlines [`encode_hdr`] writes after its header for those
+/// rows. The streaming encoder writes each strip this way.
+#[cfg(feature = "zencodec")]
+pub(crate) fn append_rows(
+    pixels: &[u8],
+    width: u32,
+    rows: u32,
+    layout: PixelLayout,
+    out: &mut Vec<u8>,
+    stop: &dyn Stop,
+) -> crate::Result<()> {
+    let (w, h) = (width as usize, rows as usize);
+    let expected = w
+        .checked_mul(h)
+        .and_then(|wh| wh.checked_mul(layout.bytes_per_pixel()))
+        .ok_or_else(|| {
+            at!(BitmapError::DimensionsTooLarge {
+                width,
+                height: rows
+            })
+        })?;
+    if pixels.len() < expected {
+        return Err(at!(BitmapError::BufferTooSmall {
+            needed: expected,
+            actual: pixels.len(),
+        }));
+    }
+    write_hdr_rows(pixels, w, h, layout, out, stop)
 }
 
 /// Convert 3×f32 linear RGB to RGBE (4 bytes).

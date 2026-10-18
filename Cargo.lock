@@ -510,6 +510,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "stats_alloc"
+version = "0.1.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c0e04424e733e69714ca1bbb9204c1a57f09f5493439520f9f68c132ad25eec"
+
+[[package]]
 name = "strsim"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -850,6 +856,7 @@ dependencies = [
  "garb",
  "imgref",
  "rgb",
+ "stats_alloc",
  "thiserror",
  "whereat",
  "zenbench",

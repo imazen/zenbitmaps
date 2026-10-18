@@ -59,6 +59,37 @@ pub(crate) fn encode_farbfeld(
 
     stop.check().map_err(|r| at!(BitmapError::from(r)))?;
 
+    write_farbfeld_rows(pixels, w, h, layout, &mut out, stop)?;
+    Ok(out)
+}
+
+/// The farbfeld rows of `pixels` (`h` packed rows of `w` pixels), appended
+/// to `out`: big-endian RGBA16.
+fn write_farbfeld_rows(
+    pixels: &[u8],
+    w: usize,
+    h: usize,
+    layout: PixelLayout,
+    out: &mut Vec<u8>,
+    stop: &dyn Stop,
+) -> crate::Result<()> {
+    if w == 0 {
+        // Rows of zero bytes can't be split into rows; the decoder refuses
+        // such files too.
+        return Err(at!(BitmapError::InvalidData(
+            "farbfeld width is zero".into()
+        )));
+    }
+    let expected = w
+        .checked_mul(h)
+        .and_then(|wh| wh.checked_mul(layout.bytes_per_pixel()))
+        .ok_or_else(|| {
+            at!(BitmapError::DimensionsTooLarge {
+                width: w as u32,
+                height: h as u32
+            })
+        })?;
+
     if h == 0
         && matches!(
             layout,
@@ -76,16 +107,17 @@ pub(crate) fn encode_farbfeld(
         // (checked) or wrap to zero (`chunks_exact(0)` panics) for widths
         // >= 2**29 even though no rows exist. Unsupported layouts still fall
         // through to the rejection below, unchanged.
-        return Ok(out);
+        return Ok(());
     }
 
     match layout {
         PixelLayout::Rgba16 => {
             // Native endian u16 → big endian u16, with a fixed output extent.
-            out.resize(total, 0);
+            let start = out.len();
+            out.resize(start + expected, 0);
             for (row_idx, (row, dst)) in pixels[..expected]
                 .chunks_exact(w * 8)
-                .zip(out[16..].chunks_exact_mut(w * 8))
+                .zip(out[start..].chunks_exact_mut(w * 8))
                 .enumerate()
             {
                 if row_idx % 16 == 0 {
@@ -208,7 +240,38 @@ pub(crate) fn encode_farbfeld(
         }
     }
 
-    Ok(out)
+    Ok(())
+}
+
+/// Append `rows` packed rows of `pixels` (`width` wide) to `out` without a
+/// header: the bytes [`encode_farbfeld`] writes after its header for those
+/// rows. The streaming encoder writes each strip this way.
+#[cfg(feature = "zencodec")]
+pub(crate) fn append_rows(
+    pixels: &[u8],
+    width: u32,
+    rows: u32,
+    layout: PixelLayout,
+    out: &mut Vec<u8>,
+    stop: &dyn Stop,
+) -> crate::Result<()> {
+    let (w, h) = (width as usize, rows as usize);
+    let expected = w
+        .checked_mul(h)
+        .and_then(|wh| wh.checked_mul(layout.bytes_per_pixel()))
+        .ok_or_else(|| {
+            at!(BitmapError::DimensionsTooLarge {
+                width,
+                height: rows
+            })
+        })?;
+    if pixels.len() < expected {
+        return Err(at!(BitmapError::BufferTooSmall {
+            needed: expected,
+            actual: pixels.len(),
+        }));
+    }
+    write_farbfeld_rows(pixels, w, h, layout, out, stop)
 }
 
 #[cfg(test)]

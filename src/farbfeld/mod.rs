@@ -60,6 +60,19 @@ pub(crate) fn decode_with_alloc_pref<'a>(
     ))
 }
 
+/// Append encoded farbfeld rows to `out`, without a header (streaming encode).
+#[cfg(feature = "zencodec")]
+pub(crate) fn append_rows(
+    pixels: &[u8],
+    width: u32,
+    rows: u32,
+    layout: PixelLayout,
+    out: &mut alloc::vec::Vec<u8>,
+    stop: &dyn Stop,
+) -> crate::Result<()> {
+    encode::append_rows(pixels, width, rows, layout, out, stop)
+}
+
 /// Encode pixels as farbfeld.
 pub(crate) fn encode(
     pixels: &[u8],
