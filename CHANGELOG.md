@@ -10,6 +10,8 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Retain a development-only farbfeld parity tool with immutable source snapshots, native i686 coverage and independent byte oracles.
+
 - Standalone farbfeld Coz/timing worker with complete-operation counters and
   full-output SHA256 checks; production code unchanged (359df268).
 - QOI incremental decoding on zencodec's sans-I/O contract (PR 32,

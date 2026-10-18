@@ -1,0 +1,28 @@
+# Template for the generated parity harness. run.py copies it to
+# <scratch>/harness/Cargo.toml beside the git-archived <scratch>/old (the
+# baseline, renamed zenbitmaps_old) and <scratch>/new (the candidate).
+# The relative paths resolve only in that layout, so this file is not a
+# manifest in the repository.
+[package]
+name = "farbfeld-parity"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+old = { package = "zenbitmaps_old", path = "../old" }
+new = { package = "zenbitmaps", path = "../new" }
+enough = "0.4.5"
+
+# "checked": overflow checks and debug assertions on.
+[profile.release]
+debug-assertions = true
+overflow-checks = true
+
+# "unchecked": the default release settings that ship.
+[profile.relnocheck]
+inherits = "release"
+overflow-checks = false
+debug-assertions = false

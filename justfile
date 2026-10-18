@@ -144,3 +144,9 @@ check-farbfeld-zero-height:
     CARGO_TARGET_I686_UNKNOWN_LINUX_GNU_RUNNER=env cargo test --locked --target i686-unknown-linux-gnu --lib farbfeld
     CARGO_TARGET_I686_UNKNOWN_LINUX_GNU_RUNNER=env cargo test --locked --release --target i686-unknown-linux-gnu --lib farbfeld
     cargo clippy --locked --all-targets --all-features -- -D warnings
+
+# Compare immutable source revisions with complete-byte and spec oracles.
+[positional-arguments]
+farbfeld-parity *args:
+    PYTHONDONTWRITEBYTECODE=1 python3 tools/farbfeld-parity/run.py "$@"
+
