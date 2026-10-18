@@ -1,0 +1,74 @@
+diff --git a/src/farbfeld/encode.rs b/src/farbfeld/encode.rs
+index 2ddc811..78ab371 100644
+--- a/src/farbfeld/encode.rs
++++ b/src/farbfeld/encode.rs
+@@ -107,9 +107,21 @@ pub(crate) fn encode_farbfeld(
+                 if row_idx % 16 == 0 {
+                     stop.check().map_err(|r| at!(BitmapError::from(r)))?;
+                 }
+-                for &byte in row {
+-                    let val: u16 = byte as u16 * 257;
+-                    out.extend_from_slice(&val.to_be_bytes());
++                // Grow once per row, after its cancellation check. Writing a
++                // fixed extent avoids a Vec capacity check for every sample.
++                let start = out.len();
++                out.resize(start + row.len() * 2, 0);
++                for (pixel, dst) in row
++                    .as_chunks::<4>()
++                    .0
++                    .iter()
++                    .zip(out[start..].as_chunks_mut::<8>().0.iter_mut())
++                {
++                    // (v * 257).to_be_bytes() is exactly [v, v].
++                    *dst = [
++                        pixel[0], pixel[0], pixel[1], pixel[1], pixel[2], pixel[2], pixel[3],
++                        pixel[3],
++                    ];
+                 }
+             }
+         }
+@@ -215,6 +227,44 @@ pub(crate) fn encode_farbfeld(
+ mod tests {
+     use super::*;
+ 
++    #[test]
++    fn rgba8_matches_native_rgba16_expansion_with_odd_rows_and_input_tail() {
++        for (width, height) in [(1u32, 256u32), (3, 17), (17, 33), (64, 1), (257, 3)] {
++            let count = width as usize * height as usize;
++            let mut rgba: Vec<u8> = (0..count)
++                .flat_map(|i| {
++                    let v = i as u8;
++                    [v, v.wrapping_mul(73), v.rotate_left(3), v.wrapping_add(109)]
++                })
++                .collect();
++            let words: Vec<u8> = rgba
++                .iter()
++                .flat_map(|&v| (u16::from(v) * 257).to_ne_bytes())
++                .collect();
++            // Bytes after the logical image must remain ignored.
++            rgba.extend_from_slice(&[0xa5; 13]);
++            let actual = encode_farbfeld(
++                &rgba,
++                width,
++                height,
++                PixelLayout::Rgba8,
++                &enough::Unstoppable,
++            )
++            .unwrap();
++            let from_words = encode_farbfeld(
++                &words,
++                width,
++                height,
++                PixelLayout::Rgba16,
++                &enough::Unstoppable,
++            )
++            .unwrap();
++            assert_eq!(actual, from_words, "encoded bytes at {width}x{height}");
++            let decoded = crate::decode_farbfeld(&actual, enough::Unstoppable).unwrap();
++            assert_eq!(decoded.pixels(), words, "native words at {width}x{height}");
++        }
++    }
++
+     #[test]
+     fn rgba16_preserves_every_word_in_big_endian_order() {
+         for (width, height) in [(64u32, 256u32), (31, 17), (1, 33)] {
