@@ -59,6 +59,26 @@ pub(crate) fn encode_farbfeld(
 
     stop.check().map_err(|r| at!(BitmapError::from(r)))?;
 
+    if h == 0
+        && matches!(
+            layout,
+            PixelLayout::Rgba16
+                | PixelLayout::Rgba8
+                | PixelLayout::Rgb8
+                | PixelLayout::Bgra8
+                | PixelLayout::Bgrx8
+                | PixelLayout::Bgr8
+                | PixelLayout::Gray8
+        )
+    {
+        // Zero-height images are header-only. Return before the arms below
+        // compute `w * row_bytes`: on 32-bit targets those products overflow
+        // (checked) or wrap to zero (`chunks_exact(0)` panics) for widths
+        // >= 2**29 even though no rows exist. Unsupported layouts still fall
+        // through to the rejection below, unchanged.
+        return Ok(out);
+    }
+
     match layout {
         PixelLayout::Rgba16 => {
             // Native endian u16 → big endian u16, with a fixed output extent.
@@ -215,6 +235,93 @@ mod tests {
                 expected.extend_from_slice(&(i as u16).to_be_bytes());
             }
             assert_eq!(actual, expected, "{width}x{height}");
+        }
+    }
+
+    /// h=0 must return the 16-byte header on every encodable layout, for
+    /// widths whose `w * row_bytes` products overflow a 32-bit usize.
+    /// Covers the F6 i686 panic: `chunks_exact(w * bpp)` evaluated eagerly
+    /// even though a zero-height image has no rows.
+    #[test]
+    fn zero_height_encodes_header_only_for_all_layouts_and_huge_widths() {
+        let layouts = [
+            PixelLayout::Rgba16,
+            PixelLayout::Rgba8,
+            PixelLayout::Rgb8,
+            PixelLayout::Bgra8,
+            PixelLayout::Bgrx8,
+            PixelLayout::Bgr8,
+            PixelLayout::Gray8,
+        ];
+        let widths = [1u32, 4096, 1 << 29, 1 << 30, 1 << 31, 3 << 30, u32::MAX];
+        for layout in layouts {
+            for width in widths {
+                // Trailing input bytes must remain ignored at h=0.
+                let out = encode_farbfeld(&[0xa5; 64], width, 0, layout, &enough::Unstoppable)
+                    .unwrap_or_else(|e| panic!("{layout:?} {width}x0: {e:?}"));
+                let mut want = b"farbfeld".to_vec();
+                want.extend_from_slice(&width.to_be_bytes());
+                want.extend_from_slice(&0u32.to_be_bytes());
+                assert_eq!(out, want, "{layout:?} at {width}x0");
+            }
+        }
+    }
+
+    /// h=0 keeps the unchanged initial `stop.check()`: it still observes a
+    /// cancel, and no per-row checks run because there are no rows.
+    #[test]
+    fn zero_height_runs_the_initial_cancellation_check_once() {
+        use core::sync::atomic::{AtomicUsize, Ordering};
+
+        struct CancelAfter {
+            calls: AtomicUsize,
+            fail_at: usize,
+        }
+        impl Stop for CancelAfter {
+            fn check(&self) -> Result<(), enough::StopReason> {
+                if self.calls.fetch_add(1, Ordering::SeqCst) + 1 >= self.fail_at {
+                    Err(enough::StopReason::Cancelled)
+                } else {
+                    Ok(())
+                }
+            }
+        }
+
+        for layout in [PixelLayout::Rgba8, PixelLayout::Gray8] {
+            let cancelled = encode_farbfeld(
+                &[],
+                8,
+                0,
+                layout,
+                &CancelAfter {
+                    calls: AtomicUsize::new(0),
+                    fail_at: 1,
+                },
+            );
+            assert!(cancelled.is_err(), "{layout:?} h=0 must observe cancel");
+
+            let stop = CancelAfter {
+                calls: AtomicUsize::new(0),
+                fail_at: 2,
+            };
+            let out = encode_farbfeld(&[], 8, 0, layout, &stop).expect("header-only");
+            assert_eq!(out.len(), 16);
+            assert_eq!(
+                stop.calls.load(Ordering::SeqCst),
+                1,
+                "{layout:?} h=0 ran the wrong number of checks"
+            );
+        }
+    }
+
+    /// The width==0 rejection precedes any zero-height handling, unchanged.
+    #[test]
+    fn zero_width_is_rejected_even_at_zero_height() {
+        for layout in [PixelLayout::Rgba8, PixelLayout::Gray8] {
+            let e = encode_farbfeld(&[], 0, 0, layout, &enough::Unstoppable)
+                .expect_err("zero width must still be rejected");
+            let dbg = alloc::format!("{e:?}");
+            assert!(dbg.contains("width is zero"), "{layout:?}: {dbg}");
         }
     }
 }
