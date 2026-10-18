@@ -1,0 +1,33 @@
+# Template for the generated ff-bench harness. run.py copies it to
+# <scratch>/harness/Cargo.toml beside the git-archived <scratch>/old (the
+# baseline, renamed zenbitmaps_old) and <scratch>/new (the candidate).
+# The relative paths resolve only in that layout, so this file is not a
+# manifest in the repository.
+[package]
+name = "ff-bench"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+old = { package = "zenbitmaps_old", path = "../old" }
+new = { package = "zenbitmaps", path = "../new" }
+enough = "0.4.5"
+zenbench = "=0.1.11"
+# Dev-tool dependency only (artifact CAS + manifest). The 0.10.9 one-shot
+# Digest API is checked through cargo-read; this is not a production dependency.
+sha2 = "=0.10.9"
+
+[[bin]]
+name = "verify"
+path = "src/bin/verify.rs"
+
+[[bench]]
+name = "ff"
+harness = false
+
+# Production release defaults: no overflow-checks / debug-assertions or
+# codegen overrides. The parity tool's checked profile is a correctness
+# profile, not a timing profile.

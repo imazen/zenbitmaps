@@ -10,6 +10,8 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Add a development-only same-binary farbfeld benchmark with per-process byte parity, retained artifacts and fixed Confirm controls.
+
 - Retain a development-only farbfeld parity tool with immutable source snapshots, native i686 coverage and independent byte oracles.
 
 - Standalone farbfeld Coz/timing worker with complete-operation counters and

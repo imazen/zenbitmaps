@@ -150,3 +150,14 @@ check-farbfeld-zero-height:
 farbfeld-parity *args:
     PYTHONDONTWRITEBYTECODE=1 python3 tools/farbfeld-parity/run.py "$@"
 
+
+# Prepare immutable snapshots and validate the frozen same-binary Confirm plan.
+[positional-arguments]
+farbfeld-bench-prepare *args:
+    PYTHONDONTWRITEBYTECODE=1 python3 tools/ff-bench/run.py "$@"
+
+# Exercise rejected options and controlled verification/dry-run failures.
+[positional-arguments]
+farbfeld-bench-check *args:
+    bash tools/ff-bench/cli-check.sh
+    PYTHONDONTWRITEBYTECODE=1 python3 tools/ff-bench/driver-check.py "$@"
