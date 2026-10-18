@@ -29,6 +29,10 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Before/after Coz source-attribution profiles for the farbfeld RGBA8 change, with a
+  hash-verified NAS archive of its confirmation evidence
+  (`benchmarks/farbfeld_fixed_pixel_coz_2026-10-18.pointer.md`); no timing claim.
+
 - Add a development-only same-binary farbfeld benchmark with per-process byte parity, retained artifacts and fixed Confirm controls.
 
 - Retain a development-only farbfeld parity tool with immutable source snapshots, native i686 coverage and independent byte oracles.
