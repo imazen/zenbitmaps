@@ -139,9 +139,13 @@ fn write_farbfeld_rows(
                 if row_idx % 16 == 0 {
                     stop.check().map_err(|r| at!(BitmapError::from(r)))?;
                 }
-                for &byte in row {
-                    let val: u16 = byte as u16 * 257;
-                    out.extend_from_slice(&val.to_be_bytes());
+                for pixel in row.as_chunks::<4>().0 {
+                    // Each u8 expands to [v, v]. Append one complete pixel
+                    // without zero-filling the row or checking capacity per sample.
+                    out.extend_from_slice(&[
+                        pixel[0], pixel[0], pixel[1], pixel[1], pixel[2], pixel[2], pixel[3],
+                        pixel[3],
+                    ]);
                 }
             }
         }

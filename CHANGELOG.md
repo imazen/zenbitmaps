@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- Farbfeld RGBA8 encoding appends each expanded pixel in one call instead of one
+  call per sample; output bytes are unchanged. `tests/farbfeld_rgba8_regression.rs`
+  checks every 8-bit value in each channel position, row tails and the 16-row
+  cancellation cadence against an independent `v * 257` big-endian expectation.
+  On one Neoverse-N1 host, encode time fell 54.6–76.1 % across six RGBA8 sizes
+  and 10.2 % at 1×1, with RGBA16, RGB8 and decode controls within ±1 %
+  (`benchmarks/farbfeld_fixed_pixel_n1_confirm_2026-10-18.pointer.md`); x86-64 is
+  unmeasured.
+
 ### Fixed
 
 - Streaming PNM, farbfeld and HDR encodes wrote each pushed strip with the one-shot
