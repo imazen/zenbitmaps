@@ -136,3 +136,11 @@ coz-run profile +args:
 
 coz-worker +args:
     ./tools/coz-profile/target/release/zenbitmaps-coz-profile {{args}}
+
+# Regression checks for zero-height farbfeld encoding, including native i686.
+check-farbfeld-zero-height:
+    cargo fmt -p zenbitmaps -- --check
+    cargo test --locked --lib farbfeld
+    CARGO_TARGET_I686_UNKNOWN_LINUX_GNU_RUNNER=env cargo test --locked --target i686-unknown-linux-gnu --lib farbfeld
+    CARGO_TARGET_I686_UNKNOWN_LINUX_GNU_RUNNER=env cargo test --locked --release --target i686-unknown-linux-gnu --lib farbfeld
+    cargo clippy --locked --all-targets --all-features -- -D warnings

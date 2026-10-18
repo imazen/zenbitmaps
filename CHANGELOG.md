@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- Farbfeld encoding of supported layouts with zero height returns the existing header-only result on 32-bit targets, including widths whose row-byte products overflow; initial cancellation and unsupported-layout rejection are preserved (`325bd951`).
+
 ### Added
 
 - Standalone farbfeld Coz/timing worker with complete-operation counters and

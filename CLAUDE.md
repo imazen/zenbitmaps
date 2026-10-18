@@ -56,6 +56,8 @@ Same as other zen* codecs — see codec-design/README.md. Key points:
 
 ## Known Bugs
 
+- Resolved: farbfeld zero-height encoding could panic on i686 when eagerly calculating a row stride for huge widths. The early return preserves the existing 64-bit header-only result after initial cancellation, and keeps unsupported layouts rejected (`325bd951`; regression tests in `src/farbfeld/encode.rs`).
+
 - PNM RGB8 preflight/decode transfer disagreement (2026-10-14):
   `PnmDecodeJob::output_info` uses `layout_to_descriptor` and advertises sRGB,
   while `layout_to_pixel_buffer` constructs RGB8 with unknown transfer. A P6

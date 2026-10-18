@@ -267,6 +267,27 @@ mod tests {
         }
     }
 
+    #[test]
+    fn zero_height_rejects_unsupported_layouts() {
+        for layout in [
+            PixelLayout::Gray16,
+            PixelLayout::GrayF32,
+            PixelLayout::RgbF32,
+        ] {
+            for width in [1u32, 4096, 1 << 29, 1 << 30, 1 << 31, 3 << 30, u32::MAX] {
+                let error = encode_farbfeld(&[], width, 0, layout, &enough::Unstoppable)
+                    .expect_err("unsupported layout must not produce a header-only image");
+                assert!(
+                    matches!(
+                        error.error(),
+                        BitmapError::UnsupportedVariant(UnsupportedKind::Feature, _)
+                    ),
+                    "{layout:?} {width}x0: {error:?}"
+                );
+            }
+        }
+    }
+
     /// h=0 keeps the unchanged initial `stop.check()`: it still observes a
     /// cancel, and no per-row checks run because there are no rows.
     #[test]
@@ -298,7 +319,13 @@ mod tests {
                     fail_at: 1,
                 },
             );
-            assert!(cancelled.is_err(), "{layout:?} h=0 must observe cancel");
+            assert!(
+                matches!(
+                    cancelled.unwrap_err().error(),
+                    BitmapError::Cancelled(enough::StopReason::Cancelled)
+                ),
+                "{layout:?} h=0 must observe cancel"
+            );
 
             let stop = CancelAfter {
                 calls: AtomicUsize::new(0),
