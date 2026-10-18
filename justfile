@@ -124,7 +124,7 @@ bench-qoi-photos filter="":
 
 # Development-only Farbfeld profiling worker; production graph is unchanged.
 coz-build:
-    cargo build --release --manifest-path tools/coz-profile/Cargo.toml
+    cargo build --release --locked --manifest-path tools/coz-profile/Cargo.toml
 
 coz-check:
     cargo fmt --manifest-path tools/coz-profile/Cargo.toml -- --check

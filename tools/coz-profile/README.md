@@ -42,3 +42,14 @@ of Git and preserve its provenance.
 
 This worker covers farbfeld operations only. Other bitmap formats, streaming
 adapters, and cancellation behavior require their own tests and measurements.
+
+## Coz run
+
+`just coz-build` builds this worker from the committed lockfile (`--locked`).
+`just coz-run` refuses to replace an existing profile and limits experiments to
+`zenbitmaps/src`. `COZ_BIN` selects a profiler other than `coz` on `PATH`.
+
+```sh
+just coz-build
+just coz-run "$HOME/tmp/zenbitmaps-encode-rgba8.jsonl" encode rgba8 512 512 1000
+```
