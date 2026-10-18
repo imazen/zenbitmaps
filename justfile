@@ -121,3 +121,15 @@ bench-qoi-photos filter="":
       done
     fi
     ZENBITMAPS_PHOTO_DIR="$dir" CARGO_BUILD_JOBS=4 nice -n 19 cargo bench --bench qoi_photos --features all,zencodec,std -- --cpu-policy=unrestricted {{ if filter == "" { "" } else { "--group=" + filter } }}
+
+# Development-only Farbfeld profiling worker; production graph is unchanged.
+coz-build:
+    cargo build --release --manifest-path tools/coz-profile/Cargo.toml
+
+coz-check:
+    cargo fmt --manifest-path tools/coz-profile/Cargo.toml -- --check
+    cargo clippy --manifest-path tools/coz-profile/Cargo.toml --all-targets --locked
+
+coz-run profile +args:
+    test ! -e "{{profile}}"
+    {{env_var_or_default("COZ_BIN", "coz")}} run --source-scope '%/zenbitmaps/src/%' --output "{{profile}}" --- ./tools/coz-profile/target/release/zenbitmaps-coz-profile {{args}}

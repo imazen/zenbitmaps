@@ -1,0 +1,16 @@
+[package]
+name = "zenbitmaps-coz-profile"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+coz = "0.1.3"
+enough = "0.4.4"
+zenbitmaps = { path = "../..", features = ["all"] }
+
+[profile.release]
+debug = 1
+lto = "thin"
