@@ -5,7 +5,7 @@ use enough::Unstoppable;
 use std::hint::black_box;
 use std::io::Write;
 use std::process::{Command, Stdio};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use zenbitmaps::PixelLayout;
 
 fn sha256(data: &[u8]) -> Result<String, Box<dyn std::error::Error>> {
@@ -79,6 +79,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         coz::progress!("farbfeld-operation");
     };
     for _ in 0..5 {
+        run_once();
+    }
+    // The external plan can freeze a wall-time warmup for both retained builds.
+    // Default zero keeps the quick Coz probe behavior unchanged.
+    let warmup_ms: u64 =
+        std::env::var("ZENBITMAPS_COZ_WARMUP_MS").map_or(Ok(0), |value| value.parse())?;
+    let warm_start = Instant::now();
+    while warm_start.elapsed() < Duration::from_millis(warmup_ms) {
         run_once();
     }
     for _ in 0..3 {

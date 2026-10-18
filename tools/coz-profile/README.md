@@ -13,8 +13,9 @@ Layouts: `rgba8`, `rgb8`, `bgra8`, `bgrx8`, `bgr8`, `gray8`, `rgba16`.
 Input is deterministic synthetic bytes (seed `7942c31b`), not a photograph
 or a quality dataset. Model- or content-quality claims are outside this tool.
 
-Each process runs five untimed warmup operations followed by three timed
-batches. Each `elapsed_ns=` row is the total elapsed nanoseconds for the
+Each process runs five untimed warmup operations, optionally followed by
+a wall-time warmup frozen by the external plan in `ZENBITMAPS_COZ_WARMUP_MS`,
+then three timed batches. Each `elapsed_ns=` row is the total elapsed nanoseconds for the
 requested number of complete operations, including output allocation and
 deallocation. Input generation and SHA256 checks are outside those batches.
 The output slice is consumed with `black_box` on every iteration.

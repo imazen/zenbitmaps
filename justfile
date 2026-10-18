@@ -133,3 +133,6 @@ coz-check:
 coz-run profile +args:
     test ! -e "{{profile}}"
     {{env_var_or_default("COZ_BIN", "coz")}} run --source-scope '%/zenbitmaps/src/%' --output "{{profile}}" --- ./tools/coz-profile/target/release/zenbitmaps-coz-profile {{args}}
+
+coz-worker +args:
+    ./tools/coz-profile/target/release/zenbitmaps-coz-profile {{args}}
