@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Standalone farbfeld Coz/timing worker with complete-operation counters and
+  full-output SHA256 checks; production code unchanged (359df268).
 - QOI incremental decoding on zencodec's sans-I/O contract (PR 32,
   `bc4397a`, `0c018f4`, and the v2 port): `QoiIncrementalDecoder` holds no
   input and decodes every row the offered bytes guarantee straight into the
