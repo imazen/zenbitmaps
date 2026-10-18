@@ -56,6 +56,15 @@ Same as other zen* codecs — see codec-design/README.md. Key points:
 
 ## Known Bugs
 
+- Stale public-API snapshot (found 2026-10-18): `ZEN_API_DOC=check cargo test
+  --locked --manifest-path apidoc/Cargo.toml` fails on main `ccb705d0`. The
+  committed `docs/public-api/zenbitmaps.txt` (last changed in `ed0f474`) says
+  `zenbitmaps.features.txt 184 added`; the generator now produces 181. That
+  header line is the only difference in `zenbitmaps.txt`. The farbfeld RGBA8
+  landing fails with byte-identical output, so it is not the cause. CI does not
+  run this check. Regenerate and review the snapshots (`just api-doc`) in their
+  own change.
+
 - Resolved: farbfeld zero-height encoding could panic on i686 when eagerly calculating a row stride for huge widths. The early return preserves the existing 64-bit header-only result after initial cancellation, and keeps unsupported layouts rejected (`325bd951`; regression tests in `src/farbfeld/encode.rs`).
 
 - PNM RGB8 preflight/decode transfer disagreement (2026-10-14):
