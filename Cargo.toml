@@ -33,11 +33,11 @@ zenpixels = { version = ">=0.2.13, <0.4.0", default-features = false, features =
 # than for any entropy-coded codec.
 zenpixels-convert = { version = ">=0.2.13, <0.4.0", default-features = false, optional = true }
 # SIMD acceleration
-archmage = { version = "0.9.29", default-features = false, optional = true }
+archmage = { version = ">=0.9.29, <=0.9.31-beta.1", default-features = false, optional = true }
 garb = { version = "0.2.8", default-features = false, optional = true }
 
 [dev-dependencies]
-archmage = { version = "0.9.29", features = ["std", "testable_dispatch"] }
+archmage = { version = ">=0.9.29, <=0.9.31-beta.1", features = ["std", "testable_dispatch"] }
 zenutils-fuzz = "0.1.0"
 zenbench = "0.1.10"
 # zencodec conformance harness. Provides check_decode_truncation_series

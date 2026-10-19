@@ -161,3 +161,9 @@ farbfeld-bench-prepare *args:
 farbfeld-bench-check *args:
     bash tools/ff-bench/cli-check.sh
     PYTHONDONTWRITEBYTECODE=1 python3 tools/ff-bench/driver-check.py "$@"
+
+# Validate stable compatibility while tool builds select the current SIMD beta.
+beta-cohort-check:
+    cargo fmt --check
+    cargo clippy --locked --lib -- -D warnings
+    cargo test --locked --lib
