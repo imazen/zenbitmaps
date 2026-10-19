@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Dependency compatibility
+
+- Admit archmage/magetypes 0.9.31-beta.1 in the current-main tool graph while retaining compatible stable requirements (`758045b7`). Strict library lint and all 24 library tests pass.
+
 ### Changed
 
 - Farbfeld RGBA8 encoding appends each expanded pixel in one call instead of one
