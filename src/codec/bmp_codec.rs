@@ -328,14 +328,12 @@ impl<'a> zencodec::decode::DecodeJob<'a> for BmpDecodeJob {
         // Metadata only — do not reject on the pixel-count cap.
         let header = crate::bmp::decode::parse_bmp_header(data, u64::MAX)
             .map_err(zencodec::CodecError::of)?;
-        let has_alpha = matches!(
-            header.layout,
-            crate::PixelLayout::Rgba8 | crate::PixelLayout::Bgra8
-        );
+        let has_alpha = header.has_alpha;
         let channel_count: u8 = match header.layout {
             crate::PixelLayout::Gray8 => 1,
             crate::PixelLayout::Rgb8 => 3,
             crate::PixelLayout::Rgba8 | crate::PixelLayout::Bgra8 => 4,
+            crate::PixelLayout::Rgba16 if has_alpha => 4,
             _ => 3, // BMP decoded output is at least RGB
         };
         let mut info = ImageInfo::new(header.width, header.height, ImageFormat::Bmp)
@@ -359,10 +357,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for BmpDecodeJob {
         // Metadata only — do not reject on the pixel-count cap.
         let header = crate::bmp::decode::parse_bmp_header(data, u64::MAX)
             .map_err(zencodec::CodecError::of)?;
-        let has_alpha = matches!(
-            header.layout,
-            crate::PixelLayout::Rgba8 | crate::PixelLayout::Bgra8
-        );
+        let has_alpha = header.has_alpha;
         let native_format = layout_to_descriptor(header.layout);
         Ok(
             OutputInfo::full_decode(header.width, header.height, native_format)

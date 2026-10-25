@@ -21,6 +21,15 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- BMP BI_BITFIELDS masks wider than 8 bits (10:10:10:2, 11:11:10) were narrowed
+  to 8 bits per channel, dropping 2–3 low bits of every sample. They now decode to
+  `Rgba16` by bit replication, so each code shifts back out exactly; masks of 8 bits
+  or fewer (565, 555, 8:8:8:8) still decode to 8-bit layouts. A missing alpha mask
+  gives opaque alpha and `has_alpha = false` in probe. Masks wider than 16 bits are
+  refused with `UnsupportedVariant`. Behaviour change: typed 8-bit decodes
+  (`decode_bmp_pixels::<Rgba<u8>>`) of such files now return `LayoutMismatch`
+  instead of truncated pixels. Regressions in `tests/bmp_wide_bitfields.rs`.
+
 - Streaming PNM, farbfeld and HDR encodes wrote each pushed strip with the one-shot
   encoder into a temporary file, cut its header off and copied the rest into the
   output buffer. Each format's row writer now appends a strip straight to the output

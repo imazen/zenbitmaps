@@ -83,6 +83,27 @@ pub(crate) fn expand_bits_to_byte(depth: usize, plte_present: bool, input: &[u8]
     }
 }
 
+/// Extract a bitfield of up to 16 bits and widen it to 16 bits by bit
+/// replication, so `out >> (16 - bits)` returns the original code.
+pub(crate) fn bitfield_to_u16(v: u32, mask: u32) -> u16 {
+    let bits = mask.count_ones();
+    if bits == 0 {
+        return 0;
+    }
+    let code = ((v & mask) >> mask.trailing_zeros()) & ((1u32 << bits) - 1);
+    let mut out = 0u32;
+    let mut shift = 16 - bits as i32;
+    while shift > -(bits as i32) {
+        out |= if shift >= 0 {
+            code << shift
+        } else {
+            code >> -shift
+        };
+        shift -= bits as i32;
+    }
+    out as u16
+}
+
 /// Bitfield shift/scale table for converting N-bit values to 8-bit.
 pub(crate) const MUL_TABLE: [u32; 9] = [
     0,    // 0 bits
