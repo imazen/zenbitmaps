@@ -7,12 +7,18 @@ All notable changes to this project will be documented in this file.
 ### QUEUED BREAKING CHANGES
 
 - The zencodec trait implementations follow zencodec's Pulse operation-control
-  contract (ideal-api `f73a7e0e`): every encode/decode job implements
+  contract (zencodec 0.2; written at ideal-api `f73a7e0e`, pinned to the family
+  revision `f5a7fd46`): every encode/decode job implements
   `with_pulse` and retains the caller's `SharedPulse`, incremental `step` takes
   `&dyn Pulse`, and byte requests are `InputRequest` (`8cce050d`). Pulses are
   checked for cancellation only; no zenbitmaps stage reports progress.
 
 ### Dependency compatibility
+
+- Pin the zencodec 0.2 family revision (ideal-api `f5a7fd46`) in the root and
+  fuzz manifests (the fuzz crate was still on `5ed2dade`). The bench-only zenpng
+  0.1.4 stays on crates.io zencodec 0.1 in its own graph, so its compatibility
+  patch is dropped. Review pin only: not for main until zencodec 0.2 ships.
 
 - Admit archmage/magetypes 0.9.31-beta.1 in the current-main tool graph while retaining compatible stable requirements (`758045b7`). Strict library lint and all 24 library tests pass.
 

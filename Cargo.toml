@@ -50,7 +50,7 @@ zenbench = "0.1.10"
 zencodec-testkit = ">=0.1.0, <0.3.0"
 # Drivers for the incremental (sans-I/O) path (benches + tests); unpublished,
 # so it comes from the zencodec repo at the same commit the patch below pins.
-zencodec-io = { git = "https://github.com/imazen/zencodec", rev = "f73a7e0e01c6d6eefb9f08c61f2bb71100e25f54", features = ["std"] }
+zencodec-io = { git = "https://github.com/imazen/zencodec", rev = "f5a7fd46231048a7290f11df5b32e010a3e529a8", features = ["std"] }
 # Real-photo benchmark inputs (benches/qoi_photos.rs): decode the corpus
 # PNGs and resample them to each benchmarked size with our own crates.
 zenpng = "0.1.4"
@@ -121,12 +121,11 @@ required-features = ["simd"]
 # Structural inventories (imazen/zencodec#133). Swap for the released
 # zencodec/zencodec-testkit before merge.
 [patch.crates-io]
-# zencodec's Pulse operation controls (review revision f73a7e0e, ideal-api) are
+# zencodec's Pulse operation controls (zencodec 0.2, ideal-api f5a7fd46) are
 # unpublished: pin the interface crate, zencodec-io and the testkit to the same
 # zencodec commit so one zencodec resolves. Drop these when zencodec and the
 # testkit publish that API.
-zencodec = { git = "https://github.com/imazen/zencodec", rev = "f73a7e0e01c6d6eefb9f08c61f2bb71100e25f54" }
-zencodec-testkit = { git = "https://github.com/imazen/zencodec", rev = "f73a7e0e01c6d6eefb9f08c61f2bb71100e25f54" }
-# The bench-only zenpng 0.1.4 dev-dependency implements zencodec traits, so one
-# zencodec graph needs its Pulse adapter (branch pulse-compat-0.1.4, unreleased).
-zenpng = { git = "https://github.com/imazen/zenpng", rev = "14d65e47b42fda28ae8648b8328e27034d213f11" }
+zencodec = { git = "https://github.com/imazen/zencodec", rev = "f5a7fd46231048a7290f11df5b32e010a3e529a8" }
+zencodec-testkit = { git = "https://github.com/imazen/zencodec", rev = "f5a7fd46231048a7290f11df5b32e010a3e529a8" }
+# The bench-only zenpng 0.1.4 dev-dependency stays on crates.io zencodec 0.1 in
+# its own graph; benches use only its native PNG decoder.
