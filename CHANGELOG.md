@@ -15,10 +15,13 @@ All notable changes to this project will be documented in this file.
 
 ### Dependency compatibility
 
-- Pin the zencodec 0.2 family revision (ideal-api `f5a7fd46`) in the root and
-  fuzz manifests (the fuzz crate was still on `5ed2dade`). The bench-only zenpng
-  0.1.4 stays on crates.io zencodec 0.1 in its own graph, so its compatibility
-  patch is dropped. Review pin only: not for main until zencodec 0.2 ships.
+- Pin the zencodec 0.2 family revision (ideal-api `79676215`, after
+  `f5a7fd46`) in the root and fuzz manifests (the fuzz crate was still on
+  `5ed2dade`), and require zencodec and the testkit `>=0.2.0, <0.4.0`: with a
+  0.1 range the lock could give zenbitmaps the registry 0.1.26 that the
+  bench-only zenpng 0.1.4 needs. That zenpng stays on crates.io zencodec 0.1 in
+  its own graph, so its compatibility patch is dropped. Review pin only: not for
+  main until zencodec 0.2 ships.
 
 - Admit archmage/magetypes 0.9.31-beta.1 in the current-main tool graph while retaining compatible stable requirements (`758045b7`). Strict library lint and all 24 library tests pass.
 
