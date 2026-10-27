@@ -41,10 +41,12 @@ fn check_enabled<C: zencodec::decode::DecoderConfig>(config: C) {
             config
                 .clone()
                 .job()
-                .with_stop(zencodec::StopToken::new(AtPoll {
-                    polls: polls.clone(),
-                    fail_at,
-                }))
+                .with_pulse(zencodec::SharedPulse::new(
+                    zencodec::how_far::StopOnly::new(AtPoll {
+                        polls: polls.clone(),
+                        fail_at,
+                    }),
+                ))
                 .inventory(bytes)
         };
         run(usize::MAX).unwrap();
@@ -106,7 +108,9 @@ fn qoi_inventory_observes_timeout_during_opcode_traversal() {
     bytes.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 1]);
     let error = zenbitmaps::QoiDecoderConfig::new()
         .job()
-        .with_stop(zencodec::StopToken::new(StopOnce(0.into())))
+        .with_pulse(zencodec::SharedPulse::new(
+            zencodec::how_far::StopOnly::new(StopOnce(0.into())),
+        ))
         .inventory(&bytes)
         .unwrap_err();
     assert_eq!(

@@ -104,7 +104,7 @@ impl zencodec::encode::EncoderConfig for FarbfeldEncoderConfig {
         FarbfeldEncodeJob {
             config: self,
             limits: None,
-            stop: None,
+            pulse: zencodec::SharedPulse::default(),
         }
     }
 }
@@ -115,7 +115,7 @@ impl zencodec::encode::EncoderConfig for FarbfeldEncoderConfig {
 pub struct FarbfeldEncodeJob {
     config: FarbfeldEncoderConfig,
     limits: Option<ResourceLimits>,
-    stop: Option<zencodec::StopToken>,
+    pulse: zencodec::SharedPulse,
 }
 
 impl zencodec::encode::EncodeJob for FarbfeldEncodeJob {
@@ -123,8 +123,8 @@ impl zencodec::encode::EncodeJob for FarbfeldEncodeJob {
     type Enc = FarbfeldEncoder;
     type AnimationFrameEnc = ();
 
-    fn with_stop(mut self, stop: zencodec::StopToken) -> Self {
-        self.stop = Some(stop);
+    fn with_pulse(mut self, pulse: zencodec::SharedPulse) -> Self {
+        self.pulse = pulse;
         self
     }
 
@@ -141,7 +141,7 @@ impl zencodec::encode::EncodeJob for FarbfeldEncodeJob {
         Ok(FarbfeldEncoder {
             config: self.config,
             limits: self.limits,
-            stop: self.stop,
+            pulse: self.pulse,
             stream: None,
             sent: 0,
             begun: false,
@@ -159,7 +159,7 @@ impl zencodec::encode::EncodeJob for FarbfeldEncodeJob {
 pub struct FarbfeldEncoder {
     config: FarbfeldEncoderConfig,
     limits: Option<ResourceLimits>,
-    stop: Option<zencodec::StopToken>,
+    pulse: zencodec::SharedPulse,
     stream: Option<super::row_stream::RowStream>,
     /// Bytes handed out through `consume_output` (whole-file output limit).
     sent: u64,
@@ -315,7 +315,7 @@ impl zencodec::decode::DecoderConfig for FarbfeldDecoderConfig {
         FarbfeldDecodeJob {
             config: self,
             limits: None,
-            stop: None,
+            pulse: zencodec::SharedPulse::default(),
             max_input_bytes: None,
             alloc_pref: AllocPref::CodecDefault,
             policy: None,
@@ -329,7 +329,7 @@ impl zencodec::decode::DecoderConfig for FarbfeldDecoderConfig {
 pub struct FarbfeldDecodeJob {
     config: FarbfeldDecoderConfig,
     limits: Option<Limits>,
-    stop: Option<zencodec::StopToken>,
+    pulse: zencodec::SharedPulse,
     max_input_bytes: Option<u64>,
     /// Allocation-fallibility preference from
     /// [`ResourceLimits::prefer_fallible_allocations`].
@@ -343,8 +343,8 @@ impl<'a> zencodec::decode::DecodeJob<'a> for FarbfeldDecodeJob {
     type StreamDec = zencodec::Unsupported<At<zencodec::CodecError>>;
     type AnimationFrameDec = zencodec::Unsupported<At<zencodec::CodecError>>;
 
-    fn with_stop(mut self, stop: zencodec::StopToken) -> Self {
-        self.stop = Some(stop);
+    fn with_pulse(mut self, pulse: zencodec::SharedPulse) -> Self {
+        self.pulse = pulse;
         self
     }
 
@@ -382,7 +382,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for FarbfeldDecodeJob {
         };
         super::job_inventory(
             data,
-            self.stop.as_ref(),
+            &self.pulse,
             self.max_input_bytes,
             limits,
             output,
@@ -408,7 +408,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for FarbfeldDecodeJob {
             config: self.config,
             limits: self.limits,
             data,
-            stop: self.stop,
+            pulse: self.pulse,
             alloc_pref: self.alloc_pref,
         })
     }
@@ -455,7 +455,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for FarbfeldDecodeJob {
                     alloc_pref: self.alloc_pref,
                     width: 0,
                 },
-                self.stop,
+                self.pulse,
                 self.max_input_bytes,
             ),
         ))
@@ -541,7 +541,7 @@ pub struct FarbfeldDecoder<'a> {
     config: FarbfeldDecoderConfig,
     limits: Option<Limits>,
     data: Cow<'a, [u8]>,
-    stop: Option<zencodec::StopToken>,
+    pulse: zencodec::SharedPulse,
     alloc_pref: AllocPref,
 }
 
@@ -556,10 +556,7 @@ impl zencodec::decode::Decode for FarbfeldDecoder<'_> {
 
     fn decode(self) -> Result<DecodeOutput, Self::Error> {
         let limits = self.effective_limits();
-        let stop: &dyn Stop = match &self.stop {
-            Some(s) => s,
-            None => &enough::Unstoppable,
-        };
+        let stop: &dyn Stop = &self.pulse;
         let decoded =
             crate::farbfeld::decode_with_alloc_pref(&self.data, limits, self.alloc_pref, stop)
                 .map_err(zencodec::CodecError::of)?;
@@ -580,10 +577,7 @@ impl FarbfeldEncoder {
         }
         let file = farbfeld_file(descriptor)?;
         let limits = self.effective_limits();
-        let stop: &dyn Stop = match &self.stop {
-            Some(s) => s,
-            None => &enough::Unstoppable,
-        };
+        let stop: &dyn Stop = &self.pulse;
         self.stream = Some(super::row_stream::RowStream::start(
             file,
             width,
@@ -597,10 +591,7 @@ impl FarbfeldEncoder {
     }
 
     fn push_rows_inner(&mut self, rows: PixelSlice<'_>) -> Result<(), At<zencodec::CodecError>> {
-        let stop: &dyn Stop = match &self.stop {
-            Some(s) => s,
-            None => &enough::Unstoppable,
-        };
+        let stop: &dyn Stop = &self.pulse;
         if self.stream.is_none() {
             let file = farbfeld_file(rows.descriptor())?;
             let limits = self.effective_limits();
@@ -620,10 +611,7 @@ impl FarbfeldEncoder {
     }
 
     fn finish_inner(self) -> Result<EncodeOutput, At<zencodec::CodecError>> {
-        let stop: &dyn Stop = match &self.stop {
-            Some(s) => s,
-            None => &enough::Unstoppable,
-        };
+        let stop: &dyn Stop = &self.pulse;
         let stream = self.stream.ok_or_else(|| {
             At::<zencodec::CodecError>::from(BitmapError::InvalidData(
                 "finish() without push_rows()".into(),
@@ -639,10 +627,7 @@ impl FarbfeldEncoder {
         self,
         pixels: PixelSlice<'_>,
     ) -> Result<EncodeOutput, At<zencodec::CodecError>> {
-        let stop: &dyn Stop = match &self.stop {
-            Some(s) => s,
-            None => &enough::Unstoppable,
-        };
+        let stop: &dyn Stop = &self.pulse;
         let desc = pixels.descriptor();
         let w = pixels.width();
         let h = pixels.rows();

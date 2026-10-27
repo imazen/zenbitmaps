@@ -50,7 +50,7 @@ zenbench = "0.1.10"
 zencodec-testkit = ">=0.1.0, <0.3.0"
 # Drivers for the incremental (sans-I/O) path (benches + tests); unpublished,
 # so it comes from the zencodec repo at the same commit the patch below pins.
-zencodec-io = { git = "https://github.com/imazen/zencodec", rev = "5ed2daded81407e7206fd8de6e8f1d93a5447b5b", features = ["std"] }
+zencodec-io = { git = "https://github.com/imazen/zencodec", rev = "f73a7e0e01c6d6eefb9f08c61f2bb71100e25f54", features = ["std"] }
 # Real-photo benchmark inputs (benches/qoi_photos.rs): decode the corpus
 # PNGs and resample them to each benchmarked size with our own crates.
 zenpng = "0.1.4"
@@ -121,10 +121,12 @@ required-features = ["simd"]
 # Structural inventories (imazen/zencodec#133). Swap for the released
 # zencodec/zencodec-testkit before merge.
 [patch.crates-io]
-# zencodec's sans-I/O contract (merged in PR 147) and Encoder::begin's
-# OutputTiming (zencodec PR 149, stacked on PR 148) are unpublished: pin the
-# interface crate, zencodec-io and the testkit to the same zencodec commit so
-# one zencodec resolves. Repin to zencodec main once PR 149 merges.
-# Drop these when zencodec 0.1.27+ and testkit 0.2 publish.
-zencodec = { git = "https://github.com/imazen/zencodec", rev = "5ed2daded81407e7206fd8de6e8f1d93a5447b5b" }
-zencodec-testkit = { git = "https://github.com/imazen/zencodec", rev = "5ed2daded81407e7206fd8de6e8f1d93a5447b5b" }
+# zencodec's Pulse operation controls (review revision f73a7e0e, ideal-api) are
+# unpublished: pin the interface crate, zencodec-io and the testkit to the same
+# zencodec commit so one zencodec resolves. Drop these when zencodec and the
+# testkit publish that API.
+zencodec = { git = "https://github.com/imazen/zencodec", rev = "f73a7e0e01c6d6eefb9f08c61f2bb71100e25f54" }
+zencodec-testkit = { git = "https://github.com/imazen/zencodec", rev = "f73a7e0e01c6d6eefb9f08c61f2bb71100e25f54" }
+# The bench-only zenpng 0.1.4 dev-dependency implements zencodec traits, so one
+# zencodec graph needs its Pulse adapter (branch pulse-compat-0.1.4, unreleased).
+zenpng = { git = "https://github.com/imazen/zenpng", rev = "14d65e47b42fda28ae8648b8328e27034d213f11" }

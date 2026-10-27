@@ -27,8 +27,8 @@
 use enough::Stop;
 use whereat::At;
 use zencodec::decode::{
-    BatchMeta, DecodeRowSink, Event, IncrementalDecode, Input, MetadataUpdate, OutputInfo,
-    Progress, Request, StepError,
+    BatchMeta, DecodeRowSink, Event, IncrementalDecode, Input, InputRequest, MetadataUpdate,
+    OutputInfo, Progress, StepError,
 };
 use zencodec::{CodecError, ImageInfo};
 use zenpixels::{PixelBuffer, PixelDescriptor, PixelSlice};
@@ -104,12 +104,21 @@ pub(crate) trait StripFormat: Send + 'static {
 
 type StepResult = Result<Progress, StepError<At<CodecError>>>;
 
+/// A pulse that stops inside native decoding has tripped exactly as at the
+/// step boundary: report `Cancelled` with its reason, not a codec failure.
 fn codec(e: impl Into<At<CodecError>>) -> StepError<At<CodecError>> {
-    StepError::Codec(e.into())
+    let e = e.into();
+    match e.error().category() {
+        zencodec::ErrorCategory::Stopped(reason) => StepError::Cancelled(reason),
+        _ => StepError::Codec(e),
+    }
 }
 
 fn bitmap(e: At<BitmapError>) -> StepError<At<CodecError>> {
-    StepError::Codec(CodecError::of(e))
+    match e.error() {
+        BitmapError::Cancelled(reason) => StepError::Cancelled(*reason),
+        _ => StepError::Codec(CodecError::of(e)),
+    }
 }
 
 /// The incremental decoder for a [`StripFormat`].
@@ -128,17 +137,17 @@ pub(crate) struct StripDecoder<F> {
     /// A whole-file decode waiting to be handed to the sink.
     whole: Option<PixelBuffer>,
     header_want: usize,
-    need: [Request; 1],
+    need: [InputRequest; 1],
     done: Option<OutputInfo>,
     failed: bool,
-    stop: Option<zencodec::StopToken>,
+    pulse: zencodec::SharedPulse,
     max_input_bytes: Option<u64>,
 }
 
 impl<F: StripFormat> StripDecoder<F> {
     pub(crate) fn new(
         format: F,
-        stop: Option<zencodec::StopToken>,
+        pulse: zencodec::SharedPulse,
         max_input_bytes: Option<u64>,
     ) -> Self {
         Self {
@@ -152,15 +161,15 @@ impl<F: StripFormat> StripDecoder<F> {
             rows_per_strip: 1,
             whole: None,
             header_want: 512,
-            need: [Request::at_least(0, 512)],
+            need: [InputRequest::at_least(0, 512)],
             done: None,
             failed: false,
-            stop,
+            pulse,
             max_input_bytes,
         }
     }
 
-    fn need(&mut self, request: Request) -> StepResult {
+    fn need(&mut self, request: InputRequest) -> StepResult {
         self.need = [request];
         Ok(Progress::need(0))
     }
@@ -229,7 +238,7 @@ impl<F: StripFormat> StripDecoder<F> {
             }
             let want = self.header_want.max(here.len() + 1);
             self.header_want = want.saturating_mul(2);
-            return self.need(Request::at_least(0, want));
+            return self.need(InputRequest::at_least(0, want));
         };
         let consumed = match g.body {
             Body::Rows { data_offset, .. } | Body::VarRows { data_offset, .. } => {
@@ -259,12 +268,10 @@ impl<F: StripFormat> StripDecoder<F> {
         &mut self,
         input: Input<'_>,
         sink: &mut dyn DecodeRowSink,
-        stop: &dyn Stop,
+        pulse: &dyn zencodec::Pulse,
     ) -> StepResult {
-        stop.check()?;
-        if let Some(s) = &self.stop {
-            s.check()?;
-        }
+        pulse.check()?;
+        self.pulse.check()?;
         self.check_input_limit(input.total_len)?;
         let Some(g) = self.geometry.as_ref() else {
             return self.step_header(input, sink);
@@ -317,13 +324,13 @@ impl<F: StripFormat> StripDecoder<F> {
                     if at_end {
                         return Err(codec(BitmapError::UnexpectedEof));
                     }
-                    return self.need(Request::at_least(off, row_bytes));
+                    return self.need(InputRequest::at_least(off, row_bytes));
                 }
                 let used = n as usize * row_bytes;
                 self.check_input_limit(Some(off + used as u64))?;
                 let (rows, _) = self
                     .format
-                    .decode_rows(&here[..used], n, stop)
+                    .decode_rows(&here[..used], n, pulse)
                     .map_err(bitmap)?;
                 let y = self.next_row;
                 self.emit_internal(sink, y, &rows)?;
@@ -350,11 +357,11 @@ impl<F: StripFormat> StripDecoder<F> {
                     return Err(codec(BitmapError::UnexpectedEof));
                 }
                 if input.offset != off || input.bytes.len() < len {
-                    return self.need(Request::range(off, len as u64));
+                    return self.need(InputRequest::range(off, len as u64));
                 }
                 let (rows, _) = self
                     .format
-                    .decode_rows(&input.bytes[..len], n, stop)
+                    .decode_rows(&input.bytes[..len], n, pulse)
                     .map_err(bitmap)?;
                 let y = self.next_row;
                 self.emit_internal(sink, y, &rows)?;
@@ -385,9 +392,9 @@ impl<F: StripFormat> StripDecoder<F> {
                 };
                 let n = guaranteed.min(self.rows_per_strip);
                 if n == 0 {
-                    return self.need(Request::at_least(off, worst_row_bytes));
+                    return self.need(InputRequest::at_least(off, worst_row_bytes));
                 }
-                let (rows, used) = self.format.decode_rows(here, n, stop).map_err(bitmap)?;
+                let (rows, used) = self.format.decode_rows(here, n, pulse).map_err(bitmap)?;
                 self.check_input_limit(Some(off + used as u64))?;
                 let y = self.next_row;
                 self.emit_internal(sink, y, &rows)?;
@@ -417,9 +424,12 @@ impl<F: StripFormat> StripDecoder<F> {
                             held.saturating_mul(2).max(held + 64 * 1024)
                         }
                     };
-                    return self.need(Request::at_least(0, want));
+                    return self.need(InputRequest::at_least(0, want));
                 }
-                let out = self.format.decode_whole(input.bytes, stop).map_err(codec)?;
+                let out = self
+                    .format
+                    .decode_whole(input.bytes, pulse)
+                    .map_err(codec)?;
                 let buf = out.into_buffer();
                 let s = buf.as_slice();
                 let (w, h, desc) = (s.width(), s.rows(), s.descriptor());
@@ -449,7 +459,7 @@ impl<F: StripFormat> IncrementalDecode for StripDecoder<F> {
         &mut self,
         input: Input<'_>,
         sink: &mut dyn DecodeRowSink,
-        stop: &dyn Stop,
+        pulse: &dyn zencodec::Pulse,
     ) -> StepResult {
         if let Some(done) = &self.done {
             return Ok(Progress::new(0, Event::Done(done.clone())));
@@ -457,12 +467,12 @@ impl<F: StripFormat> IncrementalDecode for StripDecoder<F> {
         if self.failed {
             return Err(StepError::Finished);
         }
-        let r = self.step_inner(input, sink, stop);
+        let r = self.step_inner(input, sink, pulse);
         self.failed = r.is_err();
         r
     }
 
-    fn requested(&self) -> &[Request] {
+    fn requested(&self) -> &[InputRequest] {
         &self.need
     }
 

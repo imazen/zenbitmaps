@@ -669,6 +669,80 @@ fn bottom_up_formats_report_at_finish() {
     assert!(bmp.pending_output().is_empty());
 }
 
+/// BMP rows accumulate and `finish` runs the one-shot encode on them: the
+/// same bytes for strided strips, including the dead-alpha narrowing the
+/// one-shot path applies. A declaration the rows then contradict refuses.
+#[cfg(feature = "bmp")]
+#[test]
+fn bmp_rows_match_one_shot_and_hold_to_the_declaration() {
+    let (w, h) = (13u32, 7u32);
+    let row = w as usize * 4;
+    // Two pixels of padding: PixelSlice strides are pixel-aligned.
+    let stride = row + 8;
+    let mut opaque = noise(stride * h as usize, 21);
+    for y in 0..h as usize {
+        for x in 0..w as usize {
+            opaque[y * stride + x * 4 + 3] = 255;
+        }
+    }
+    for (what, data) in [
+        ("noise", noise(stride * h as usize, 22)),
+        ("opaque", opaque),
+    ] {
+        let desc = PixelDescriptor::RGBA8_SRGB;
+        let all = PixelSlice::new(&data, w, h, stride, desc).unwrap();
+        let cfg = zenbitmaps::BmpEncoderConfig::new();
+        let one = cfg.clone().job().encoder().unwrap().encode(all).unwrap();
+        for declare in [false, true] {
+            for strip in [1u32, 3, 7] {
+                let mut enc = cfg.clone().job().encoder().unwrap();
+                if declare {
+                    assert_eq!(enc.begin(w, h, desc).unwrap(), OutputTiming::AT_FINISH);
+                }
+                let mut y = 0;
+                while y < h {
+                    let n = strip.min(h - y);
+                    let rows =
+                        PixelSlice::new(&data[y as usize * stride..], w, n, stride, desc).unwrap();
+                    enc.push_rows(rows).unwrap();
+                    assert!(enc.pending_output().is_empty());
+                    y += n;
+                }
+                let out = enc.finish().unwrap();
+                assert_eq!(
+                    out.data(),
+                    one.data(),
+                    "{what} declare={declare} strip={strip}"
+                );
+            }
+        }
+    }
+
+    let data = noise(row * h as usize, 23);
+    let desc = PixelDescriptor::RGBA8_SRGB;
+    let rows = |n: u32| PixelSlice::new(&data, w, n, row, desc).unwrap();
+    let encoder = || zenbitmaps::BmpEncoderConfig::new().job().encoder().unwrap();
+    let mut twice = encoder();
+    twice.begin(w, h, desc).unwrap();
+    assert!(twice.begin(w, h, desc).is_err(), "begin twice");
+    let mut late = encoder();
+    late.push_rows(rows(1)).unwrap();
+    assert!(late.begin(w, h, desc).is_err(), "begin after rows");
+    let mut wide = encoder();
+    wide.begin(w + 1, h, desc).unwrap();
+    assert!(wide.push_rows(rows(1)).is_err(), "width differs from begin");
+    let mut long = encoder();
+    long.begin(w, 2, desc).unwrap();
+    assert!(long.push_rows(rows(3)).is_err(), "more rows than declared");
+    let mut short = encoder();
+    short.begin(w, h, desc).unwrap();
+    short.push_rows(rows(2)).unwrap();
+    assert!(short.finish().is_err(), "fewer rows than declared");
+    let gray = PixelDescriptor::GRAY8_SRGB;
+    assert!(encoder().begin(w, h, gray).is_err(), "BMP stores no gray");
+    assert!(encoder().finish().is_err(), "finish without rows");
+}
+
 /// `max_output_bytes` bounds the whole file on every path, streamed bytes
 /// already handed out included, and the usage paths stay exclusive.
 #[test]

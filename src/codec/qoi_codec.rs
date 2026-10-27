@@ -100,7 +100,7 @@ impl zencodec::encode::EncoderConfig for QoiEncoderConfig {
         QoiEncodeJob {
             config: self,
             limits: None,
-            stop: None,
+            pulse: zencodec::SharedPulse::default(),
         }
     }
 }
@@ -111,7 +111,7 @@ impl zencodec::encode::EncoderConfig for QoiEncoderConfig {
 pub struct QoiEncodeJob {
     config: QoiEncoderConfig,
     limits: Option<ResourceLimits>,
-    stop: Option<zencodec::StopToken>,
+    pulse: zencodec::SharedPulse,
 }
 
 impl zencodec::encode::EncodeJob for QoiEncodeJob {
@@ -119,8 +119,8 @@ impl zencodec::encode::EncodeJob for QoiEncodeJob {
     type Enc = QoiEncoder;
     type AnimationFrameEnc = ();
 
-    fn with_stop(mut self, stop: zencodec::StopToken) -> Self {
-        self.stop = Some(stop);
+    fn with_pulse(mut self, pulse: zencodec::SharedPulse) -> Self {
+        self.pulse = pulse;
         self
     }
 
@@ -137,7 +137,7 @@ impl zencodec::encode::EncodeJob for QoiEncodeJob {
         Ok(QoiEncoder {
             config: self.config,
             limits: self.limits,
-            stop: self.stop,
+            pulse: self.pulse,
             stream: None,
             sent: 0,
             begun: false,
@@ -184,7 +184,7 @@ struct QoiStreamState {
 pub struct QoiEncoder {
     config: QoiEncoderConfig,
     limits: Option<ResourceLimits>,
-    stop: Option<zencodec::StopToken>,
+    pulse: zencodec::SharedPulse,
     stream: Option<QoiStreamState>,
     /// Bytes handed out through `consume_output` (whole-file output limit).
     sent: u64,
@@ -446,7 +446,7 @@ impl zencodec::decode::DecoderConfig for QoiDecoderConfig {
         QoiDecodeJob {
             config: self,
             limits: None,
-            stop: None,
+            pulse: zencodec::SharedPulse::default(),
             max_input_bytes: None,
             alloc_pref: AllocPref::CodecDefault,
             policy: None,
@@ -460,7 +460,7 @@ impl zencodec::decode::DecoderConfig for QoiDecoderConfig {
 pub struct QoiDecodeJob {
     config: QoiDecoderConfig,
     limits: Option<Limits>,
-    stop: Option<zencodec::StopToken>,
+    pulse: zencodec::SharedPulse,
     max_input_bytes: Option<u64>,
     /// Allocation-fallibility preference from
     /// [`ResourceLimits::prefer_fallible_allocations`].
@@ -474,8 +474,8 @@ impl<'a> zencodec::decode::DecodeJob<'a> for QoiDecodeJob {
     type StreamDec = QoiStreamingDecoder<'a>;
     type AnimationFrameDec = zencodec::Unsupported<At<zencodec::CodecError>>;
 
-    fn with_stop(mut self, stop: zencodec::StopToken) -> Self {
-        self.stop = Some(stop);
+    fn with_pulse(mut self, pulse: zencodec::SharedPulse) -> Self {
+        self.pulse = pulse;
         self
     }
 
@@ -527,7 +527,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for QoiDecodeJob {
         };
         super::job_inventory(
             data,
-            self.stop.as_ref(),
+            &self.pulse,
             self.max_input_bytes,
             limits,
             output,
@@ -553,7 +553,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for QoiDecodeJob {
             config: self.config,
             limits: self.limits,
             data,
-            stop: self.stop,
+            pulse: self.pulse,
             alloc_pref: self.alloc_pref,
         })
     }
@@ -614,7 +614,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for QoiDecodeJob {
             .with_source_encoding_details(BitmapSourceEncoding);
 
         QoiStreamingDecoder::create(
-            data, info, descriptor, width, height, has_alpha, row_bytes, self.stop,
+            data, info, descriptor, width, height, has_alpha, row_bytes, self.pulse,
         )
     }
 
@@ -660,8 +660,11 @@ impl QoiDecodeJob {
             next_row: 0,
             done: None,
             failed: false,
-            need: [zencodec::decode::Request::at_least(0, QOI_HEADER_BYTES)],
-            stop: self.stop,
+            need: [zencodec::decode::InputRequest::at_least(
+                0,
+                QOI_HEADER_BYTES,
+            )],
+            pulse: self.pulse,
             limits,
             max_input_bytes: self.max_input_bytes,
         })
@@ -703,9 +706,9 @@ pub struct QoiIncrementalDecoder {
     next_row: u32,
     done: Option<zencodec::decode::OutputInfo>,
     failed: bool,
-    need: [zencodec::decode::Request; 1],
+    need: [zencodec::decode::InputRequest; 1],
 
-    stop: Option<zencodec::StopToken>,
+    pulse: zencodec::SharedPulse,
     limits: Option<Limits>,
     max_input_bytes: Option<u64>,
 }
@@ -723,7 +726,7 @@ impl QoiIncrementalDecoder {
 
     /// Ask for `min_len` bytes from the current position.
     fn need(&mut self, min_len: usize) -> zencodec::decode::Progress {
-        self.need = [zencodec::decode::Request::at_least(self.pos, min_len)];
+        self.need = [zencodec::decode::InputRequest::at_least(self.pos, min_len)];
         zencodec::decode::Progress::need(0)
     }
 
@@ -791,14 +794,12 @@ impl QoiIncrementalDecoder {
         &mut self,
         input: zencodec::decode::Input<'_>,
         sink: &mut dyn zencodec::decode::DecodeRowSink,
-        stop: &dyn Stop,
+        pulse: &dyn zencodec::Pulse,
     ) -> Result<zencodec::decode::Progress, QoiStepError> {
         use zencodec::decode::{BatchMeta, Event, MetadataUpdate, Progress};
 
-        stop.check()?;
-        if let Some(s) = &self.stop {
-            s.check()?;
-        }
+        pulse.check()?;
+        self.pulse.check()?;
         // Only input that starts where decoding stands is usable.
         let here: &[u8] = if input.offset == self.pos {
             input.bytes
@@ -888,7 +889,7 @@ impl zencodec::decode::IncrementalDecode for QoiIncrementalDecoder {
         &mut self,
         input: zencodec::decode::Input<'_>,
         sink: &mut dyn zencodec::decode::DecodeRowSink,
-        stop: &dyn Stop,
+        pulse: &dyn zencodec::Pulse,
     ) -> Result<zencodec::decode::Progress, QoiStepError> {
         if let Some(done) = &self.done {
             return Ok(zencodec::decode::Progress::new(
@@ -899,12 +900,12 @@ impl zencodec::decode::IncrementalDecode for QoiIncrementalDecoder {
         if self.failed {
             return Err(zencodec::decode::StepError::Finished);
         }
-        let r = self.step_inner(input, sink, stop);
+        let r = self.step_inner(input, sink, pulse);
         self.failed = r.is_err();
         r
     }
 
-    fn requested(&self) -> &[zencodec::decode::Request] {
+    fn requested(&self) -> &[zencodec::decode::InputRequest] {
         &self.need
     }
 
@@ -928,7 +929,7 @@ pub struct QoiDecoder<'a> {
     config: QoiDecoderConfig,
     limits: Option<Limits>,
     data: Cow<'a, [u8]>,
-    stop: Option<zencodec::StopToken>,
+    pulse: zencodec::SharedPulse,
     alloc_pref: AllocPref,
 }
 
@@ -943,10 +944,7 @@ impl zencodec::decode::Decode for QoiDecoder<'_> {
 
     fn decode(self) -> Result<DecodeOutput, Self::Error> {
         let limits = self.effective_limits();
-        let stop: &dyn Stop = match &self.stop {
-            Some(s) => s,
-            None => &enough::Unstoppable,
-        };
+        let stop: &dyn Stop = &self.pulse;
         let decoded = crate::qoi::decode_with_alloc_pref(&self.data, limits, self.alloc_pref, stop)
             .map_err(zencodec::CodecError::of)?;
         decode_output_from_internal(&decoded, ImageFormat::Qoi).map_err(zencodec::CodecError::of)
@@ -973,7 +971,7 @@ pub struct QoiStreamingDecoder<'a> {
     // carried across rows — see `crate::qoi::decode::QoiDecodeState`).
     state_rgb: crate::qoi::decode::QoiDecodeState<3>,
     state_rgba: crate::qoi::decode::QoiDecodeState<4>,
-    stop: Option<zencodec::StopToken>,
+    pulse: zencodec::SharedPulse,
 }
 
 impl<'a> QoiStreamingDecoder<'a> {
@@ -986,7 +984,7 @@ impl<'a> QoiStreamingDecoder<'a> {
         height: u32,
         has_alpha: bool,
         row_bytes: usize,
-        stop: Option<zencodec::StopToken>,
+        pulse: zencodec::SharedPulse,
     ) -> Result<Self, At<zencodec::CodecError>> {
         Ok(Self {
             data,
@@ -1000,7 +998,7 @@ impl<'a> QoiStreamingDecoder<'a> {
             byte_offset: 14, // skip QOI header
             state_rgb: crate::qoi::decode::QoiDecodeState::<3>::new(),
             state_rgba: crate::qoi::decode::QoiDecodeState::<4>::new(),
-            stop,
+            pulse,
         })
     }
 }
@@ -1013,10 +1011,9 @@ impl zencodec::decode::StreamingDecode for QoiStreamingDecoder<'_> {
             return Ok(None);
         }
 
-        if let Some(ref stop) = self.stop {
-            stop.check()
-                .map_err(|r| At::<zencodec::CodecError>::from(BitmapError::from(r)))?;
-        }
+        self.pulse
+            .check()
+            .map_err(|r| At::<zencodec::CodecError>::from(BitmapError::from(r)))?;
 
         let encoded = self
             .data
@@ -1083,10 +1080,9 @@ impl QoiEncoder {
                 return Err(Self::reject(zencodec::UnsupportedOperation::PixelFormat));
             }
         };
-        if let Some(s) = &self.stop {
-            s.check()
-                .map_err(|r| At::<zencodec::CodecError>::from(BitmapError::from(r)))?;
-        }
+        self.pulse
+            .check()
+            .map_err(|r| At::<zencodec::CodecError>::from(BitmapError::from(r)))?;
         if self.stream.is_none() {
             self.start_stream(rows.width(), desc, None)?;
         }
@@ -1209,10 +1205,7 @@ impl QoiEncoder {
             Some(buf) => buf.as_slice(),
             None => pixels,
         };
-        let stop: &dyn Stop = match &self.stop {
-            Some(s) => s,
-            None => &enough::Unstoppable,
-        };
+        let stop: &dyn Stop = &self.pulse;
         let desc = pixels.descriptor();
         let w = pixels.width();
         let h = pixels.rows();

@@ -121,7 +121,7 @@ impl zencodec::encode::EncoderConfig for PnmEncoderConfig {
         PnmEncodeJob {
             config: self,
             limits: None,
-            stop: None,
+            pulse: zencodec::SharedPulse::default(),
         }
     }
 }
@@ -132,7 +132,7 @@ impl zencodec::encode::EncoderConfig for PnmEncoderConfig {
 pub struct PnmEncodeJob {
     config: PnmEncoderConfig,
     limits: Option<ResourceLimits>,
-    stop: Option<zencodec::StopToken>,
+    pulse: zencodec::SharedPulse,
 }
 
 impl zencodec::encode::EncodeJob for PnmEncodeJob {
@@ -140,8 +140,8 @@ impl zencodec::encode::EncodeJob for PnmEncodeJob {
     type Enc = PnmEncoder;
     type AnimationFrameEnc = ();
 
-    fn with_stop(mut self, stop: zencodec::StopToken) -> Self {
-        self.stop = Some(stop);
+    fn with_pulse(mut self, pulse: zencodec::SharedPulse) -> Self {
+        self.pulse = pulse;
         self
     }
 
@@ -158,7 +158,7 @@ impl zencodec::encode::EncodeJob for PnmEncodeJob {
         Ok(PnmEncoder {
             config: self.config,
             limits: self.limits,
-            stop: self.stop,
+            pulse: self.pulse,
             stream: None,
             sent: 0,
             begun: false,
@@ -176,7 +176,7 @@ impl zencodec::encode::EncodeJob for PnmEncodeJob {
 pub struct PnmEncoder {
     config: PnmEncoderConfig,
     limits: Option<ResourceLimits>,
-    stop: Option<zencodec::StopToken>,
+    pulse: zencodec::SharedPulse,
     stream: Option<PnmStream>,
     /// Bytes handed out through `consume_output` (whole-file output limit).
     sent: u64,
@@ -218,10 +218,7 @@ impl PnmEncoder {
 
 impl PnmEncoder {
     fn stop(&self) -> &dyn Stop {
-        match &self.stop {
-            Some(s) => s,
-            None => &enough::Unstoppable,
-        }
+        &self.pulse
     }
 
     fn start_stream(
@@ -386,7 +383,7 @@ impl zencodec::decode::DecoderConfig for PnmDecoderConfig {
         PnmDecodeJob {
             config: self,
             limits: None,
-            stop: None,
+            pulse: zencodec::SharedPulse::default(),
             max_input_bytes: None,
             alloc_pref: AllocPref::CodecDefault,
             policy: None,
@@ -400,7 +397,7 @@ impl zencodec::decode::DecoderConfig for PnmDecoderConfig {
 pub struct PnmDecodeJob {
     config: PnmDecoderConfig,
     limits: Option<Limits>,
-    stop: Option<zencodec::StopToken>,
+    pulse: zencodec::SharedPulse,
     max_input_bytes: Option<u64>,
     /// Allocation-fallibility preference, taken from
     /// [`ResourceLimits::prefer_fallible_allocations`] at the decode boundary
@@ -415,8 +412,8 @@ impl<'a> zencodec::decode::DecodeJob<'a> for PnmDecodeJob {
     type StreamDec = zencodec::Unsupported<At<zencodec::CodecError>>;
     type AnimationFrameDec = zencodec::Unsupported<At<zencodec::CodecError>>;
 
-    fn with_stop(mut self, stop: zencodec::StopToken) -> Self {
-        self.stop = Some(stop);
+    fn with_pulse(mut self, pulse: zencodec::SharedPulse) -> Self {
+        self.pulse = pulse;
         self
     }
 
@@ -473,7 +470,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for PnmDecodeJob {
         };
         super::job_inventory(
             data,
-            self.stop.as_ref(),
+            &self.pulse,
             self.max_input_bytes,
             limits,
             output,
@@ -499,7 +496,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for PnmDecodeJob {
             config: self.config,
             limits: self.limits,
             data,
-            stop: self.stop,
+            pulse: self.pulse,
             alloc_pref: self.alloc_pref,
         })
     }
@@ -539,8 +536,8 @@ impl<'a> zencodec::decode::DecodeJob<'a> for PnmDecodeJob {
         zencodec::decode::BoxedError,
     > {
         let limits = self.limits.clone().or_else(|| self.config.limits.clone());
-        let (stop, max_input_bytes, alloc_pref) =
-            (self.stop.clone(), self.max_input_bytes, self.alloc_pref);
+        let (pulse, max_input_bytes, alloc_pref) =
+            (self.pulse.clone(), self.max_input_bytes, self.alloc_pref);
         Ok(zencodec::decode::erase_incremental(
             super::strips::StripDecoder::new(
                 PnmStrips {
@@ -549,7 +546,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for PnmDecodeJob {
                     header: None,
                     job: Some(self),
                 },
-                stop,
+                pulse,
                 max_input_bytes,
             ),
         ))
@@ -735,7 +732,7 @@ pub struct PnmDecoder<'a> {
     config: PnmDecoderConfig,
     limits: Option<Limits>,
     data: Cow<'a, [u8]>,
-    stop: Option<zencodec::StopToken>,
+    pulse: zencodec::SharedPulse,
     alloc_pref: AllocPref,
 }
 
@@ -750,10 +747,7 @@ impl zencodec::decode::Decode for PnmDecoder<'_> {
 
     fn decode(self) -> Result<DecodeOutput, Self::Error> {
         let limits = self.effective_limits();
-        let stop: &dyn Stop = match &self.stop {
-            Some(s) => s,
-            None => &enough::Unstoppable,
-        };
+        let stop: &dyn Stop = &self.pulse;
         let decoded = crate::pnm::decode_with_alloc_pref(&self.data, limits, self.alloc_pref, stop)
             .map_err(zencodec::CodecError::of)?;
         decode_output_from_internal(&decoded, ImageFormat::Pnm).map_err(zencodec::CodecError::of)
@@ -783,10 +777,7 @@ impl PnmEncoder {
         if self.stream.is_none() {
             self.start_stream(rows.width(), None, rows.descriptor())?;
         }
-        let stop: &dyn Stop = match &self.stop {
-            Some(s) => s,
-            None => &enough::Unstoppable,
-        };
+        let stop: &dyn Stop = &self.pulse;
         match self.stream.as_mut().expect("started above") {
             PnmStream::Rows(s) => s.push(rows, stop),
             PnmStream::Buffered {
@@ -820,10 +811,7 @@ impl PnmEncoder {
     }
 
     fn finish_inner(mut self) -> Result<EncodeOutput, At<zencodec::CodecError>> {
-        let stop: &dyn Stop = match &self.stop {
-            Some(s) => s,
-            None => &enough::Unstoppable,
-        };
+        let stop: &dyn Stop = &self.pulse;
         match self.stream.take() {
             None => Err(BitmapError::InvalidData("finish() without push_rows()".into()).into()),
             Some(PnmStream::Rows(s)) => Ok(EncodeOutput::new(s.finish(stop)?, ImageFormat::Pnm)),
@@ -863,10 +851,7 @@ impl PnmEncoder {
             Some(buf) => buf.as_slice(),
             None => pixels,
         };
-        let stop: &dyn Stop = match &self.stop {
-            Some(s) => s,
-            None => &enough::Unstoppable,
-        };
+        let stop: &dyn Stop = &self.pulse;
         let desc = pixels.descriptor();
         let w = pixels.width();
         let h = pixels.rows();
