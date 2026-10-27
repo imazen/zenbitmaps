@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### QUEUED BREAKING CHANGES
+
+- The zencodec trait implementations follow zencodec's Pulse operation-control
+  contract (ideal-api `f73a7e0e`): every encode/decode job implements
+  `with_pulse` and retains the caller's `SharedPulse`, incremental `step` takes
+  `&dyn Pulse`, and byte requests are `InputRequest` (`8cce050d`). Pulses are
+  checked for cancellation only; no zenbitmaps stage reports progress.
+
 ### Dependency compatibility
 
 - Admit archmage/magetypes 0.9.31-beta.1 in the current-main tool graph while retaining compatible stable requirements (`758045b7`). Strict library lint and all 24 library tests pass.
@@ -20,6 +28,13 @@ All notable changes to this project will be documented in this file.
   unmeasured.
 
 ### Fixed
+
+- Under zencodec's refusing default `Encoder::begin`, TGA's row path refused
+  `begin`; TGA now checks the declaration and reports `AT_FINISH`. BMP gains a row
+  path whose `finish` runs the one-shot encode on the pushed rows (byte-identical,
+  declaration enforced). A pulse that stops inside native strip decoding is
+  `StepError::Cancelled` with its reason, as at the step boundary, instead of a
+  codec error (`8cce050d`; `tests/pulse_controls.rs`, `tests/sansio_bitmaps.rs`).
 
 - BMP BI_BITFIELDS masks wider than 8 bits (10:10:10:2, 11:11:10) were narrowed
   to 8 bits per channel, dropping 2–3 low bits of every sample. They now decode to
