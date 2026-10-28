@@ -99,7 +99,7 @@ impl zencodec::encode::EncoderConfig for TgaEncoderConfig {
         TgaEncodeJob {
             config: self,
             limits: None,
-            stop: None,
+            pulse: zencodec::SharedPulse::default(),
         }
     }
 }
@@ -110,7 +110,7 @@ impl zencodec::encode::EncoderConfig for TgaEncoderConfig {
 pub struct TgaEncodeJob {
     config: TgaEncoderConfig,
     limits: Option<ResourceLimits>,
-    stop: Option<zencodec::StopToken>,
+    pulse: zencodec::SharedPulse,
 }
 
 impl zencodec::encode::EncodeJob for TgaEncodeJob {
@@ -118,8 +118,8 @@ impl zencodec::encode::EncodeJob for TgaEncodeJob {
     type Enc = TgaEncoder;
     type AnimationFrameEnc = ();
 
-    fn with_stop(mut self, stop: zencodec::StopToken) -> Self {
-        self.stop = Some(stop);
+    fn with_pulse(mut self, pulse: zencodec::SharedPulse) -> Self {
+        self.pulse = pulse;
         self
     }
 
@@ -136,8 +136,9 @@ impl zencodec::encode::EncodeJob for TgaEncodeJob {
         Ok(TgaEncoder {
             config: self.config,
             limits: self.limits,
-            stop: self.stop,
+            pulse: self.pulse,
             accumulator: None,
+            begun: false,
         })
     }
 
@@ -159,8 +160,10 @@ struct TgaEncodeAccumulator {
 pub struct TgaEncoder {
     config: TgaEncoderConfig,
     limits: Option<ResourceLimits>,
-    stop: Option<zencodec::StopToken>,
+    pulse: zencodec::SharedPulse,
     accumulator: Option<TgaEncodeAccumulator>,
+    /// `begin` succeeded.
+    begun: bool,
 }
 
 impl TgaEncoder {
@@ -206,6 +209,30 @@ impl zencodec::encode::Encoder for TgaEncoder {
         1
     }
 
+    /// Rows accumulate and the file is written at `finish`, as without
+    /// `begin`; this checks the declaration against the format and limits.
+    fn begin(
+        &mut self,
+        width: u32,
+        height: u32,
+        descriptor: PixelDescriptor,
+    ) -> Result<zencodec::encode::OutputTiming, Self::Error> {
+        if self.begun {
+            return Err(BitmapError::InvalidData("begin called twice".into()).into());
+        }
+        if self.accumulator.is_some() {
+            return Err(BitmapError::InvalidData("begin after rows were pushed".into()).into());
+        }
+        pixel_slice_to_tga_layout(descriptor)?;
+        if let Some(limits) = self.effective_limits() {
+            limits
+                .check(width, height)
+                .map_err(zencodec::CodecError::of)?;
+        }
+        self.begun = true;
+        Ok(zencodec::encode::OutputTiming::AT_FINISH)
+    }
+
     fn encode(self, pixels: PixelSlice<'_>) -> Result<EncodeOutput, Self::Error> {
         // Bit-exact load-bearing narrowing (dead alpha / chroma-free /
         // replicated-low-bits) before format mapping — see
@@ -216,10 +243,7 @@ impl zencodec::encode::Encoder for TgaEncoder {
             Some(buf) => buf.as_slice(),
             None => pixels,
         };
-        let stop: &dyn Stop = match &self.stop {
-            Some(s) => s,
-            None => &enough::Unstoppable,
-        };
+        let stop: &dyn Stop = &self.pulse;
         let w = pixels.width();
         let h = pixels.rows();
 
@@ -266,10 +290,7 @@ impl zencodec::encode::Encoder for TgaEncoder {
             ))
         })?;
 
-        let stop: &dyn Stop = match &self.stop {
-            Some(s) => s,
-            None => &enough::Unstoppable,
-        };
+        let stop: &dyn Stop = &self.pulse;
 
         let encoded = crate::tga::encode(&acc.data, acc.width, acc.total_rows, acc.layout, stop)
             .map_err(zencodec::CodecError::of)?;
@@ -327,7 +348,7 @@ impl zencodec::decode::DecoderConfig for TgaDecoderConfig {
         TgaDecodeJob {
             config: self,
             limits: None,
-            stop: None,
+            pulse: zencodec::SharedPulse::default(),
             max_input_bytes: None,
             alloc_pref: AllocPref::CodecDefault,
             policy: None,
@@ -341,7 +362,7 @@ impl zencodec::decode::DecoderConfig for TgaDecoderConfig {
 pub struct TgaDecodeJob {
     config: TgaDecoderConfig,
     limits: Option<Limits>,
-    stop: Option<zencodec::StopToken>,
+    pulse: zencodec::SharedPulse,
     max_input_bytes: Option<u64>,
     /// Allocation-fallibility preference from
     /// [`ResourceLimits::prefer_fallible_allocations`].
@@ -355,8 +376,8 @@ impl<'a> zencodec::decode::DecodeJob<'a> for TgaDecodeJob {
     type StreamDec = TgaStreamingDecoder;
     type AnimationFrameDec = zencodec::Unsupported<At<zencodec::CodecError>>;
 
-    fn with_stop(mut self, stop: zencodec::StopToken) -> Self {
-        self.stop = Some(stop);
+    fn with_pulse(mut self, pulse: zencodec::SharedPulse) -> Self {
+        self.pulse = pulse;
         self
     }
 
@@ -432,7 +453,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for TgaDecodeJob {
         };
         super::job_inventory(
             data,
-            self.stop.as_ref(),
+            &self.pulse,
             self.max_input_bytes,
             limits,
             output,
@@ -458,7 +479,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for TgaDecodeJob {
             config: self.config,
             limits: self.limits,
             data,
-            stop: self.stop,
+            pulse: self.pulse,
             alloc_pref: self.alloc_pref,
         })
     }
@@ -493,10 +514,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for TgaDecodeJob {
         let alloc_pref = self.alloc_pref;
 
         // Buffer-and-yield: decode full image, yield rows from next_batch()
-        let stop: &dyn Stop = match &self.stop {
-            Some(s) => s,
-            None => &enough::Unstoppable,
-        };
+        let stop: &dyn Stop = &self.pulse;
         let decoded = crate::tga::decode_with_alloc_pref(&data, limits.as_ref(), alloc_pref, stop)
             .map_err(zencodec::CodecError::of)?;
 
@@ -546,11 +564,11 @@ impl<'a> zencodec::decode::DecodeJob<'a> for TgaDecodeJob {
         // Rows are not decodable before the whole file is here (bottom-up
         // and RLE bodies): report the header early, decode at the end with
         // this job's own one-shot path.
-        let (stop, max_input_bytes) = (self.stop.clone(), self.max_input_bytes);
+        let (pulse, max_input_bytes) = (self.pulse.clone(), self.max_input_bytes);
         Ok(zencodec::decode::erase_incremental(
             super::strips::StripDecoder::new(
                 super::strips::WholeFile::new(self, ImageFormat::Tga),
-                stop,
+                pulse,
                 max_input_bytes,
             ),
         ))
@@ -564,7 +582,7 @@ pub struct TgaDecoder<'a> {
     config: TgaDecoderConfig,
     limits: Option<Limits>,
     data: Cow<'a, [u8]>,
-    stop: Option<zencodec::StopToken>,
+    pulse: zencodec::SharedPulse,
     alloc_pref: AllocPref,
 }
 
@@ -579,10 +597,7 @@ impl zencodec::decode::Decode for TgaDecoder<'_> {
 
     fn decode(self) -> Result<DecodeOutput, Self::Error> {
         let limits = self.effective_limits();
-        let stop: &dyn Stop = match &self.stop {
-            Some(s) => s,
-            None => &enough::Unstoppable,
-        };
+        let stop: &dyn Stop = &self.pulse;
         let decoded = crate::tga::decode_with_alloc_pref(&self.data, limits, self.alloc_pref, stop)
             .map_err(zencodec::CodecError::of)?;
         decode_output_from_internal(&decoded, ImageFormat::Tga).map_err(zencodec::CodecError::of)

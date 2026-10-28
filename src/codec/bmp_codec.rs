@@ -99,7 +99,7 @@ impl zencodec::encode::EncoderConfig for BmpEncoderConfig {
         BmpEncodeJob {
             config: self,
             limits: None,
-            stop: None,
+            pulse: zencodec::SharedPulse::default(),
         }
     }
 }
@@ -110,7 +110,7 @@ impl zencodec::encode::EncoderConfig for BmpEncoderConfig {
 pub struct BmpEncodeJob {
     config: BmpEncoderConfig,
     limits: Option<ResourceLimits>,
-    stop: Option<zencodec::StopToken>,
+    pulse: zencodec::SharedPulse,
 }
 
 impl zencodec::encode::EncodeJob for BmpEncodeJob {
@@ -118,8 +118,8 @@ impl zencodec::encode::EncodeJob for BmpEncodeJob {
     type Enc = BmpEncoder;
     type AnimationFrameEnc = ();
 
-    fn with_stop(mut self, stop: zencodec::StopToken) -> Self {
-        self.stop = Some(stop);
+    fn with_pulse(mut self, pulse: zencodec::SharedPulse) -> Self {
+        self.pulse = pulse;
         self
     }
 
@@ -136,7 +136,9 @@ impl zencodec::encode::EncodeJob for BmpEncodeJob {
         Ok(BmpEncoder {
             config: self.config,
             limits: self.limits,
-            stop: self.stop,
+            pulse: self.pulse,
+            declared: None,
+            rows: None,
         })
     }
 
@@ -151,7 +153,19 @@ impl zencodec::encode::EncodeJob for BmpEncodeJob {
 pub struct BmpEncoder {
     config: BmpEncoderConfig,
     limits: Option<ResourceLimits>,
-    stop: Option<zencodec::StopToken>,
+    pulse: zencodec::SharedPulse,
+    /// The image `begin` declared: width, height, descriptor.
+    declared: Option<(u32, u32, PixelDescriptor)>,
+    /// Rows pushed so far. BMP stores rows bottom-up, so `finish` encodes
+    /// them with the one-shot path: the same narrowing and the same bytes.
+    rows: Option<BmpRows>,
+}
+
+struct BmpRows {
+    data: Vec<u8>,
+    width: u32,
+    height: u32,
+    descriptor: PixelDescriptor,
 }
 
 impl BmpEncoder {
@@ -179,6 +193,124 @@ impl zencodec::encode::Encoder for BmpEncoder {
     }
 
     fn encode(self, pixels: PixelSlice<'_>) -> Result<EncodeOutput, Self::Error> {
+        self.encode_slice(pixels)
+    }
+
+    /// Rows accumulate and the file is written at `finish`. Only descriptors
+    /// BMP stores directly (8-bit RGB, RGBA, BGRA) are declared; others may
+    /// still narrow into them, but only once the whole image is known.
+    fn begin(
+        &mut self,
+        width: u32,
+        height: u32,
+        descriptor: PixelDescriptor,
+    ) -> Result<zencodec::encode::OutputTiming, Self::Error> {
+        if self.declared.is_some() {
+            return Err(BitmapError::InvalidData("begin called twice".into()).into());
+        }
+        if self.rows.is_some() {
+            return Err(BitmapError::InvalidData("begin after rows were pushed".into()).into());
+        }
+        if bmp_layout(descriptor).is_none() {
+            return Err(Self::reject(zencodec::UnsupportedOperation::PixelFormat));
+        }
+        if let Some(limits) = self.effective_limits() {
+            limits
+                .check(width, height)
+                .map_err(zencodec::CodecError::of)?;
+        }
+        self.declared = Some((width, height, descriptor));
+        Ok(zencodec::encode::OutputTiming::AT_FINISH)
+    }
+
+    fn push_rows(&mut self, rows: PixelSlice<'_>) -> Result<(), Self::Error> {
+        self.pulse
+            .check()
+            .map_err(|r| At::<zencodec::CodecError>::from(BitmapError::from(r)))?;
+        let (width, descriptor) = (rows.width(), rows.descriptor());
+        let declared = self.declared;
+        if declared.is_some_and(|(w, _, d)| (w, d) != (width, descriptor)) {
+            return Err(
+                BitmapError::InvalidData("push_rows: rows differ from begin".into()).into(),
+            );
+        }
+        let acc = self.rows.get_or_insert_with(|| BmpRows {
+            data: Vec::new(),
+            width,
+            height: 0,
+            descriptor,
+        });
+        if (acc.width, acc.descriptor) != (width, descriptor) {
+            return Err(BitmapError::InvalidData(
+                "push_rows: width or pixel format changed".into(),
+            )
+            .into());
+        }
+        let height = acc.height.checked_add(rows.rows()).ok_or_else(|| {
+            At::<zencodec::CodecError>::from(BitmapError::InvalidData("too many rows".into()))
+        })?;
+        if declared.is_some_and(|(_, h, _)| height > h) {
+            return Err(BitmapError::InvalidData(
+                "push_rows: more rows than begin declared".into(),
+            )
+            .into());
+        }
+        let limits = self.effective_limits();
+        if let Some(limits) = &limits {
+            limits
+                .check(width, height)
+                .map_err(zencodec::CodecError::of)?;
+        }
+        let row_bytes = width as usize * descriptor.bytes_per_pixel();
+        let acc = self.rows.as_mut().expect("rows were just initialized");
+        acc.data
+            .try_reserve(row_bytes * rows.rows() as usize)
+            .map_err(|_| {
+                At::<zencodec::CodecError>::from(BitmapError::OutOfMemory("BMP rows".into()))
+            })?;
+        for y in 0..rows.rows() {
+            acc.data.extend_from_slice(&rows.row(y)[..row_bytes]);
+        }
+        acc.height = height;
+        Ok(())
+    }
+
+    fn finish(self) -> Result<EncodeOutput, Self::Error> {
+        let rows = self.rows.as_ref().ok_or_else(|| {
+            At::<zencodec::CodecError>::from(BitmapError::InvalidData(
+                "finish() without push_rows()".into(),
+            ))
+        })?;
+        if self.declared.is_some_and(|(_, h, _)| h != rows.height) {
+            return Err(
+                BitmapError::InvalidData("finish: fewer rows than begin declared".into()).into(),
+            );
+        }
+        let stride = rows.width as usize * rows.descriptor.bytes_per_pixel();
+        let pixels = PixelSlice::new(&rows.data, rows.width, rows.height, stride, rows.descriptor)
+            .map_err(|e| {
+                At::<zencodec::CodecError>::from(BitmapError::InvalidData(e.to_string()))
+            })?;
+        self.encode_slice(pixels)
+    }
+}
+
+/// The BMP layout that stores `desc` directly, and whether it has alpha.
+fn bmp_layout(desc: PixelDescriptor) -> Option<(crate::PixelLayout, bool)> {
+    match (desc.channel_type(), desc.layout()) {
+        (ChannelType::U8, ChannelLayout::Rgb) => Some((crate::PixelLayout::Rgb8, false)),
+        (ChannelType::U8, ChannelLayout::Rgba) => Some((crate::PixelLayout::Rgba8, true)),
+        (ChannelType::U8, ChannelLayout::Bgra) => Some((crate::PixelLayout::Bgra8, true)),
+        _ => None,
+    }
+}
+
+impl BmpEncoder {
+    /// The one-shot encode, shared with `finish`.
+    fn encode_slice(
+        &self,
+        pixels: PixelSlice<'_>,
+    ) -> Result<EncodeOutput, At<zencodec::CodecError>> {
         // Bit-exact load-bearing narrowing (dead alpha / chroma-free /
         // replicated-low-bits) before format mapping — see
         // `super::reduce_for_raw_encode`. BMP encodes only 24-bit RGB and
@@ -196,10 +328,7 @@ impl zencodec::encode::Encoder for BmpEncoder {
             Some(buf) => buf.as_slice(),
             None => pixels,
         };
-        let stop: &dyn Stop = match &self.stop {
-            Some(s) => s,
-            None => &enough::Unstoppable,
-        };
+        let stop: &dyn Stop = &self.pulse;
         let desc = pixels.descriptor();
         let w = pixels.width();
         let h = pixels.rows();
@@ -209,16 +338,11 @@ impl zencodec::encode::Encoder for BmpEncoder {
         }
 
         let bytes = pixels.contiguous_bytes();
-        let (layout, alpha) = match (desc.channel_type(), desc.layout()) {
-            (ChannelType::U8, ChannelLayout::Rgb) => (crate::PixelLayout::Rgb8, false),
-            (ChannelType::U8, ChannelLayout::Rgba) => (crate::PixelLayout::Rgba8, true),
-            (ChannelType::U8, ChannelLayout::Bgra) => (crate::PixelLayout::Bgra8, true),
-            // A well-formed request for a pixel format this encoder does not
-            // support — caller-request-origin, routed via the existing
-            // zencodec::UnsupportedOperation::PixelFormat axis.
-            _ => {
-                return Err(Self::reject(zencodec::UnsupportedOperation::PixelFormat));
-            }
+        // A well-formed request for a pixel format this encoder does not
+        // support — caller-request-origin, routed via the existing
+        // zencodec::UnsupportedOperation::PixelFormat axis.
+        let Some((layout, alpha)) = bmp_layout(desc) else {
+            return Err(BitmapError::from(zencodec::UnsupportedOperation::PixelFormat).into());
         };
 
         let encoded = crate::bmp::encode(&bytes, w, h, layout, alpha, stop)
@@ -279,7 +403,7 @@ impl zencodec::decode::DecoderConfig for BmpDecoderConfig {
         BmpDecodeJob {
             config: self,
             limits: None,
-            stop: None,
+            pulse: zencodec::SharedPulse::default(),
             max_input_bytes: None,
             alloc_pref: AllocPref::CodecDefault,
             policy: None,
@@ -293,7 +417,7 @@ impl zencodec::decode::DecoderConfig for BmpDecoderConfig {
 pub struct BmpDecodeJob {
     config: BmpDecoderConfig,
     limits: Option<Limits>,
-    stop: Option<zencodec::StopToken>,
+    pulse: zencodec::SharedPulse,
     max_input_bytes: Option<u64>,
     /// Allocation-fallibility preference from
     /// [`ResourceLimits::prefer_fallible_allocations`].
@@ -307,8 +431,8 @@ impl<'a> zencodec::decode::DecodeJob<'a> for BmpDecodeJob {
     type StreamDec = zencodec::Unsupported<At<zencodec::CodecError>>;
     type AnimationFrameDec = zencodec::Unsupported<At<zencodec::CodecError>>;
 
-    fn with_stop(mut self, stop: zencodec::StopToken) -> Self {
-        self.stop = Some(stop);
+    fn with_pulse(mut self, pulse: zencodec::SharedPulse) -> Self {
+        self.pulse = pulse;
         self
     }
 
@@ -376,7 +500,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for BmpDecodeJob {
         let perm = policy_to_bmp_permissiveness(self.policy.as_ref());
         super::job_inventory(
             data,
-            self.stop.as_ref(),
+            &self.pulse,
             self.max_input_bytes,
             limits,
             output,
@@ -403,7 +527,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for BmpDecodeJob {
             config: self.config,
             limits: self.limits,
             data,
-            stop: self.stop,
+            pulse: self.pulse,
             permissiveness,
             alloc_pref: self.alloc_pref,
         })
@@ -446,11 +570,11 @@ impl<'a> zencodec::decode::DecodeJob<'a> for BmpDecodeJob {
         // Rows are not decodable before the whole file is here (bottom-up
         // and RLE bodies): report the header early, decode at the end with
         // this job's own one-shot path.
-        let (stop, max_input_bytes) = (self.stop.clone(), self.max_input_bytes);
+        let (pulse, max_input_bytes) = (self.pulse.clone(), self.max_input_bytes);
         Ok(zencodec::decode::erase_incremental(
             super::strips::StripDecoder::new(
                 super::strips::WholeFile::new(self, ImageFormat::Bmp),
-                stop,
+                pulse,
                 max_input_bytes,
             ),
         ))
@@ -464,7 +588,7 @@ pub struct BmpDecoder<'a> {
     config: BmpDecoderConfig,
     limits: Option<Limits>,
     data: Cow<'a, [u8]>,
-    stop: Option<zencodec::StopToken>,
+    pulse: zencodec::SharedPulse,
     permissiveness: crate::bmp::BmpPermissiveness,
     alloc_pref: AllocPref,
 }
@@ -480,10 +604,7 @@ impl zencodec::decode::Decode for BmpDecoder<'_> {
 
     fn decode(self) -> Result<DecodeOutput, Self::Error> {
         let limits = self.effective_limits();
-        let stop: &dyn Stop = match &self.stop {
-            Some(s) => s,
-            None => &enough::Unstoppable,
-        };
+        let stop: &dyn Stop = &self.pulse;
         let decoded = crate::bmp::decode_with_permissiveness_and_alloc_pref(
             &self.data,
             limits,

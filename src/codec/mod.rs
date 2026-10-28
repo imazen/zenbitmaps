@@ -339,7 +339,7 @@ pub(crate) fn layout_to_pixel_buffer(
 
 /// Run an inventory walk the way the decode path treats the input under this job's settings.
 ///
-/// A stop token that has fired fails the call, as it would fail `decode()`. When the job's
+/// A pulse that has stopped fails the call, as it would fail `decode()`. When the job's
 /// input-size, dimension or output-size limits make the decoder reject the file before it
 /// reads pixels, every consumed top-level part says so in its detail. `output` is the
 /// declared `(width, height, output bytes per pixel)`, with `None` bytes per pixel where the
@@ -347,7 +347,7 @@ pub(crate) fn layout_to_pixel_buffer(
 #[cfg(feature = "inventory")]
 pub(crate) fn job_inventory(
     data: &[u8],
-    stop: Option<&zencodec::StopToken>,
+    pulse: &dyn zencodec::Pulse,
     max_input_bytes: Option<u64>,
     limits: Option<&Limits>,
     output: impl FnOnce() -> Option<(u32, u32, Option<usize>)>,
@@ -358,9 +358,7 @@ pub(crate) fn job_inventory(
         -> Result<zencodec::inventory::Inventory, zencodec::inventory::InventoryError>,
 ) -> Result<zencodec::inventory::Inventory, whereat::At<zencodec::CodecError>> {
     let stopped = || -> Result<(), whereat::At<zencodec::CodecError>> {
-        if let Some(s) = stop
-            && let Err(r) = s.check()
-        {
+        if let Err(r) = pulse.check() {
             return Err(BitmapError::from(r).into());
         }
         Ok(())
@@ -381,7 +379,7 @@ pub(crate) fn job_inventory(
         )
         .into());
     }
-    let control = crate::inventory::WalkControl::new(stop);
+    let control = crate::inventory::WalkControl::new(pulse);
     let result = walk(data, &control);
     control.check();
     if let Some(reason) = control.reason() {

@@ -56,6 +56,15 @@ Same as other zen* codecs — see codec-design/README.md. Key points:
 
 ## Known Bugs
 
+- Strict clippy with `inventory` (found 2026-10-27, zencodec `f73a7e0e`): six
+  inventory tests (`inventory_review.rs`, `inventory_review2.rs`,
+  `inventory_regression.rs`) call the now-deprecated `DecodeJob::with_policy`.
+  `try_with_policy` would refuse their strict policies because no zenbitmaps job
+  implements `try_set_policy`, so switching changes what they test; decide which
+  policies the jobs enforce first. CI's clippy runs default features and is clean.
+  `--features zencodec,all` without `inventory` also reports dead `HeaderTrace` /
+  `header_trace` in `src/bmp/decode.rs`.
+
 - Stale public-API snapshot (found 2026-10-18): `ZEN_API_DOC=check cargo test
   --locked --manifest-path apidoc/Cargo.toml` fails on main `ccb705d0`. The
   committed `docs/public-api/zenbitmaps.txt` (last changed in `ed0f474`) says

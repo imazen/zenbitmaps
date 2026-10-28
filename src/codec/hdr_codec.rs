@@ -95,7 +95,7 @@ impl zencodec::encode::EncoderConfig for HdrEncoderConfig {
         HdrEncodeJob {
             config: self,
             limits: None,
-            stop: None,
+            pulse: zencodec::SharedPulse::default(),
         }
     }
 }
@@ -106,7 +106,7 @@ impl zencodec::encode::EncoderConfig for HdrEncoderConfig {
 pub struct HdrEncodeJob {
     config: HdrEncoderConfig,
     limits: Option<ResourceLimits>,
-    stop: Option<zencodec::StopToken>,
+    pulse: zencodec::SharedPulse,
 }
 
 impl zencodec::encode::EncodeJob for HdrEncodeJob {
@@ -114,8 +114,8 @@ impl zencodec::encode::EncodeJob for HdrEncodeJob {
     type Enc = HdrEncoder;
     type AnimationFrameEnc = ();
 
-    fn with_stop(mut self, stop: zencodec::StopToken) -> Self {
-        self.stop = Some(stop);
+    fn with_pulse(mut self, pulse: zencodec::SharedPulse) -> Self {
+        self.pulse = pulse;
         self
     }
 
@@ -132,7 +132,7 @@ impl zencodec::encode::EncodeJob for HdrEncodeJob {
         Ok(HdrEncoder {
             config: self.config,
             limits: self.limits,
-            stop: self.stop,
+            pulse: self.pulse,
             stream: None,
             sent: 0,
             begun: false,
@@ -150,7 +150,7 @@ impl zencodec::encode::EncodeJob for HdrEncodeJob {
 pub struct HdrEncoder {
     config: HdrEncoderConfig,
     limits: Option<ResourceLimits>,
-    stop: Option<zencodec::StopToken>,
+    pulse: zencodec::SharedPulse,
     stream: Option<super::row_stream::RowStream>,
     /// Bytes handed out through `consume_output` (whole-file output limit).
     sent: u64,
@@ -315,7 +315,7 @@ impl zencodec::decode::DecoderConfig for HdrDecoderConfig {
         HdrDecodeJob {
             config: self,
             limits: None,
-            stop: None,
+            pulse: zencodec::SharedPulse::default(),
             max_input_bytes: None,
             alloc_pref: AllocPref::CodecDefault,
             policy: None,
@@ -329,7 +329,7 @@ impl zencodec::decode::DecoderConfig for HdrDecoderConfig {
 pub struct HdrDecodeJob {
     config: HdrDecoderConfig,
     limits: Option<Limits>,
-    stop: Option<zencodec::StopToken>,
+    pulse: zencodec::SharedPulse,
     max_input_bytes: Option<u64>,
     /// Allocation-fallibility preference from
     /// [`ResourceLimits::prefer_fallible_allocations`].
@@ -343,8 +343,8 @@ impl<'a> zencodec::decode::DecodeJob<'a> for HdrDecodeJob {
     type StreamDec = HdrStreamingDecoder;
     type AnimationFrameDec = zencodec::Unsupported<At<zencodec::CodecError>>;
 
-    fn with_stop(mut self, stop: zencodec::StopToken) -> Self {
-        self.stop = Some(stop);
+    fn with_pulse(mut self, pulse: zencodec::SharedPulse) -> Self {
+        self.pulse = pulse;
         self
     }
 
@@ -385,7 +385,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for HdrDecodeJob {
         };
         super::job_inventory(
             data,
-            self.stop.as_ref(),
+            &self.pulse,
             self.max_input_bytes,
             limits,
             output,
@@ -411,7 +411,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for HdrDecodeJob {
             config: self.config,
             limits: self.limits,
             data,
-            stop: self.stop,
+            pulse: self.pulse,
             alloc_pref: self.alloc_pref,
         })
     }
@@ -468,10 +468,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for HdrDecodeJob {
             .with_cicp(cicp)
             .with_source_encoding_details(BitmapSourceEncoding);
 
-        let stop: &dyn Stop = match &self.stop {
-            Some(s) => s,
-            None => &enough::Unstoppable,
-        };
+        let stop: &dyn Stop = &self.pulse;
         let decoded =
             crate::hdr::decode_with_alloc_pref(&data, limits.as_ref(), self.alloc_pref, stop)
                 .map_err(zencodec::CodecError::of)?;
@@ -511,7 +508,7 @@ impl<'a> zencodec::decode::DecodeJob<'a> for HdrDecodeJob {
                     width: 0,
                     scanline: Vec::new(),
                 },
-                self.stop,
+                self.pulse,
                 self.max_input_bytes,
             ),
         ))
@@ -607,7 +604,7 @@ pub struct HdrDecoder<'a> {
     config: HdrDecoderConfig,
     limits: Option<Limits>,
     data: Cow<'a, [u8]>,
-    stop: Option<zencodec::StopToken>,
+    pulse: zencodec::SharedPulse,
     alloc_pref: AllocPref,
 }
 
@@ -622,10 +619,7 @@ impl zencodec::decode::Decode for HdrDecoder<'_> {
 
     fn decode(self) -> Result<DecodeOutput, Self::Error> {
         let limits = self.effective_limits();
-        let stop: &dyn Stop = match &self.stop {
-            Some(s) => s,
-            None => &enough::Unstoppable,
-        };
+        let stop: &dyn Stop = &self.pulse;
         let decoded = crate::hdr::decode_with_alloc_pref(&self.data, limits, self.alloc_pref, stop)
             .map_err(zencodec::CodecError::of)?;
         decode_output_from_internal(&decoded, ImageFormat::Hdr).map_err(zencodec::CodecError::of)
@@ -688,10 +682,7 @@ impl HdrEncoder {
         }
         let file = hdr_file(descriptor)?;
         let limits = self.effective_limits();
-        let stop: &dyn Stop = match &self.stop {
-            Some(s) => s,
-            None => &enough::Unstoppable,
-        };
+        let stop: &dyn Stop = &self.pulse;
         self.stream = Some(super::row_stream::RowStream::start(
             file,
             width,
@@ -705,10 +696,7 @@ impl HdrEncoder {
     }
 
     fn push_rows_inner(&mut self, rows: PixelSlice<'_>) -> Result<(), At<zencodec::CodecError>> {
-        let stop: &dyn Stop = match &self.stop {
-            Some(s) => s,
-            None => &enough::Unstoppable,
-        };
+        let stop: &dyn Stop = &self.pulse;
         if self.stream.is_none() {
             let file = hdr_file(rows.descriptor())?;
             let limits = self.effective_limits();
@@ -728,10 +716,7 @@ impl HdrEncoder {
     }
 
     fn finish_inner(self) -> Result<EncodeOutput, At<zencodec::CodecError>> {
-        let stop: &dyn Stop = match &self.stop {
-            Some(s) => s,
-            None => &enough::Unstoppable,
-        };
+        let stop: &dyn Stop = &self.pulse;
         let stream = self.stream.ok_or_else(|| {
             At::<zencodec::CodecError>::from(BitmapError::InvalidData(
                 "finish() without push_rows()".into(),
@@ -744,10 +729,7 @@ impl HdrEncoder {
         self,
         pixels: PixelSlice<'_>,
     ) -> Result<EncodeOutput, At<zencodec::CodecError>> {
-        let stop: &dyn Stop = match &self.stop {
-            Some(s) => s,
-            None => &enough::Unstoppable,
-        };
+        let stop: &dyn Stop = &self.pulse;
         let w = pixels.width();
         let h = pixels.rows();
 

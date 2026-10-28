@@ -375,7 +375,9 @@ fn a_fired_stop_token_fails_the_inventory() {
     let data = &small_files()[2].1;
     let job = PnmDecoderConfig::new()
         .job()
-        .with_stop(zencodec::StopToken::new(Cancelled));
+        .with_pulse(zencodec::SharedPulse::new(
+            zencodec::how_far::StopOnly::new(Cancelled),
+        ));
     assert!(job.inventory(data).is_err());
 }
 
@@ -534,7 +536,9 @@ fn long_inventory_walks_retain_one_shot_timeout() {
         config
             .clone()
             .job()
-            .with_stop(zencodec::StopToken::new(StopAt(polls.clone(), usize::MAX)))
+            .with_pulse(zencodec::SharedPulse::new(
+                zencodec::how_far::StopOnly::new(StopAt(polls.clone(), usize::MAX)),
+            ))
             .inventory(data)
             .unwrap()
             .validate()
@@ -548,7 +552,9 @@ fn long_inventory_walks_retain_one_shot_timeout() {
             let error = config
                 .clone()
                 .job()
-                .with_stop(zencodec::StopToken::new(StopAt(polls.clone(), at)))
+                .with_pulse(zencodec::SharedPulse::new(
+                    zencodec::how_far::StopOnly::new(StopAt(polls.clone(), at)),
+                ))
                 .inventory(data)
                 .unwrap_err();
             assert_eq!(
