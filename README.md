@@ -527,3 +527,14 @@ Licensed under either of [Apache License, Version 2.0](https://github.com/imazen
 [imageflow-dotnet]: https://github.com/imazen/imageflow-dotnet
 [imageflow-node]: https://github.com/imazen/imageflow-node
 [imageflow-go]: https://github.com/imazen/imageflow-go
+
+
+### Optional shared call controls
+
+The zencodec incremental boundary accepts `Option<&dyn Pulse>`: pass `None` for
+no additional per-step control. The decoder still checks the job's retained
+`SharedPulse` and its resource limits. `Some(pulse)` adds a separate control;
+it does not replace the job control. Native cancellation-only entry points
+retain their existing signatures. This source migration awaits qualification
+against the paired core graph; existing retained/borrowed one-shot-stop controls
+in `tests/pulse_controls.rs` remain unchanged.

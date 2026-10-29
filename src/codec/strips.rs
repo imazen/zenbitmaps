@@ -459,7 +459,7 @@ impl<F: StripFormat> IncrementalDecode for StripDecoder<F> {
         &mut self,
         input: Input<'_>,
         sink: &mut dyn DecodeRowSink,
-        pulse: &dyn zencodec::Pulse,
+        pulse: Option<&dyn zencodec::Pulse>,
     ) -> StepResult {
         if let Some(done) = &self.done {
             return Ok(Progress::new(0, Event::Done(done.clone())));
@@ -467,7 +467,7 @@ impl<F: StripFormat> IncrementalDecode for StripDecoder<F> {
         if self.failed {
             return Err(StepError::Finished);
         }
-        let r = self.step_inner(input, sink, pulse);
+        let r = self.step_inner(input, sink, pulse.unwrap_or(&zencodec::NoPulse));
         self.failed = r.is_err();
         r
     }
