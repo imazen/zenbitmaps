@@ -21,8 +21,10 @@ All notable changes to this project will be documented in this file.
   split without changing its layout assertion. The portable root passed 26
   pulse/QOI/bitmap controls on `54f98180`; strict Clippy found an inventory-only
   helper compiled without its consumer. Repair `769e6547` now passes strict
-  Clippy with and without inventory; the separately patched fuzz graph still
-  needs a targeted pixel lock update before it can resolve. The combined three-codec wrapper
+  Clippy with and without inventory. The standalone fuzz graph now resolves
+  one shared family and all fuzz bins compile after the targeted pixel update;
+  only core, pixels and converter changed in its lock (`5abfba28`).
+  The combined three-codec wrapper
   retained its failure: rc1, 373s, peak-RSS 0.81GiB, min-avail 13902MiB,
   peak-load 2.45 (not per-codec performance).
 
