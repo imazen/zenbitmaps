@@ -209,16 +209,10 @@ fn direct_strips_are_used_when_input_suffices() {
         .unwrap();
     let mut sink = CollectSink::new();
     let total = data.len() as u64;
-    let p = dec
-        .step(Input::empty(), &mut sink, &zencodec::NoPulse)
-        .unwrap();
+    let p = dec.step(Input::empty(), &mut sink, None).unwrap();
     assert_eq!((p.consumed, p.event), (0, Event::Need));
     let p = dec
-        .step(
-            Input::new(0, &data).with_total_len(total),
-            &mut sink,
-            &zencodec::NoPulse,
-        )
+        .step(Input::new(0, &data).with_total_len(total), &mut sink, None)
         .unwrap();
     assert_eq!(p.consumed, 14, "the header only");
     assert!(matches!(p.event, Event::Metadata(_)));
@@ -226,7 +220,7 @@ fn direct_strips_are_used_when_input_suffices() {
         .step(
             Input::new(14, &data[14..]).with_total_len(total),
             &mut sink,
-            &zencodec::NoPulse,
+            None,
         )
         .unwrap();
     match p.event {
@@ -239,7 +233,7 @@ fn direct_strips_are_used_when_input_suffices() {
         .step(
             Input::new(rest as u64, &data[rest..]).with_total_len(total),
             &mut sink,
-            &zencodec::NoPulse,
+            None,
         )
         .unwrap();
     assert!(p.event.is_done());
@@ -547,7 +541,7 @@ fn streaming_transcode_keeps_output_bounded() {
     loop {
         let end = (at + window).min(data.len());
         let input = Input::new(at as u64, &data[at..end]).with_total_len(total);
-        let p = dec.step(input, &mut sink, &zencodec::NoPulse).unwrap();
+        let p = dec.step(input, &mut sink, None).unwrap();
         at += p.consumed;
         window -= p.consumed.min(window);
         peak = peak.max(sink.pending_output().len());

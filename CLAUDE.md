@@ -170,3 +170,11 @@ Same as other zen* codecs — see codec-design/README.md. Key points:
 ## User Feedback Log
 
 See [FEEDBACK.md](FEEDBACK.md) if it exists.
+
+
+### Inventory helper feature scope (2026-10-29)
+
+The optional-Pulse native qualification found that `zencodec` without `inventory`
+compiled unused BMP `HeaderTrace` helpers and failed strict Clippy. Both helpers
+are used only by the inventory walker and now share its `inventory` gate.
+Native decode/encode logic and every existing test assertion are unchanged.

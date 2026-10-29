@@ -889,7 +889,7 @@ impl zencodec::decode::IncrementalDecode for QoiIncrementalDecoder {
         &mut self,
         input: zencodec::decode::Input<'_>,
         sink: &mut dyn zencodec::decode::DecodeRowSink,
-        pulse: &dyn zencodec::Pulse,
+        pulse: Option<&dyn zencodec::Pulse>,
     ) -> Result<zencodec::decode::Progress, QoiStepError> {
         if let Some(done) = &self.done {
             return Ok(zencodec::decode::Progress::new(
@@ -900,7 +900,7 @@ impl zencodec::decode::IncrementalDecode for QoiIncrementalDecoder {
         if self.failed {
             return Err(zencodec::decode::StepError::Finished);
         }
-        let r = self.step_inner(input, sink, pulse);
+        let r = self.step_inner(input, sink, pulse.unwrap_or(&zencodec::NoPulse));
         self.failed = r.is_err();
         r
     }
