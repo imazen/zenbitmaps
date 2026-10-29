@@ -138,7 +138,7 @@ impl zencodec::encode::EncodeJob for TgaEncodeJob {
             limits: self.limits,
             pulse: self.pulse,
             accumulator: None,
-            begun: false,
+            declaration: None,
         })
     }
 
@@ -154,6 +154,7 @@ struct TgaEncodeAccumulator {
     width: u32,
     total_rows: u32,
     layout: crate::PixelLayout,
+    descriptor: PixelDescriptor,
 }
 
 /// Single-image TGA encoder.
@@ -162,8 +163,8 @@ pub struct TgaEncoder {
     limits: Option<ResourceLimits>,
     pulse: zencodec::SharedPulse,
     accumulator: Option<TgaEncodeAccumulator>,
-    /// `begin` succeeded.
-    begun: bool,
+    /// Retained canvas and descriptor after successful admission.
+    declaration: Option<(u32, u32, PixelDescriptor)>,
 }
 
 impl TgaEncoder {
@@ -217,23 +218,39 @@ impl zencodec::encode::Encoder for TgaEncoder {
         height: u32,
         descriptor: PixelDescriptor,
     ) -> Result<zencodec::encode::OutputTiming, Self::Error> {
-        if self.begun {
+        if self.declaration.is_some() {
             return Err(BitmapError::InvalidData("begin called twice".into()).into());
         }
         if self.accumulator.is_some() {
             return Err(BitmapError::InvalidData("begin after rows were pushed".into()).into());
         }
-        pixel_slice_to_tga_layout(descriptor)?;
+        let layout = pixel_slice_to_tga_layout(descriptor)?;
+        self.pulse.check().map_err(BitmapError::from)?;
+        if width > u16::MAX as u32 || height > u16::MAX as u32 {
+            return Err(BitmapError::DimensionsTooLarge { width, height }.into());
+        }
         if let Some(limits) = self.effective_limits() {
             limits
                 .check(width, height)
                 .map_err(zencodec::CodecError::of)?;
         }
-        self.begun = true;
+        self.declaration = Some((width, height, descriptor));
+        self.accumulator = Some(TgaEncodeAccumulator {
+            data: Vec::new(),
+            width,
+            total_rows: 0,
+            layout,
+            descriptor,
+        });
         Ok(zencodec::encode::OutputTiming::AT_FINISH)
     }
 
     fn encode(self, pixels: PixelSlice<'_>) -> Result<EncodeOutput, Self::Error> {
+        if self.declaration.is_some() || self.accumulator.is_some() {
+            return Err(
+                BitmapError::InvalidData("one-shot encode after rows started".into()).into(),
+            );
+        }
         // Bit-exact load-bearing narrowing (dead alpha / chroma-free /
         // replicated-low-bits) before format mapping — see
         // `super::reduce_for_raw_encode`. TGA encodes grayscale, so every
@@ -259,8 +276,44 @@ impl zencodec::encode::Encoder for TgaEncoder {
     }
 
     fn push_rows(&mut self, rows: PixelSlice<'_>) -> Result<(), Self::Error> {
+        self.pulse.check().map_err(BitmapError::from)?;
         let layout = pixel_slice_to_tga_layout(rows.descriptor())?;
-
+        let bad = || {
+            BitmapError::InvalidData("rows do not match the declared canvas or prior strips".into())
+        };
+        let previous = self.accumulator.as_ref().map_or(0, |a| a.total_rows);
+        let total = previous.checked_add(rows.rows()).ok_or_else(bad)?;
+        if rows.width() > u16::MAX as u32 || total > u16::MAX as u32 {
+            return Err(BitmapError::DimensionsTooLarge {
+                width: rows.width(),
+                height: total,
+            }
+            .into());
+        }
+        if let Some((width, height, descriptor)) = self.declaration
+            && (width != rows.width() || total > height || descriptor != rows.descriptor())
+        {
+            return Err(bad().into());
+        }
+        if let Some(acc) = &self.accumulator
+            && (acc.width != rows.width()
+                || acc.layout != layout
+                || acc.descriptor != rows.descriptor())
+        {
+            return Err(bad().into());
+        }
+        if let Some(limits) = self.effective_limits() {
+            limits
+                .check(rows.width(), total)
+                .map_err(zencodec::CodecError::of)?;
+        }
+        let total_bytes = (rows.width() as usize)
+            .checked_mul(total as usize)
+            .and_then(|n| n.checked_mul(layout.bytes_per_pixel()))
+            .ok_or_else(|| BitmapError::OutOfMemory("row accumulation overflow".into()))?;
+        crate::limits::check_output_size(total_bytes, self.effective_limits().as_ref())
+            .map_err(zencodec::CodecError::of)?;
+        let bytes = rows.contiguous_bytes();
         let acc = self
             .accumulator
             .get_or_insert_with(|| TgaEncodeAccumulator {
@@ -268,22 +321,23 @@ impl zencodec::encode::Encoder for TgaEncoder {
                 width: rows.width(),
                 total_rows: 0,
                 layout,
+                descriptor: rows.descriptor(),
             });
-
-        if acc.width != rows.width() || acc.layout != layout {
-            return Err(BitmapError::InvalidData(
-                "push_rows: width or pixel format changed".into(),
-            )
-            .into());
-        }
-
-        let bytes = rows.contiguous_bytes();
+        acc.data
+            .try_reserve(bytes.len())
+            .map_err(|_| BitmapError::OutOfMemory("row accumulation".into()))?;
         acc.data.extend_from_slice(&bytes);
-        acc.total_rows += rows.rows();
+        acc.total_rows = total;
         Ok(())
     }
 
     fn finish(self) -> Result<EncodeOutput, Self::Error> {
+        self.pulse.check().map_err(BitmapError::from)?;
+        if let Some((_, height, _)) = self.declaration
+            && self.accumulator.as_ref().map_or(0, |a| a.total_rows) != height
+        {
+            return Err(BitmapError::InvalidData("incomplete declared canvas".into()).into());
+        }
         let acc = self.accumulator.ok_or_else(|| {
             At::<zencodec::CodecError>::from(BitmapError::InvalidData(
                 "finish() without push_rows()".into(),

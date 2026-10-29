@@ -178,3 +178,10 @@ The optional-Pulse native qualification found that `zencodec` without `inventory
 compiled unused BMP `HeaderTrace` helpers and failed strict Clippy. Both helpers
 are used only by the inventory walker and now share its `inventory` gate.
 Native decode/encode logic and every existing test assertion are unchanged.
+
+## Fixed: TGA discarded row declarations (2026-10-29)
+
+The shared adapter accepted begin but discarded its dimensions/descriptor and
+allowed one-shot encode afterward. It now retains and enforces the declaration,
+checks strip accumulation and cancellation before effects, and refuses incomplete
+finish. Failing-first and native controls: `docs/tga-row-contract.md`.

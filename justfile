@@ -167,3 +167,8 @@ beta-cohort-check:
     cargo fmt --check
     cargo clippy --locked --lib -- -D warnings
     cargo test --locked --lib
+
+# Retained row declarations and existing TGA format controls.
+tga-declared-rows-check:
+    cargo test --locked --features zencodec,tga --test tga_declared_rows --test tga_conformance --test shared_contracts
+    cargo clippy --locked --features zencodec,tga --lib --test tga_declared_rows -- -D warnings
