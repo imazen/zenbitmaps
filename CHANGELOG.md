@@ -20,8 +20,9 @@ All notable changes to this project will be documented in this file.
   and PNG `7b6d1436`. Native PNG tests share the core family, removing the old
   split without changing its layout assertion. The portable root passed 26
   pulse/QOI/bitmap controls on `54f98180`; strict Clippy found an inventory-only
-  helper compiled without its consumer. Repair `769e6547` and the separately
-  patched fuzz graph still need qualification. The combined three-codec wrapper
+  helper compiled without its consumer. Repair `769e6547` now passes strict
+  Clippy with and without inventory; the separately patched fuzz graph still
+  needs a targeted pixel lock update before it can resolve. The combined three-codec wrapper
   retained its failure: rc1, 373s, peak-RSS 0.81GiB, min-avail 13902MiB,
   peak-load 2.45 (not per-codec performance).
 
