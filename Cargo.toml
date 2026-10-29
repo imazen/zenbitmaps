@@ -25,7 +25,7 @@ rgb = { version = "0.8.53", default-features = false, features = ["as-bytes"], o
 thiserror = { version = "2.0.21", default-features = false }
 whereat = { version = "0.1.5", default-features = false }
 # The Pulse migration needs zencodec 0.2; a 0.1 range let the lock pick the
-# registry 0.1.26 the bench-only zenpng 0.1.4 pulls in.
+# the paired PNG test dependency now uses the same shared core family.
 zencodec = { version = ">=0.2.0, <0.4.0", optional = true }
 # zennode is not yet published; uncomment when it's on crates.io
 # zennode = { path = "../zennode/zennode", default-features = false, features = ["derive"], optional = true }
@@ -52,10 +52,10 @@ zenbench = "0.1.10"
 zencodec-testkit = ">=0.2.0, <0.4.0"
 # Drivers for the incremental (sans-I/O) path (benches + tests); unpublished,
 # so it comes from the zencodec repo at the same commit the patch below pins.
-zencodec-io = { git = "https://github.com/imazen/zencodec", rev = "79676215c037bf222c414198813e4b4f6b6efb96", features = ["std"] }
+zencodec-io = { git = "https://github.com/imazen/zencodec", rev = "feb09f9fd25e90e49a30d7161db8f3b558dfb2a6", features = ["std"] }
 # Real-photo benchmark inputs (benches/qoi_photos.rs): decode the corpus
 # PNGs and resample them to each benchmarked size with our own crates.
-zenpng = "0.1.4"
+zenpng = ">=0.2.0, <0.4.0"
 zenresize = "0.3.1"
 # Counts allocations in tests/stream_allocations.rs (the unsafe allocator
 # wrapper lives in the dependency, not in this crate's tests).
@@ -123,11 +123,11 @@ required-features = ["simd"]
 # Structural inventories (imazen/zencodec#133). Swap for the released
 # zencodec/zencodec-testkit before merge.
 [patch.crates-io]
+zenpng = { git = "https://github.com/imazen/zenpng", rev = "7b6d1436db5d771fc43226c146847fc76305afde" }
 # zencodec's Pulse operation controls (zencodec 0.2, ideal-api 79676215) are
 # unpublished: pin the interface crate, zencodec-io and the testkit to the same
 # zencodec commit so one zencodec resolves. Drop these when zencodec and the
 # testkit publish that API.
-zencodec = { git = "https://github.com/imazen/zencodec", rev = "79676215c037bf222c414198813e4b4f6b6efb96" }
-zencodec-testkit = { git = "https://github.com/imazen/zencodec", rev = "79676215c037bf222c414198813e4b4f6b6efb96" }
-# The bench-only zenpng 0.1.4 dev-dependency stays on crates.io zencodec 0.1 in
-# its own graph; benches use only its native PNG decoder.
+zencodec = { git = "https://github.com/imazen/zencodec", rev = "feb09f9fd25e90e49a30d7161db8f3b558dfb2a6" }
+zencodec-testkit = { git = "https://github.com/imazen/zencodec", rev = "feb09f9fd25e90e49a30d7161db8f3b558dfb2a6" }
+# PNG test inputs use the same current core family.
