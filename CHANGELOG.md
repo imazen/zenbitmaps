@@ -10,10 +10,20 @@ All notable changes to this project will be documented in this file.
   contract (zencodec 0.2; written at ideal-api `f73a7e0e`, pinned to the family
   revision `f5a7fd46`): every encode/decode job implements
   `with_pulse` and retains the caller's `SharedPulse`, incremental `step` takes
-  `&dyn Pulse`, and byte requests are `InputRequest` (`8cce050d`). Pulses are
+  `Option<&dyn Pulse>`, and byte requests are `InputRequest`
+  (`8cce050d`, optional migration `20484698`). Pulses are
   checked for cancellation only; no zenbitmaps stage reports progress.
 
 ### Dependency compatibility
+
+- The optional-control root now uses core `feb09f9f`, paired pixels `283655c5`
+  and PNG `7b6d1436`. Native PNG tests share the core family, removing the old
+  split without changing its layout assertion. The portable root passed 26
+  pulse/QOI/bitmap controls on `54f98180`; strict Clippy found an inventory-only
+  helper compiled without its consumer. Repair `769e6547` and the separately
+  patched fuzz graph still need qualification. The combined three-codec wrapper
+  retained its failure: rc1, 373s, peak-RSS 0.81GiB, min-avail 13902MiB,
+  peak-load 2.45 (not per-codec performance).
 
 - Pin the zencodec 0.2 family revision (ideal-api `79676215`, after
   `f5a7fd46`) in the root and fuzz manifests (the fuzz crate was still on
