@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Fresh zeroed buffers request allocator-zeroed storage in every allocation mode; allocation failure policy and buffer contents are preserved.
+
 - TGA shared row encoding now retains and enforces declared dimensions and descriptor, rejects one-shot encoding after row admission, and preserves Pulse cancellation at each boundary. See `docs/tga-row-contract.md`.
 
 ### QUEUED BREAKING CHANGES

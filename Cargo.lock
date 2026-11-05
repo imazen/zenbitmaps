@@ -858,6 +858,7 @@ name = "zenbitmaps"
 version = "0.2.0"
 dependencies = [
  "archmage",
+ "bytemuck",
  "codec-corpus",
  "enough",
  "garb",

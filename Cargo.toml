@@ -18,6 +18,7 @@ include = [
 ]
 
 [dependencies]
+bytemuck = { version = "1.25.2", default-features = false, features = ["extern_crate_alloc"] }
 # Core (always available)
 enough = "0.4.4"
 imgref = { version = "1.12.3", default-features = false, optional = true }
