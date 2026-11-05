@@ -44,6 +44,8 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Accept the archmage and magetypes 0.9.31 stable release.
+
 - Farbfeld RGBA8 encoding appends each expanded pixel in one call instead of one
   call per sample; output bytes are unchanged. `tests/farbfeld_rgba8_regression.rs`
   checks every 8-bit value in each channel position, row tails and the 16-row
