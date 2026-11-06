@@ -136,7 +136,7 @@ pub(crate) fn decode_with_alloc_pref<'a>(
             if is_ascii {
                 let out_bytes = w
                     .checked_mul(h)
-                    .and_then(|wh| wh.checked_mul(depth))
+                    .and_then(|wh| wh.checked_mul(header.layout.bytes_per_pixel()))
                     .ok_or_else(|| {
                         whereat::at!(BitmapError::DimensionsTooLarge {
                             width: header.width,
@@ -180,7 +180,7 @@ pub(crate) fn decode_with_alloc_pref<'a>(
                 } else {
                     let out_bytes = w
                         .checked_mul(h)
-                        .and_then(|wh| wh.checked_mul(depth))
+                        .and_then(|wh| wh.checked_mul(header.layout.bytes_per_pixel()))
                         .ok_or_else(|| {
                             whereat::at!(BitmapError::DimensionsTooLarge {
                                 width: header.width,
@@ -231,7 +231,7 @@ pub(crate) fn decode_with_alloc_pref<'a>(
             } else {
                 let out_bytes = w
                     .checked_mul(h)
-                    .and_then(|wh| wh.checked_mul(depth))
+                    .and_then(|wh| wh.checked_mul(header.layout.bytes_per_pixel()))
                     .ok_or_else(|| {
                         whereat::at!(BitmapError::DimensionsTooLarge {
                             width: header.width,

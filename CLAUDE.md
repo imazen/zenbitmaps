@@ -56,14 +56,22 @@ Same as other zen* codecs — see codec-design/README.md. Key points:
 
 ## Known Bugs
 
-- PNM MAXVAL normalization (verified 2026-11-06): P5 and P7 gray at
-  `MAXVAL=1023`, samples `[0, 100, 512, 1023]`, decode to those raw U16
-  codes; Netpbm `pamdepth 65535` produces `[0, 6406, 32800, 65535]`.
-  `just pnm-maxval-probe` reproduces both disagreements and fails explicitly.
-  P2/P5 raw Gray16 behavior is required by an existing test; deep PPM/PAM RGB
-  narrowing to U8 is also explicitly tested. Changing these defaults and adding
-  RGB16 layout support await owner approval. No old assertion was weakened.
+- PNM native U16 encoding and current-sample depth evidence were missing from
+  the canonical-U16 review candidate (2026-11-06). New regressions reproduce
+  both. The candidate now advertises and writes Gray16/RGB16/RGBA16 through
+  one-shot and row encoders with big-endian file samples, and measures exact
+  integer grids after normalization. Non-power-of-two MAXVAL values do not
+  inherit an assumed source-code depth; PFM gets no integer-grid statement.
+  `just pnm-depth-check` and `just pnm-depth-oracle` own the focused controls.
+  Whole-buffer evidence is covered; incremental decode evidence is not yet
+  established by these controls.
 
+- PNM MAXVAL normalization was reproduced with Netpbm (2026-11-06):
+  MAXVAL 1023 codes `[0, 100, 512, 1023]` must normalize to
+  `[0, 6406, 32800, 65535]`. The approved correction uses full-range native
+  U16 for deep gray, RGB and RGBA; `just pnm-maxval-probe` checks an independent
+  reader. Existing raw-code and RGB8-narrowing expectations change together
+  with the reviewed `Rgb16` public layout addition.
 
 - Strict clippy with `inventory` (found 2026-10-27, zencodec `f73a7e0e`): six
   inventory tests (`inventory_review.rs`, `inventory_review2.rs`,
@@ -149,12 +157,14 @@ Same as other zen* codecs — see codec-design/README.md. Key points:
   2 bytes/sample for a P3 PPM whose layout is `Rgb8` (no Rgb16 layout exists) —
   a 6-byte 1×1 "Rgb8" buffer. `encode_pam` then copied `w·h·channels` (3) bytes,
   truncating, so the roundtrip mismatched (left 6 bytes, right 3). The binary P6
-  16-bit path was always correct (downscales to `Rgb8`); only ASCII disagreed.
+  16-bit path narrowed to `Rgb8`; only ASCII disagreed on byte count.
+  The canonical-U16 correction now retains RGB16 on both paths.
   **Fix:** the ASCII decoder now sizes output by the *layout* — 2 raw bytes only
   for a 16-bit-per-channel layout (`Gray16`), else downscale 16-bit samples to one
-  `u8` (`val·255/maxval`), byte-for-byte matching the binary path. The Gray16
+  `u8` (`val·255/maxval`), byte-for-byte matching the then-current binary path.
+  These historical output contracts are superseded by canonical U16. The Gray16
   precision fix (zenpipe#51) is unchanged. Regressions: `tests/roundtrip.rs`
-  (`p3_ascii_ppm_16bit_downscales_to_rgb8`, `p3_ascii_and_p6_binary_16bit_agree`)
+  (`p3_ascii_ppm_16bit_retains_rgb16`, `p3_ascii_and_p6_binary_16bit_agree`)
   + strengthened `tests/fuzz_regression.rs` roundtrip target (asserts
   pixel-equality) over seed `pnm-p3-16bit-rgb8-roundtrip-zenbitmaps-10`.
   Verified the regression catches it: re-introducing the maxval-keyed logic makes

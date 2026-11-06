@@ -156,8 +156,10 @@ fn encode_pgm(
     layout: PixelLayout,
     stop: &dyn Stop,
 ) -> crate::Result<Vec<u8>> {
-    let header = format!("P5\n{width} {height}\n255\n");
-    let mut out = Vec::with_capacity(header.len() + w * h);
+    let deep = layout == PixelLayout::Gray16;
+    let maxval = if deep { 65535 } else { 255 };
+    let header = format!("P5\n{width} {height}\n{maxval}\n");
+    let mut out = Vec::with_capacity(header.len() + w * h * if deep { 2 } else { 1 });
     out.extend_from_slice(header.as_bytes());
 
     write_pgm_rows(pixels, w, h, layout, &mut out, stop)?;
@@ -174,6 +176,7 @@ fn write_pgm_rows(
     stop: &dyn Stop,
 ) -> crate::Result<()> {
     match layout {
+        PixelLayout::Gray16 => write_deep_rows(pixels, w, h, 1, out, stop)?,
         PixelLayout::Gray8 => {
             extend_copy_polled(out, &pixels[..w * h], w, stop)?;
         }
@@ -253,8 +256,10 @@ fn encode_ppm(
     layout: PixelLayout,
     stop: &dyn Stop,
 ) -> crate::Result<Vec<u8>> {
-    let header = format!("P6\n{width} {height}\n255\n");
-    let mut out = Vec::with_capacity(header.len() + w * h * 3);
+    let deep = layout == PixelLayout::Rgb16;
+    let maxval = if deep { 65535 } else { 255 };
+    let header = format!("P6\n{width} {height}\n{maxval}\n");
+    let mut out = Vec::with_capacity(header.len() + w * h * if deep { 6 } else { 3 });
     out.extend_from_slice(header.as_bytes());
 
     write_ppm_rows(pixels, w, h, layout, &mut out, stop)?;
@@ -271,6 +276,7 @@ fn write_ppm_rows(
     stop: &dyn Stop,
 ) -> crate::Result<()> {
     match layout {
+        PixelLayout::Rgb16 => write_deep_rows(pixels, w, h, 3, out, stop)?,
         PixelLayout::Rgb8 => {
             extend_copy_polled(out, &pixels[..w * h * 3], w * 3, stop)?;
         }
@@ -424,22 +430,8 @@ fn write_pam_rows(
                 }
             }
         }
-        PixelLayout::Gray16 => {
-            // 16-bit samples are stored big-endian on disk (PAM spec); `Gray16`
-            // is native-endian in memory (issue #12). Convert native → big-endian,
-            // mirroring the decode path (`decode_integer_transform`) and farbfeld
-            // so `decode → encode_pam → decode` stays pixel-lossless and the
-            // on-disk bytes are spec-compliant. A no-op on big-endian hosts.
-            let band = w.saturating_mul(16).max(1);
-            for start in (0..pixel_count).step_by(band) {
-                stop.check()
-                    .map_err(|r| whereat::at!(BitmapError::from(r)))?;
-                for i in start..start.saturating_add(band).min(pixel_count) {
-                    let off = i * 2;
-                    let val = u16::from_ne_bytes([pixels[off], pixels[off + 1]]);
-                    out.extend_from_slice(&val.to_be_bytes());
-                }
-            }
+        PixelLayout::Gray16 | PixelLayout::Rgb16 | PixelLayout::Rgba16 => {
+            write_deep_rows(pixels, w, h, layout.channels(), out, stop)?;
         }
         _ => {
             // Direct copy for native-order formats, banded so a 100+ MiB
@@ -457,12 +449,37 @@ fn write_pam_rows(
     Ok(())
 }
 
+/// Native-endian current samples become big-endian P5/P6/P7 file samples.
+fn write_deep_rows(
+    pixels: &[u8],
+    w: usize,
+    h: usize,
+    channels: usize,
+    out: &mut Vec<u8>,
+    stop: &dyn Stop,
+) -> crate::Result<()> {
+    let samples = w * h * channels;
+    let band = w.saturating_mul(channels).saturating_mul(16).max(1);
+    for start in (0..samples).step_by(band) {
+        stop.check()
+            .map_err(|r| whereat::at!(BitmapError::from(r)))?;
+        for i in start..start.saturating_add(band).min(samples) {
+            let off = i * 2;
+            let val = u16::from_ne_bytes([pixels[off], pixels[off + 1]]);
+            out.extend_from_slice(&val.to_be_bytes());
+        }
+    }
+    Ok(())
+}
+
 /// PAM `DEPTH`, `TUPLTYPE` and `MAXVAL` for `layout`; layouts PAM can't carry
 /// are refused.
 fn pam_params(layout: PixelLayout) -> crate::Result<(u32, &'static str, u32)> {
     Ok(match layout {
         PixelLayout::Gray8 => (1, "GRAYSCALE", 255),
         PixelLayout::Gray16 => (1, "GRAYSCALE", 65535),
+        PixelLayout::Rgb16 => (3, "RGB", 65535),
+        PixelLayout::Rgba16 => (4, "RGB_ALPHA", 65535),
         PixelLayout::Rgb8 => (3, "RGB", 255),
         PixelLayout::Rgba8 => (4, "RGB_ALPHA", 255),
         PixelLayout::Bgr8 => (3, "RGB", 255),

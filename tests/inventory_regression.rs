@@ -17,6 +17,7 @@ fn check<C: DecoderConfig>(cfg: C, name: &str, data: &[u8]) {
         .unwrap_or_else(|e| panic!("{name}: {e}\n{inv}"));
 }
 
+#[allow(deprecated)] // Intentional coverage of the legacy policy adapter.
 #[test]
 fn inventory_regression_seeds_tile() {
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/regression/inventory");

@@ -35,6 +35,7 @@ macro_rules! impl_pixel {
 }
 
 impl_pixel!(rgb::RGB<u8>, PixelLayout::Rgb8);
+impl_pixel!(rgb::RGB<u16>, PixelLayout::Rgb16);
 impl_pixel!(rgb::RGBA<u8>, PixelLayout::Rgba8);
 impl_pixel!(rgb::alt::BGR<u8>, PixelLayout::Bgr8);
 impl_pixel!(rgb::alt::BGRA<u8>, PixelLayout::Bgra8);

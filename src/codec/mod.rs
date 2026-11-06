@@ -223,6 +223,7 @@ pub(crate) fn layout_to_descriptor(layout: crate::PixelLayout) -> PixelDescripto
         PixelLayout::Gray8 => PixelDescriptor::GRAY8_SRGB,
         PixelLayout::Gray16 => PixelDescriptor::GRAY16_SRGB,
         PixelLayout::Rgb8 => PixelDescriptor::RGB8_SRGB,
+        PixelLayout::Rgb16 => PixelDescriptor::RGB16_SRGB,
         PixelLayout::Rgba8 => PixelDescriptor::RGBA8_SRGB,
         PixelLayout::GrayF32 => PixelDescriptor::GRAYF32_LINEAR,
         PixelLayout::RgbF32 => PixelDescriptor::RGBAF32_LINEAR,
@@ -316,6 +317,19 @@ pub(crate) fn layout_to_pixel_buffer(
                     r: c[2],
                     g: c[1],
                     b: c[0],
+                })
+                .collect();
+            Ok(PixelBuffer::from_imgvec(imgref::ImgVec::new(pixels, w, h)).into())
+        }
+        PixelLayout::Rgb16 => {
+            let pixels: Vec<rgb::Rgb<u16>> = bytes
+                .as_chunks::<6>()
+                .0
+                .iter()
+                .map(|c| rgb::Rgb {
+                    r: u16::from_ne_bytes([c[0], c[1]]),
+                    g: u16::from_ne_bytes([c[2], c[3]]),
+                    b: u16::from_ne_bytes([c[4], c[5]]),
                 })
                 .collect();
             Ok(PixelBuffer::from_imgvec(imgref::ImgVec::new(pixels, w, h)).into())
@@ -447,7 +461,21 @@ pub(crate) fn decode_output_from_internal(
     let info = ImageInfo::new(decoded.width, decoded.height, format)
         .with_alpha(has_alpha)
         .with_source_encoding_details(BitmapSourceEncoding);
-    let pixels = layout_to_pixel_buffer(decoded)?;
+    let mut pixels = layout_to_pixel_buffer(decoded)?;
+    // Evidence describes the normalized current samples, not the source maxval.
+    // PFM is floating point and has no canonical integer-grid statement.
+    if format == ImageFormat::Pnm
+        && matches!(
+            pixels.descriptor().channel_type(),
+            ChannelType::U8 | ChannelType::U16
+        )
+    {
+        let exact = zenpixels::sample::ExactDepth::measure(&pixels.as_slice())
+            .map_err(|e| BitmapError::InvalidData(e.to_string()))?;
+        pixels
+            .set_exact_depth(Some(exact))
+            .map_err(|e| BitmapError::InvalidData(e.to_string()))?;
+    }
     Ok(DecodeOutput::new(pixels, info).with_source_encoding_details(BitmapSourceEncoding))
 }
 
@@ -1361,19 +1389,15 @@ mod tests {
     }
 
     #[test]
-    fn pnm_decode_descriptors_exclude_rgba16() {
-        // PNM decoder downscales non-gray 16-bit to 8-bit, so RGBA16 must
-        // not appear in the supported decode descriptors.
+    fn pnm_decode_descriptors_include_deep_integer_layouts() {
         let descs = PnmDecoderConfig::supported_descriptors();
-        assert!(
-            !descs.contains(&PixelDescriptor::RGBA16_SRGB),
-            "PNM_DECODE_DESCRIPTORS should not contain RGBA16_SRGB"
-        );
-        // Gray16 IS preserved, so it should be present.
-        assert!(
-            descs.contains(&PixelDescriptor::GRAY16_SRGB),
-            "PNM_DECODE_DESCRIPTORS should contain GRAY16_SRGB"
-        );
+        for descriptor in [
+            PixelDescriptor::GRAY16_SRGB,
+            PixelDescriptor::RGB16_SRGB,
+            PixelDescriptor::RGBA16_SRGB,
+        ] {
+            assert!(descs.contains(&descriptor), "missing {descriptor:?}");
+        }
     }
 
     // ── QOI zencodec trait tests ────────────────────────────────────────

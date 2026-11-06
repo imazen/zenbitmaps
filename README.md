@@ -53,7 +53,7 @@ and `into_owned() -> DecodeOutput<'static>` are **methods**. `PixelLayout` and
 **`encode_ppm` contract.** P6 is RGB-only and `encode_ppm` always writes
 **`maxval = 255`** (8-bit). It accepts `Rgb8` (verbatim), `Bgr8`/`Rgba8`/`Bgra8`
 (swizzled to RGB; alpha dropped), and `Gray8` (replicated to R=G=B). Any other
-layout — including the 16-bit/float ones (`Gray16`, `Rgba16`, `GrayF32`,
+layout — including the 16-bit/float ones (`Gray16`, `Rgb16`, `Rgba16`, `GrayF32`,
 `RgbF32`) and `Bgrx8` — is **rejected** with `BitmapError::UnsupportedVariant`
 (it does not silently truncate or mis-encode). For 16-bit/float output use
 `encode_pam` (16-bit integer) or `encode_pfm` (float); `encode_pgm` is the
@@ -69,8 +69,8 @@ grayscale analog (also 8-bit `maxval = 255`).
 |--------|------------------|
 | BMP | `Rgb8` (24-bit), `Rgba8` (32-bit), or `Gray8` |
 | PGM (P2/P5) | `Gray8` or `Gray16` |
-| PPM (P3/P6) | `Rgb8` (16-bit PPM is downscaled to `Rgb8`) |
-| PAM (P7) | per `DEPTH` — `Gray8`/`Gray16`, `Rgb8`, or `Rgba8` (16-bit RGB/RGBA are downscaled to 8-bit) |
+| PPM (P3/P6) | `Rgb8` or `Rgb16` |
+| PAM (P7) | per `DEPTH` — `Gray8`/`Gray16`, `Rgb8`/`Rgb16`, or `Rgba8`/`Rgba16` |
 | farbfeld | always `Rgba16` |
 | PFM | `RgbF32` (`PF`) or `GrayF32` (`Pf`) — top-down, native-endian `f32` (see [byte conventions](#byte-conventions-for-float--16-bit-read-before-rendering)) |
 | QOI | `Rgb8` or `Rgba8` |
@@ -105,19 +105,14 @@ here. (`decoded.pixels()` always returns packed bytes in `decoded.layout`.)
   A non-finite or zero scale is rejected (`InvalidHeader`).
 - `encode_pfm` always writes a scale of `-1.0` (little-endian, unit scale).
 
-**16-bit integer (`Gray16`):**
-- **Samples are returned as native-endian `u16`**, regardless of whether the
-  source was binary (P5/P7) or ASCII (P2). PNM stores binary 16-bit samples
-  big-endian on disk (most-significant-byte first); the decoder byte-swaps to
-  host order so every path produces the same buffer for the same logical image.
-  Reinterpret `decoded.pixels()` as `&[u16]` directly (or read each pair with
-  `u16::from_ne_bytes`) — no per-format byte-swap needed. (16-bit P6/PPM and
-  other 16-bit layouts are downscaled to 8-bit during decode, so this only
-  concerns `Gray16`.)
-- `encode_pam` writes `Gray16` back out **big-endian** (the PNM on-disk
-  convention), converting from the native-endian in-memory buffer, so a
-  `decode → encode → decode` round-trip is byte-lossless and the file is
-  portable across hosts.
+**16-bit integer (`Gray16`, `Rgb16`, `Rgba16`):**
+
+Samples use native-endian `u16` in memory. Integer PNM with `MAXVAL > 255`
+normalizes each channel to 0–65535 with nearest-integer rounding. This includes
+PAM alpha; `MAXVAL` maps to 65535. ASCII and binary inputs give identical bytes.
+Read pairs with `u16::from_ne_bytes`; a byte slice need not have U16 alignment.
+`encode_pam` writes these layouts as big-endian samples with `MAXVAL 65535`,
+so decoding and re-encoding a canonical buffer preserves its pixels.
 
 ## Format detection
 
@@ -394,7 +389,7 @@ All public functions are flat, one-shot calls at crate root.
 **Types:**
 - `DecodeOutput<'a>` — decoded image (`.pixels()`, `.width`, `.height`, `.layout`, `.is_borrowed()`, `.as_pixels()`, `.as_imgref()`, `.to_imgvec()`)
 - `ImageFormat` — format enum (Pnm, Bmp, Farbfeld, Qoi, Tga, Hdr)
-- `PixelLayout` — pixel format (Gray8, Gray16, Rgb8, Rgba8, Rgba16, Bgr8, Bgra8, Bgrx8, GrayF32, RgbF32)
+- `PixelLayout` — pixel format (Gray8, Gray16, Rgb8, Rgb16, Rgba8, Rgba16, Bgr8, Bgra8, Bgrx8, GrayF32, RgbF32)
 - `BmpPermissiveness` — decode strictness (Strict, Standard, Permissive) (`bmp`)
 - `Limits` — resource limits (max width/height/pixels/memory)
 - `BitmapError` — error enum, `#[non_exhaustive]`. The public error is
@@ -541,9 +536,6 @@ in `tests/pulse_controls.rs` remain unchanged.
 
 ### PNM MAXVAL diagnostic
 
-`just pnm-maxval-probe` compares P5 and P7 gray with Netpbm's `pamdepth`.
-Install Netpbm or set `PAMDEPTH` to its executable. The current decoder keeps
-raw codes for Gray16 when MAXVAL is below 65535; the probe fails explicitly
-because MAXVAL should map to full white in a canonical U16 pixel buffer.
-Changing that established behavior and the deep-RGB narrowing contract is
-pending review. See the [PGM specification](https://netpbm.sourceforge.net/doc/pgm.html).
+`just pnm-maxval-probe` compares canonical U16 samples with Netpbm's `pamdepth`.
+Install Netpbm or set `PAMDEPTH` to its executable. MAXVAL normalization follows
+the [PGM specification](https://netpbm.sourceforge.net/doc/pgm.html).

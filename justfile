@@ -176,3 +176,17 @@ tga-declared-rows-check:
 # Independent-reader diagnostic for canonical 16-bit PNM gray values.
 pnm-maxval-probe:
     cargo run --locked --example pnm_maxval_probe
+
+# Canonical deep PNM, including shared descriptors and independent reader.
+pnm-u16-check:
+    cargo test --locked --lib --tests --examples --all-features
+    cargo clippy --locked --all-targets --all-features -- -D warnings
+    cargo run --locked --example pnm_maxval_probe
+
+# PNM current-sample evidence and padded native deep-output regressions.
+pnm-depth-check:
+    cargo test --locked --all-features --test pnm_ascii_16bit_regression
+
+# Independent numeric readback includes native U16 P5/P6/P7 output.
+pnm-depth-oracle:
+    cargo run --locked --features zencodec --example pnm_maxval_probe

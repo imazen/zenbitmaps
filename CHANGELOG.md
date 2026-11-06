@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Retain measured current-sample exact depth for integer PNM decode, and expose native U16 PGM/PPM/PAM encoding through both whole-image and row paths. Focused controls include padded short-final-row input and independent Netpbm numeric readback.
+
+
 - Independent Netpbm diagnostic reproduces noncanonical Gray16 MAXVAL handling for P5/P7 without changing the established decode contracts (`cc47ca86`).
 
 - Fresh zeroed buffers request allocator-zeroed storage in every allocation mode; allocation failure policy and buffer contents are preserved.
@@ -11,6 +14,8 @@ All notable changes to this project will be documented in this file.
 - TGA shared row encoding now retains and enforces declared dimensions and descriptor, rejects one-shot encoding after row admission, and preserves Pulse cancellation at each boundary. See `docs/tga-row-contract.md`.
 
 ### QUEUED BREAKING CHANGES
+
+- Deep integer PNM now returns full-range U16: Gray16 normalizes MAXVAL, PPM/PAM RGB uses the new `PixelLayout::Rgb16`, and PAM RGBA uses `Rgba16`. Callers expecting raw gray codes or narrowed RGB8/RGBA8 must migrate. PAM encoding supports all three deep layouts.
 
 - The zencodec trait implementations follow zencodec's Pulse operation-control
   contract (zencodec 0.2; written at ideal-api `f73a7e0e`, pinned to the family

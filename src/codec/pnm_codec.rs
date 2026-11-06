@@ -15,6 +15,7 @@ static PNM_ENCODE_CAPS: EncodeCapabilities = EncodeCapabilities::new()
     .with_streaming_output(true)
     .with_native_gray(true)
     .with_native_alpha(true)
+    .with_native_16bit(true)
     .with_native_f32(true)
     .with_hdr(true)
     .with_stop(true)
@@ -34,8 +35,10 @@ static PNM_DECODE_CAPS: DecodeCapabilities = DecodeCapabilities::new()
     .with_enforces_max_input_bytes(true)
     .with_inventory(cfg!(feature = "inventory"));
 
-// Note: U16 encode is not implemented — RGBA16_SRGB intentionally absent.
 static PNM_ENCODE_DESCRIPTORS: &[PixelDescriptor] = &[
+    PixelDescriptor::GRAY16_SRGB,
+    PixelDescriptor::RGB16_SRGB,
+    PixelDescriptor::RGBA16_SRGB,
     PixelDescriptor::RGB8_SRGB,
     PixelDescriptor::RGBA8_SRGB,
     PixelDescriptor::GRAY8_SRGB,
@@ -46,13 +49,13 @@ static PNM_ENCODE_DESCRIPTORS: &[PixelDescriptor] = &[
 ];
 
 // Note: RgbF32 is promoted to RgbaF32 in decode, so RGBF32_LINEAR is absent.
-// Note: RGBA16_SRGB is absent because the PNM decoder downscales non-gray
-// 16-bit to 8-bit (only Gray16 is preserved at 16-bit).
 static PNM_DECODE_DESCRIPTORS: &[PixelDescriptor] = &[
     PixelDescriptor::RGB8_SRGB,
     PixelDescriptor::RGBA8_SRGB,
     PixelDescriptor::GRAY8_SRGB,
     PixelDescriptor::GRAY16_SRGB,
+    PixelDescriptor::RGB16_SRGB,
+    PixelDescriptor::RGBA16_SRGB,
     PixelDescriptor::BGRA8_SRGB,
     PixelDescriptor::RGBAF32_LINEAR,
     PixelDescriptor::GRAYF32_LINEAR,
@@ -750,7 +753,11 @@ impl zencodec::decode::Decode for PnmDecoder<'_> {
         let stop: &dyn Stop = &self.pulse;
         let decoded = crate::pnm::decode_with_alloc_pref(&self.data, limits, self.alloc_pref, stop)
             .map_err(zencodec::CodecError::of)?;
-        decode_output_from_internal(&decoded, ImageFormat::Pnm).map_err(zencodec::CodecError::of)
+        let output = decode_output_from_internal(&decoded, ImageFormat::Pnm)
+            .map_err(zencodec::CodecError::of)?;
+        stop.check()
+            .map_err(|r| At::<zencodec::CodecError>::from(BitmapError::from(r)))?;
+        Ok(output)
     }
 }
 
@@ -861,6 +868,20 @@ impl PnmEncoder {
         }
 
         match (desc.channel_type(), desc.layout()) {
+            (
+                ChannelType::U16,
+                layout @ (ChannelLayout::Gray | ChannelLayout::Rgb | ChannelLayout::Rgba),
+            ) => {
+                let (layout, format) = match layout {
+                    ChannelLayout::Gray => (crate::PixelLayout::Gray16, pnm::PnmFormat::Pgm),
+                    ChannelLayout::Rgb => (crate::PixelLayout::Rgb16, pnm::PnmFormat::Ppm),
+                    _ => (crate::PixelLayout::Rgba16, pnm::PnmFormat::Pam),
+                };
+                let bytes = pixels.contiguous_bytes();
+                let encoded = pnm::encode(&bytes, w, h, layout, format, stop)
+                    .map_err(zencodec::CodecError::of)?;
+                Ok(EncodeOutput::new(encoded, ImageFormat::Pnm))
+            }
             (ChannelType::U8, ChannelLayout::Rgb) => {
                 let bytes = pixels.contiguous_bytes();
                 let encoded = pnm::encode(

@@ -6,7 +6,7 @@
 # impls omitted; re-export duplicates annotated `[also: path]`.
 # DO NOT EDIT BY HAND — commit regenerated changes with the code.
 #
-# files: zenbitmaps.txt 77 lines (supported surface) | zenbitmaps.features.txt 184 added (features: all,bmp,hdr,imgref,inventory,qoi,rgb,simd,std,tga,zencodec) | zenbitmaps.internal.txt 8 lines (8 hidden + 0 excluded-feature)
+# files: zenbitmaps.txt 78 lines (supported surface) | zenbitmaps.features.txt 182 added (features: all,bmp,hdr,imgref,inventory,qoi,rgb,simd,std,tga,zencodec) | zenbitmaps.internal.txt 8 lines (8 hidden + 0 excluded-feature)
 
 ## summary
 #
@@ -15,15 +15,15 @@
 #   free functions                             10
 #   inherent methods                            6
 #   struct fields                              13
-#   enum variants                              30
+#   enum variants                              31
 #   re-exports                                  3
 #   trait roster entries (type × trait)        27
 #   auto-trait-complete types                   6
 #
 # per-module pub lines:
-#   (root)                           70
+#   (root)                           71
 
-## items (70 lines)
+## items (71 lines)
 
 pub mod zenbitmaps
 pub use At
@@ -62,6 +62,7 @@ pub PixelLayout::Bgrx8
 pub PixelLayout::Gray16
 pub PixelLayout::Gray8
 pub PixelLayout::GrayF32
+pub PixelLayout::Rgb16
 pub PixelLayout::Rgb8
 pub PixelLayout::RgbF32
 pub PixelLayout::Rgba16
