@@ -68,7 +68,14 @@ fn parse_p5_p6_header(data: &[u8], format: PnmFormat) -> crate::Result<PnmHeader
                 (1, PixelLayout::Gray16)
             }
         }
-        PnmFormat::Ppm => (3, PixelLayout::Rgb8),
+        PnmFormat::Ppm => (
+            3,
+            if maxval > 255 {
+                PixelLayout::Rgb16
+            } else {
+                PixelLayout::Rgb8
+            },
+        ),
         _ => {
             return Err(whereat::at!(BitmapError::UnsupportedVariant(
                 UnsupportedKind::Type,
@@ -214,9 +221,9 @@ fn parse_p7_header(data: &[u8]) -> crate::Result<PnmHeader> {
         (1, false) => PixelLayout::Gray8,
         (1, true) => PixelLayout::Gray16,
         (3, false) => PixelLayout::Rgb8,
-        (3, true) => PixelLayout::Rgb8,
+        (3, true) => PixelLayout::Rgb16,
         (4, false) => PixelLayout::Rgba8,
-        (4, true) => PixelLayout::Rgba8,
+        (4, true) => PixelLayout::Rgba16,
         _ => {
             return Err(whereat::at!(BitmapError::UnsupportedVariant(
                 UnsupportedKind::Feature,
@@ -313,7 +320,6 @@ pub(crate) fn decode_integer_transform(
     stop: &dyn Stop,
 ) -> crate::Result<Vec<u8>> {
     let w = header.width as usize;
-    let h = header.height as usize;
     let depth = header.depth as usize;
     let is_16bit = header.maxval > 255;
 
@@ -331,68 +337,24 @@ pub(crate) fn decode_integer_transform(
         }
         Ok(out)
     } else {
-        match header.layout {
-            PixelLayout::Gray16 => {
-                // PNM binary 16-bit samples are big-endian on disk (PGM/PAM
-                // spec: "the most significant byte is first"). `Gray16` is
-                // documented native-endian, and the ASCII P2 path
-                // (`decode_ascii_samples`) emits native-endian `u16`, so convert
-                // here to keep the binary and ASCII paths byte-identical for the
-                // same logical image (issue #12). Mirrors farbfeld's BE→native
-                // decode; a no-op on big-endian hosts, a byte-swap on LE.
-                let mut out = alloc_util::vec_with_capacity(alloc_pref, true, expected_src)?;
-                let stop_interval = w.saturating_mul(depth).saturating_mul(16).max(1);
-                for (i, pair) in pixel_data[..expected_src]
-                    .as_chunks::<2>()
-                    .0
-                    .iter()
-                    .enumerate()
-                {
-                    if i % stop_interval == 0 {
-                        stop.check()
-                            .map_err(|r| whereat::at!(BitmapError::from(r)))?;
-                    }
-                    let val = u16::from_be_bytes([pair[0], pair[1]]);
-                    out.extend_from_slice(&val.to_ne_bytes());
-                }
-                Ok(out)
+        // Deep integer PNM has a full-range native-endian U16 output for
+        // every channel, including alpha. PNM stores its samples big-endian.
+        let mut out = alloc_util::vec_with_capacity(alloc_pref, true, expected_src)?;
+        let stop_interval = w.saturating_mul(depth).saturating_mul(16).max(1);
+        for (i, pair) in pixel_data[..expected_src]
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .enumerate()
+        {
+            if i % stop_interval == 0 {
+                stop.check()
+                    .map_err(|r| whereat::at!(BitmapError::from(r)))?;
             }
-            _ => {
-                let num_samples = w
-                    .checked_mul(h)
-                    .and_then(|wh| wh.checked_mul(depth))
-                    .ok_or_else(|| {
-                        whereat::at!(BitmapError::DimensionsTooLarge {
-                            width: header.width,
-                            height: header.height,
-                        })
-                    })?;
-                // Verify 2*num_samples fits and data is sufficient
-                let needed_bytes = num_samples.checked_mul(2).ok_or_else(|| {
-                    whereat::at!(BitmapError::DimensionsTooLarge {
-                        width: header.width,
-                        height: header.height,
-                    })
-                })?;
-                if pixel_data.len() < needed_bytes {
-                    return Err(whereat::at!(BitmapError::UnexpectedEof));
-                }
-                let scale = 255.0 / header.maxval as f32;
-                let stop_interval = w.saturating_mul(depth).saturating_mul(16).max(1);
-                let mut out = alloc_util::vec_with_capacity(alloc_pref, true, num_samples)?;
-                for i in 0..num_samples {
-                    if i % stop_interval == 0 {
-                        stop.check()
-                            .map_err(|r| whereat::at!(BitmapError::from(r)))?;
-                    }
-                    let hi = pixel_data[i * 2] as u16;
-                    let lo = pixel_data[i * 2 + 1] as u16;
-                    let val = (hi << 8) | lo;
-                    out.push((val as f32 * scale + 0.5) as u8);
-                }
-                Ok(out)
-            }
+            let value = u16::from_be_bytes(*pair) as u32;
+            out.extend_from_slice(&normalize_u16(value, header.maxval).to_ne_bytes());
         }
+        Ok(out)
     }
 }
 
@@ -590,7 +552,7 @@ pub(crate) fn decode_p4_bitpacked(
 }
 
 /// Decode ASCII PGM/PPM (P2/P3): whitespace-separated decimal values.
-/// Scales to 0-255 if maxval != 255.
+/// Normalizes samples to the full U8 or U16 range.
 ///
 /// The output buffer is sized from the (untrusted) header dimensions →
 /// `alloc_pref` with site default `true` (fallible).
@@ -613,26 +575,9 @@ pub(crate) fn decode_ascii_samples(
             })
         })?;
 
-    // The OUTPUT byte width is decided by the *layout*, not the source maxval,
-    // so the ASCII path produces byte-for-byte the same buffer the binary path
-    // (`decode_integer_transform`) does for the same logical image:
-    //
-    // * A genuinely 16-bit-per-channel layout (Gray16 — the only one the P2/P3
-    //   ASCII path produces; Rgba16 listed for completeness) keeps 2 raw
-    //   native-endian bytes per sample. Emitting a single downscaled u8 here
-    //   produced HALF the declared bytes — an OOB panic in
-    //   `PixelBuffer::as_slice` and silent 16-bit precision loss (fuzz zenpipe#51).
-    // * An 8-bit layout (Rgb8 — produced by 16-bit *P3 PPM*, since there is no
-    //   Rgb16 layout) downscales 16-bit samples to one u8 via `val·255/maxval`,
-    //   exactly like the binary P6 16-bit path. The pre-fix code keyed the byte
-    //   width on `maxval > 255` alone, so 16-bit P3 emitted 2 bytes/sample while
-    //   tagging the buffer Rgb8 (1 byte/channel) — a 6-byte 1×1 "Rgb8" image.
-    //   `encode_pam` then truncated it back to 3 bytes, breaking the roundtrip
-    //   (fuzz zenbitmaps#10).
-    let layout_is_16bit = header.layout.bytes_per_pixel() == 2 * header.layout.channels();
+    // ASCII and binary integer PNM share the same full-range representation.
+    let layout_is_16bit = header.maxval > 255;
     let bytes_per_sample = if layout_is_16bit { 2 } else { 1 };
-    // Downscale when the source is wider than the 8-bit target (16-bit samples
-    // into an 8-bit layout, or any sub-255 maxval into an 8-bit layout).
     let scale8 = (!layout_is_16bit && header.maxval != 255).then(|| 255.0 / header.maxval as f32);
 
     let mut out =
@@ -675,11 +620,9 @@ pub(crate) fn decode_ascii_samples(
         // Clamp out-of-range samples (a malformed ASCII value may exceed maxval).
         let val = val.min(header.maxval);
         if layout_is_16bit {
-            // 16-bit-per-channel layout (Gray16): raw native-endian u16.
-            out.extend_from_slice(&(val as u16).to_ne_bytes());
+            out.extend_from_slice(&normalize_u16(val, header.maxval).to_ne_bytes());
         } else if let Some(s) = scale8 {
-            // 8-bit layout fed by a wider maxval (incl. 16-bit P3 PPM →
-            // Rgb8): downscale to 0..=255, matching the binary 16-bit path.
+            // Normalize a narrow source to the U8 target range.
             out.push((val as f32 * s + 0.5) as u8);
         } else {
             out.push(val as u8);
@@ -729,6 +672,12 @@ fn parse_u32(data: &[u8], pos: usize) -> crate::Result<(u32, usize)> {
         )))
     })?;
     Ok((val, end))
+}
+
+/// Exact nearest-integer normalization. The largest product and rounding
+/// increment fit in u32 for the validated PNM MAXVAL range 1..=65535.
+fn normalize_u16(value: u32, maxval: u32) -> u16 {
+    ((value.min(maxval) * 65535 + maxval / 2) / maxval) as u16
 }
 
 #[cfg(test)]

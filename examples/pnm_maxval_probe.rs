@@ -8,22 +8,69 @@ use zenbitmaps::{PixelLayout, decode};
 fn main() {
     let samples = [0_u16, 100, 512, 1023];
     let data: Vec<u8> = samples.iter().flat_map(|v| v.to_be_bytes()).collect();
+    let rgb: Vec<u8> = [100_u16, 512, 1023]
+        .into_iter()
+        .flat_map(u16::to_be_bytes)
+        .collect();
+    let rgba: Vec<u8> = [100_u16, 512, 1023, 256]
+        .into_iter()
+        .flat_map(u16::to_be_bytes)
+        .collect();
     let fixtures = [
-        ("P5", [b"P5\n4 1\n1023\n".as_slice(), &data].concat()),
         (
-            "P7",
+            "P2",
+            b"P2\n4 1\n1023\n0 100 512 1023\n".to_vec(),
+            PixelLayout::Gray16,
+        ),
+        (
+            "P3",
+            b"P3\n1 1\n1023\n100 512 1023\n".to_vec(),
+            PixelLayout::Rgb16,
+        ),
+        (
+            "P5",
+            [b"P5\n4 1\n1023\n".as_slice(), &data].concat(),
+            PixelLayout::Gray16,
+        ),
+        (
+            "P6",
+            [b"P6\n1 1\n1023\n".as_slice(), &rgb].concat(),
+            PixelLayout::Rgb16,
+        ),
+        (
+            "P7 gray",
             [
                 b"P7\nWIDTH 4\nHEIGHT 1\nDEPTH 1\nMAXVAL 1023\nTUPLTYPE GRAYSCALE\nENDHDR\n"
                     .as_slice(),
                 &data,
             ]
             .concat(),
+            PixelLayout::Gray16,
+        ),
+        (
+            "P7 RGB",
+            [
+                b"P7\nWIDTH 1\nHEIGHT 1\nDEPTH 3\nMAXVAL 1023\nTUPLTYPE RGB\nENDHDR\n".as_slice(),
+                &rgb,
+            ]
+            .concat(),
+            PixelLayout::Rgb16,
+        ),
+        (
+            "P7 RGBA",
+            [
+                b"P7\nWIDTH 1\nHEIGHT 1\nDEPTH 4\nMAXVAL 1023\nTUPLTYPE RGB_ALPHA\nENDHDR\n"
+                    .as_slice(),
+                &rgba,
+            ]
+            .concat(),
+            PixelLayout::Rgba16,
         ),
     ];
     let mut disagreements = 0;
-    for (name, bytes) in fixtures {
+    for (name, bytes, layout) in fixtures {
         let decoded = decode(&bytes, Unstoppable).expect("native decode");
-        assert_eq!(decoded.layout, PixelLayout::Gray16);
+        assert_eq!(decoded.layout, layout);
         let native: Vec<u16> = decoded
             .pixels()
             .as_chunks::<2>()
@@ -54,7 +101,7 @@ fn main() {
             .iter()
             .map(|v| u16::from_ne_bytes([v[0], v[1]]))
             .collect();
-        assert_eq!(independent.len(), samples.len());
+        assert_eq!(independent.len(), native.len());
         println!("{name} MAXVAL=1023 native={native:?} netpbm={independent:?}");
         disagreements += usize::from(native != independent);
     }

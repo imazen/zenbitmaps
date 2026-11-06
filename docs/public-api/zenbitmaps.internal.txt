@@ -9,7 +9,7 @@
 
 ## summary
 #
-#   inherent methods                            4
+#   re-exports                                  4
 #   trait roster entries (type × trait)         4
 #
 # per-module pub lines:
@@ -17,10 +17,10 @@
 
 ## items (4 lines)
 
-pub fn BmpPermissiveness::assert_fields_are_eq(&self)
-pub fn ImageFormat::assert_fields_are_eq(&self)
-pub fn PixelLayout::assert_fields_are_eq(&self)
-pub fn UnsupportedKind::assert_fields_are_eq(&self)
+pub use Bgr
+pub use Bgra
+pub use Rgb
+pub use Rgba
 
 ## trait impls (4 types)
 

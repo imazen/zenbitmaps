@@ -47,7 +47,7 @@ fn ascii_pnm_16bit_preserves_precision_51() {
     assert_eq!(d.pixels().len(), 2, "one Gray16 sample = 2 bytes");
     assert_eq!(
         u16::from_ne_bytes([d.pixels()[0], d.pixels()[1]]),
-        500,
-        "16-bit sample value must be preserved, not downscaled to u8"
+        32768,
+        "half-white must normalize to the full U16 range"
     );
 }

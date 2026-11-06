@@ -201,6 +201,7 @@ fn bmp_rle(rng: &mut Rng, depth: u16, w: i32, h: i32) -> Vec<u8> {
     v
 }
 
+#[allow(deprecated)] // Intentional legacy adapter control.
 fn check_bmp_policy(
     data: &[u8],
     policy: zencodec::decode::DecodePolicy,
@@ -528,6 +529,7 @@ fn bmp_header52_alpha_mask_and_hole_split() {
 
 // ── finding 9: Strict validates the densities ────────────────────────
 
+#[allow(deprecated)] // Intentional coverage of the legacy policy adapter.
 #[test]
 fn bmp_strict_zero_resolution_is_structure() {
     let mut v = bmp_head(40, 1, 1, 24, 0, 0, 54);

@@ -28,6 +28,7 @@ fn inv_of<C: DecoderConfig>(cfg: C, data: &[u8]) -> Inventory {
     check(cfg.job().inventory(data).unwrap())
 }
 
+#[allow(deprecated)] // Intentional legacy adapter control.
 fn bmp_inv(data: &[u8], policy: Option<DecodePolicy>) -> Inventory {
     let job = BmpDecoderConfig::new().job();
     let job = match policy {
@@ -37,6 +38,7 @@ fn bmp_inv(data: &[u8], policy: Option<DecodePolicy>) -> Inventory {
     check(job.inventory(data).unwrap())
 }
 
+#[allow(deprecated)] // Intentional legacy adapter control.
 fn decode_with<C: DecoderConfig>(
     cfg: C,
     policy: Option<DecodePolicy>,

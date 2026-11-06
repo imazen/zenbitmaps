@@ -12,6 +12,8 @@ All notable changes to this project will be documented in this file.
 
 ### QUEUED BREAKING CHANGES
 
+- Deep integer PNM now returns full-range U16: Gray16 normalizes MAXVAL, PPM/PAM RGB uses the new `PixelLayout::Rgb16`, and PAM RGBA uses `Rgba16`. Callers expecting raw gray codes or narrowed RGB8/RGBA8 must migrate. PAM encoding supports all three deep layouts.
+
 - The zencodec trait implementations follow zencodec's Pulse operation-control
   contract (zencodec 0.2; written at ideal-api `f73a7e0e`, pinned to the family
   revision `f5a7fd46`): every encode/decode job implements

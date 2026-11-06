@@ -46,13 +46,13 @@ static PNM_ENCODE_DESCRIPTORS: &[PixelDescriptor] = &[
 ];
 
 // Note: RgbF32 is promoted to RgbaF32 in decode, so RGBF32_LINEAR is absent.
-// Note: RGBA16_SRGB is absent because the PNM decoder downscales non-gray
-// 16-bit to 8-bit (only Gray16 is preserved at 16-bit).
 static PNM_DECODE_DESCRIPTORS: &[PixelDescriptor] = &[
     PixelDescriptor::RGB8_SRGB,
     PixelDescriptor::RGBA8_SRGB,
     PixelDescriptor::GRAY8_SRGB,
     PixelDescriptor::GRAY16_SRGB,
+    PixelDescriptor::RGB16_SRGB,
+    PixelDescriptor::RGBA16_SRGB,
     PixelDescriptor::BGRA8_SRGB,
     PixelDescriptor::RGBAF32_LINEAR,
     PixelDescriptor::GRAYF32_LINEAR,

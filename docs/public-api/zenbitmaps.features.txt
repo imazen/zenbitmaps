@@ -11,23 +11,18 @@
 #
 #   pub types (struct/enum/trait/alias)        44
 #   free functions                             40
-#   inherent methods                           17
+#   inherent methods                           18
 #   struct fields                               6
 #   enum variants                               4
-#   re-exports                                  4
-#   trait roster entries (type × trait)        91
+#   trait roster entries (type × trait)        93
 #   auto-trait-complete types                  14
 #   auto-trait exceptions                      24
 #
 # per-module pub lines:
-#   (root)                          115
+#   (root)                          112
 
-## items (115 lines)
+## items (112 lines)
 
-pub use Bgr
-pub use Bgra
-pub use Rgb
-pub use Rgba
 pub BitmapError::UnsupportedOperation(zencodec::capabilities::UnsupportedOperation)
 pub enum BmpPermissiveness
 pub BmpPermissiveness::Permissive
@@ -76,6 +71,7 @@ pub struct PnmEncoder
 pub struct PnmEncoderConfig
 pub fn PnmEncoderConfig::new() -> Self
 pub struct QoiDecodeJob
+pub fn QoiDecodeJob::into_incremental_decoder(self, &[zenpixels::descriptor::PixelDescriptor]) -> core::result::Result<codec::qoi_codec::QoiIncrementalDecoder, whereat::at::At<zencodec::error::CodecError>>
 pub struct QoiDecoder<'a>
 pub struct QoiDecoderConfig
 pub fn QoiDecoderConfig::new() -> Self
@@ -140,7 +136,7 @@ pub type BGRA8 = rgb::formats::bgra::Bgra<u8>
 pub type RGB8 = rgb::formats::rgb::Rgb<u8>
 pub type RGBA8 = rgb::formats::rgba::Rgba<u8>
 
-## trait impls (44 types)
+## trait impls (45 types)
 
 BitmapError: From<zencodec::capabilities::UnsupportedOperation>, zencodec::error::CategorizedError
 BmpDecodeJob: zencodec::traits::decoding::DecodeJob<'a>
@@ -183,6 +179,7 @@ TgaEncoder: zencodec::traits::encoder::Encoder
 TgaEncoderConfig: Clone, Debug, Default, zencodec::traits::encoding::EncoderConfig
 rgb::formats::bgr::Bgr<u8>: DecodePixel, EncodePixel
 rgb::formats::bgra::Bgra<u8>: DecodePixel, EncodePixel
+rgb::formats::rgb::Rgb<u16>: DecodePixel, EncodePixel
 rgb::formats::rgb::Rgb<u8>: DecodePixel, EncodePixel
 rgb::formats::rgba::Rgba<u8>: DecodePixel, EncodePixel
 whereat::at::At<zencodec::error::CodecError>: From<BitmapError>

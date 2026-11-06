@@ -424,17 +424,21 @@ fn write_pam_rows(
                 }
             }
         }
-        PixelLayout::Gray16 => {
+        PixelLayout::Gray16 | PixelLayout::Rgb16 | PixelLayout::Rgba16 => {
             // 16-bit samples are stored big-endian on disk (PAM spec); `Gray16`
             // is native-endian in memory (issue #12). Convert native → big-endian,
             // mirroring the decode path (`decode_integer_transform`) and farbfeld
             // so `decode → encode_pam → decode` stays pixel-lossless and the
             // on-disk bytes are spec-compliant. A no-op on big-endian hosts.
-            let band = w.saturating_mul(16).max(1);
-            for start in (0..pixel_count).step_by(band) {
+            let samples = pixel_count * layout.channels();
+            let band = w
+                .saturating_mul(layout.channels())
+                .saturating_mul(16)
+                .max(1);
+            for start in (0..samples).step_by(band) {
                 stop.check()
                     .map_err(|r| whereat::at!(BitmapError::from(r)))?;
-                for i in start..start.saturating_add(band).min(pixel_count) {
+                for i in start..start.saturating_add(band).min(samples) {
                     let off = i * 2;
                     let val = u16::from_ne_bytes([pixels[off], pixels[off + 1]]);
                     out.extend_from_slice(&val.to_be_bytes());
@@ -463,6 +467,8 @@ fn pam_params(layout: PixelLayout) -> crate::Result<(u32, &'static str, u32)> {
     Ok(match layout {
         PixelLayout::Gray8 => (1, "GRAYSCALE", 255),
         PixelLayout::Gray16 => (1, "GRAYSCALE", 65535),
+        PixelLayout::Rgb16 => (3, "RGB", 65535),
+        PixelLayout::Rgba16 => (4, "RGB_ALPHA", 65535),
         PixelLayout::Rgb8 => (3, "RGB", 255),
         PixelLayout::Rgba8 => (4, "RGB_ALPHA", 255),
         PixelLayout::Bgr8 => (3, "RGB", 255),
