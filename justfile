@@ -172,3 +172,7 @@ beta-cohort-check:
 tga-declared-rows-check:
     cargo test --locked --features zencodec,tga --test tga_declared_rows --test tga_conformance --test shared_contracts
     cargo clippy --locked --features zencodec,tga --lib --test tga_declared_rows -- -D warnings
+
+# Independent-reader diagnostic for canonical 16-bit PNM gray values.
+pnm-maxval-probe:
+    cargo run --locked --example pnm_maxval_probe

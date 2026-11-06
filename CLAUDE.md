@@ -56,6 +56,15 @@ Same as other zen* codecs — see codec-design/README.md. Key points:
 
 ## Known Bugs
 
+- PNM MAXVAL normalization (verified 2026-11-06): P5 and P7 gray at
+  `MAXVAL=1023`, samples `[0, 100, 512, 1023]`, decode to those raw U16
+  codes; Netpbm `pamdepth 65535` produces `[0, 6406, 32800, 65535]`.
+  `just pnm-maxval-probe` reproduces both disagreements and fails explicitly.
+  P2/P5 raw Gray16 behavior is required by an existing test; deep PPM/PAM RGB
+  narrowing to U8 is also explicitly tested. Changing these defaults and adding
+  RGB16 layout support await owner approval. No old assertion was weakened.
+
+
 - Strict clippy with `inventory` (found 2026-10-27, zencodec `f73a7e0e`): six
   inventory tests (`inventory_review.rs`, `inventory_review2.rs`,
   `inventory_regression.rs`) call the now-deprecated `DecodeJob::with_policy`.

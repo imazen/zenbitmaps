@@ -538,3 +538,12 @@ it does not replace the job control. Native cancellation-only entry points
 retain their existing signatures. This source migration awaits qualification
 against the paired core graph; existing retained/borrowed one-shot-stop controls
 in `tests/pulse_controls.rs` remain unchanged.
+
+### PNM MAXVAL diagnostic
+
+`just pnm-maxval-probe` compares P5 and P7 gray with Netpbm's `pamdepth`.
+Install Netpbm or set `PAMDEPTH` to its executable. The current decoder keeps
+raw codes for Gray16 when MAXVAL is below 65535; the probe fails explicitly
+because MAXVAL should map to full white in a canonical U16 pixel buffer.
+Changing that established behavior and the deep-RGB narrowing contract is
+pending review. See the [PGM specification](https://netpbm.sourceforge.net/doc/pgm.html).
