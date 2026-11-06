@@ -26,7 +26,9 @@ fn main() {
         assert_eq!(decoded.layout, PixelLayout::Gray16);
         let native: Vec<u16> = decoded
             .pixels()
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|v| u16::from_ne_bytes([v[0], v[1]]))
             .collect();
         let mut oracle =
@@ -47,7 +49,9 @@ fn main() {
         let normalized = decode(&output.stdout, Unstoppable).expect("Netpbm output decode");
         let independent: Vec<u16> = normalized
             .pixels()
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|v| u16::from_ne_bytes([v[0], v[1]]))
             .collect();
         assert_eq!(independent.len(), samples.len());
