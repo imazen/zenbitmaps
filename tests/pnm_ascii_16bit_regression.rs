@@ -51,3 +51,40 @@ fn ascii_pnm_16bit_preserves_precision_51() {
         "half-white must normalize to the full U16 range"
     );
 }
+
+#[test]
+fn pnm_exact_depth_describes_current_samples() {
+    for (maxval, expected) in [(1023, 10), (4095, 12), (1000, 16)] {
+        let text = format!("P2 3 1 {maxval} 0 1 {} ", maxval / 2);
+        let decoded = PnmDecoderConfig::new().job().decoder(Cow::Borrowed(text.as_bytes()), &[]).unwrap().decode().unwrap();
+        let pixels = decoded.pixels();
+        let evidence = pixels.exact_depth().expect("integer samples carry measured evidence");
+        assert_eq!(evidence.color_bits(), expected, "maxval {maxval}");
+        assert!(evidence.holds_for(&pixels).unwrap());
+    }
+}
+
+#[test]
+fn deep_native_pnm_encoding_preserves_strided_samples() {
+    use zencodec::encode::{EncoderConfig as _, EncodeJob as _, Encoder as _};
+    use zenpixels::{PixelDescriptor, PixelSlice};
+    for descriptor in [PixelDescriptor::GRAY16_SRGB, PixelDescriptor::RGB16_SRGB, PixelDescriptor::RGBA16_SRGB] {
+        let width = 3;
+        let row_bytes = width * descriptor.bytes_per_pixel();
+        let stride = row_bytes + 6;
+        let mut bytes = vec![0xa5; stride + row_bytes];
+        for y in 0..2 {
+            for sample in 0..row_bytes / 2 {
+                let value = ((y * 631 + sample * 997 + 1) & 65535) as u16;
+                bytes[y * stride + sample * 2..y * stride + sample * 2 + 2].copy_from_slice(&value.to_ne_bytes());
+            }
+        }
+        let slice = PixelSlice::new(&bytes, width as u32, 2, stride, descriptor).unwrap();
+        let encoded = zenbitmaps::PnmEncoderConfig::new().job().encoder().unwrap().encode(slice).unwrap();
+        let decoded = PnmDecoderConfig::new().job().decoder(Cow::Borrowed(encoded.data()), &[]).unwrap().decode().unwrap();
+        assert_eq!(decoded.pixels().descriptor(), descriptor);
+        for y in 0..2 {
+            assert_eq!(decoded.pixels().row(y), &bytes[y as usize * stride..y as usize * stride + row_bytes]);
+        }
+    }
+}

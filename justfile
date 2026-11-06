@@ -182,3 +182,7 @@ pnm-u16-check:
     cargo test --locked --lib --tests --examples --all-features
     cargo clippy --locked --all-targets --all-features -- -D warnings
     cargo run --locked --example pnm_maxval_probe
+
+# PNM current-sample evidence and padded native deep-output regressions.
+pnm-depth-check:
+    cargo test --locked --all-features --test pnm_ascii_16bit_regression
