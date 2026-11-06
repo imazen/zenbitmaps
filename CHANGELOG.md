@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Retain measured current-sample exact depth for integer PNM decode, and expose native U16 PGM/PPM/PAM encoding through both whole-image and row paths. Focused controls include padded short-final-row input and independent Netpbm numeric readback.
+
+
 - Independent Netpbm diagnostic reproduces noncanonical Gray16 MAXVAL handling for P5/P7 without changing the established decode contracts (`cc47ca86`).
 
 - Fresh zeroed buffers request allocator-zeroed storage in every allocation mode; allocation failure policy and buffer contents are preserved.

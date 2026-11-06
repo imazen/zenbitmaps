@@ -106,4 +106,61 @@ fn main() {
         disagreements += usize::from(native != independent);
     }
     assert_eq!(disagreements, 0, "MAXVAL interpretation disagrees");
+    #[cfg(feature = "zencodec")]
+    native_deep_encode();
+}
+
+/// Read native encoder output as numeric samples using Netpbm alone.
+#[cfg(feature = "zencodec")]
+fn native_deep_encode() {
+    use zencodec::encode::{EncodeJob as _, Encoder as _, EncoderConfig as _};
+    use zenpixels::{PixelDescriptor, PixelSlice};
+    for descriptor in [
+        PixelDescriptor::GRAY16_SRGB,
+        PixelDescriptor::RGB16_SRGB,
+        PixelDescriptor::RGBA16_SRGB,
+    ] {
+        let words: Vec<u16> = (0..3 * descriptor.channels())
+            .map(|i| (1 + i * 997) as u16)
+            .collect();
+        let bytes: Vec<u8> = words.iter().flat_map(|v| v.to_ne_bytes()).collect();
+        let pixels = PixelSlice::new(&bytes, 3, 1, bytes.len(), descriptor).unwrap();
+        let encoded = zenbitmaps::PnmEncoderConfig::new()
+            .job()
+            .encoder()
+            .unwrap()
+            .encode(pixels)
+            .unwrap();
+        let mut oracle =
+            Command::new(std::env::var_os("PAMTABLE").unwrap_or_else(|| "pamtable".into()))
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .expect("Netpbm pamtable must be installed");
+        oracle
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(encoded.data())
+            .unwrap();
+        let result = oracle.wait_with_output().unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        let independent: Vec<u16> = std::str::from_utf8(&result.stdout)
+            .unwrap()
+            .split(|c: char| !c.is_ascii_digit())
+            .filter(|v| !v.is_empty())
+            .map(|v| v.parse().unwrap())
+            .collect();
+        assert_eq!(independent, words, "{descriptor:?}");
+        println!(
+            "native {:?} encode: Netpbm exact {} samples",
+            descriptor.layout(),
+            words.len()
+        );
+    }
 }

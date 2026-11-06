@@ -224,6 +224,13 @@ impl RowStream {
 pub(crate) fn pnm_file(desc: PixelDescriptor) -> Option<RowFile> {
     use crate::pnm::PnmFormat;
     Some(match (desc.channel_type(), desc.layout()) {
+        (ChannelType::U16, ChannelLayout::Gray) => {
+            RowFile::Pnm(PnmFormat::Pgm, PixelLayout::Gray16)
+        }
+        (ChannelType::U16, ChannelLayout::Rgb) => RowFile::Pnm(PnmFormat::Ppm, PixelLayout::Rgb16),
+        (ChannelType::U16, ChannelLayout::Rgba) => {
+            RowFile::Pnm(PnmFormat::Pam, PixelLayout::Rgba16)
+        }
         (ChannelType::U8, ChannelLayout::Rgb) => RowFile::Pnm(PnmFormat::Ppm, PixelLayout::Rgb8),
         (ChannelType::U8, ChannelLayout::Rgba) => RowFile::Pnm(PnmFormat::Pam, PixelLayout::Rgba8),
         (ChannelType::U8, ChannelLayout::Gray) => RowFile::Pnm(PnmFormat::Pgm, PixelLayout::Gray8),

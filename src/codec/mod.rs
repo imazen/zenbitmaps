@@ -461,7 +461,21 @@ pub(crate) fn decode_output_from_internal(
     let info = ImageInfo::new(decoded.width, decoded.height, format)
         .with_alpha(has_alpha)
         .with_source_encoding_details(BitmapSourceEncoding);
-    let pixels = layout_to_pixel_buffer(decoded)?;
+    let mut pixels = layout_to_pixel_buffer(decoded)?;
+    // Evidence describes the normalized current samples, not the source maxval.
+    // PFM is floating point and has no canonical integer-grid statement.
+    if format == ImageFormat::Pnm
+        && matches!(
+            pixels.descriptor().channel_type(),
+            ChannelType::U8 | ChannelType::U16
+        )
+    {
+        let exact = zenpixels::sample::ExactDepth::measure(&pixels.as_slice())
+            .map_err(|e| BitmapError::InvalidData(e.to_string()))?;
+        pixels
+            .set_exact_depth(Some(exact))
+            .map_err(|e| BitmapError::InvalidData(e.to_string()))?;
+    }
     Ok(DecodeOutput::new(pixels, info).with_source_encoding_details(BitmapSourceEncoding))
 }
 

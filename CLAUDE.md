@@ -56,6 +56,16 @@ Same as other zen* codecs — see codec-design/README.md. Key points:
 
 ## Known Bugs
 
+- PNM native U16 encoding and current-sample depth evidence were missing from
+  the canonical-U16 review candidate (2026-11-06). New regressions reproduce
+  both. The candidate now advertises and writes Gray16/RGB16/RGBA16 through
+  one-shot and row encoders with big-endian file samples, and measures exact
+  integer grids after normalization. Non-power-of-two MAXVAL values do not
+  inherit an assumed source-code depth; PFM gets no integer-grid statement.
+  `just pnm-depth-check` and `just pnm-depth-oracle` own the focused controls.
+  Whole-buffer evidence is covered; incremental decode evidence is not yet
+  established by these controls.
+
 - PNM MAXVAL normalization was reproduced with Netpbm (2026-11-06):
   MAXVAL 1023 codes `[0, 100, 512, 1023]` must normalize to
   `[0, 6406, 32800, 65535]`. The approved correction uses full-range native

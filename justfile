@@ -186,3 +186,7 @@ pnm-u16-check:
 # PNM current-sample evidence and padded native deep-output regressions.
 pnm-depth-check:
     cargo test --locked --all-features --test pnm_ascii_16bit_regression
+
+# Independent numeric readback includes native U16 P5/P6/P7 output.
+pnm-depth-oracle:
+    cargo run --locked --features zencodec --example pnm_maxval_probe
